@@ -1139,19 +1139,36 @@ mod audit_fail_closed_tests {
     #[tokio::test]
     async fn locked_database_blocks_execution_before_tools_call() {
         let harness = Harness::new().await;
-        // Use a SQL trigger to simulate a locked/database-full condition that
-        // blocks INSERT into audit_events. This is the reliable approach used
-        // by injected_persistence_failure_blocks_remote_write_before_tools_call
-        // and works across all platforms (Windows, macOS, Linux).
-        harness.inject_failure(
-            "CREATE TRIGGER reject_audit_insert BEFORE INSERT ON audit_events \
-             BEGIN SELECT RAISE(ABORT, 'injected audit persistence failure'); END;",
-        );
+        // rusqlite waits up to 5s by default; shortened here so the test
+        // observes the fail-closed branch immediately. In production the wait
+        // is bounded the same way and still ends in a refusal, never in an
+        // execution.
+        {
+            let conn = harness
+                .state
+                .storage
+                .connection()
+                .lock()
+                .expect("storage mutex poisoned");
+            conn.busy_timeout(Duration::from_millis(0))
+                .expect("busy window shortened");
+        }
+        // A second connection holds the write lock for the whole test. The
+        // daemon can still read sessions and workspaces (so policy reaches
+        // `Allow`), but the audit INSERT hits SQLITE_BUSY.
+        // `Storage` owns `gateway.db`; the blocker must lock that same file,
+        // otherwise the daemon connection is never actually contended.
+        let blocker =
+            rusqlite::Connection::open(harness.data_dir.join("gateway.db")).expect("second db");
+        blocker
+            .execute_batch("BEGIN IMMEDIATE")
+            .expect("write lock taken");
 
         let request = harness.operation(REMOTE_WRITE_TOOL);
         harness.submit(&request).await;
 
         harness.assert_refused_without_execution(&request);
+        drop(blocker);
         harness.shutdown();
     }
 
