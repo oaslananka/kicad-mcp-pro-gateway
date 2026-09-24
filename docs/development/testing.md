@@ -45,6 +45,11 @@ advanced explicitly (`clock.advance(Duration)`); no test should depend on
   edge cases — naive `path.starts_with(root_str)` is explicitly forbidden
   and tested against
 - audit event creation for allow/deny/require-approval/execute outcomes
+- pre-execution audit persistence failure fails closed: disk-full,
+  read-only, locked, corrupt and injected storage failures all refuse the
+  operation with the upstream `tools/call` count unchanged, and a failed
+  approval decision refuses approved execution (see
+  [audit-fail-closed.md](../security/audit-fail-closed.md))
 - config parsing and precedence (flags > env > file > defaults)
 - error redaction (no secret ever appears in a `Display`/`Debug` impl that
   can reach logs, CLI output, or IPC responses)
