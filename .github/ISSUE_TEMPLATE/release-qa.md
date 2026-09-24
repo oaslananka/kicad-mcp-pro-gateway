@@ -16,7 +16,7 @@ assignees: ''
 ### Ubuntu / Linux x86_64
 - [ ] Install AppImage / `.deb` on fresh machine.
 - [ ] Daemon auto-start and IPC socket binding verified.
-- [ ] Local KiCad 8.x detection and `kicad-mcp-pro` status check green.
+- [ ] Local KiCad 10.0.x detection and `kicad-mcp-pro` status check green.
 - [ ] High-risk operation prompt rendering and approval flow tested.
 - [ ] Uninstall and data retention policy verified.
 

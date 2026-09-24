@@ -17,8 +17,8 @@ This document defines the authoritative compatibility and platform support contr
 
 | Component | Target / Version Range | Policy / Notes |
 |---|---|---|
-| **KiCad** | 8.0.x, 8.99 (Nightly) | Required local EDA environment |
-| **kicad-mcp-pro** | `main` @ `18c7defe9a0828f6df4dbf03d3361b7ad7f395d7` | Pinned upstream tool snapshot (387 tools) |
+| **KiCad** | 10.0.x (Primary), 8.x (Deprecated) | Required local EDA environment; 10.0.6 latest verified |
+| **kicad-mcp-pro** | `main` @ `f641a92596ab7adc1e134287578b1ae5ff9580ad` | Pinned upstream tool snapshot (387 tools, mcp-server-v3.35.0) |
 | **Gateway Protocol** | Version `1.0.0` | Shared IPC envelope & binary framing codec |
 | **Rust MSRV** | 1.88.0 | Enforced in CI across all crates |
 | **Node.js / pnpm** | Node 20+ / pnpm 9 | Frontend desktop app runtime & package manager |

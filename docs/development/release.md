@@ -78,7 +78,7 @@ Before promoting a release candidate (`v*`) to a stable production release, run 
 - [x] Mock MCP core bridge protocol client & server tests (crates/core-bridge/tests/client.rs)
 - [ ] Checked-out upstream kicad-mcp-pro server execution (http://127.0.0.1:3334/mcp)
 - [ ] E2E reconciliation pass against live tool catalog
-- [ ] Real KiCad 8.x GUI application driven via Gateway policy boundary
+- [ ] Real KiCad 10.0.x GUI application driven via Gateway policy boundary
 
 ### Issue #26 — Clean-Machine Manual QA Verification Checklist
 - [x] Automated installer build workflow in CI
