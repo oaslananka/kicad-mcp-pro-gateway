@@ -308,7 +308,7 @@ async fn session(
                 }
                 for s in sessions {
                     println!(
-                        "{}  {}  {}  {}  expires {}",
+                        "{}  {}  {}  {}  effective expiry {}",
                         s.session_id,
                         s.remote_principal,
                         s.status,

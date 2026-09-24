@@ -45,7 +45,7 @@ export default function SessionsScreen() {
               <th>Profile</th>
               <th>Status</th>
               <th>Task</th>
-              <th>Expires</th>
+              <th>Effective expiry</th>
               <th></th>
             </tr>
           </thead>
@@ -144,7 +144,7 @@ export default function SessionsScreen() {
               <span>{sessionDialog.task_scope}</span>
             </div>
             <div className="row">
-              <span className="label">Expires</span>
+              <span className="label">Effective expiry</span>
               <span className="mono">{sessionDialog.expires_at}</span>
             </div>
             <div style={{ marginTop: 16 }}>
