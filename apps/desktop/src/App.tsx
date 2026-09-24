@@ -26,7 +26,7 @@ export default function App() {
   return (
     <div className="app">
       <nav className="nav">
-        <h1>KiCad MCP Companion</h1>
+        <h1>KiCad MCP Pro Gateway</h1>
         {TABS.map((tab) => (
           <button key={tab.id} className={tab.id === active ? "active" : ""} onClick={() => setActive(tab.id)}>
             {tab.label}

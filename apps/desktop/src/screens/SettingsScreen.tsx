@@ -72,7 +72,7 @@ export default function SettingsScreen() {
         </p>
         <ol className="mono-list">
           <li><strong>CLI flags</strong> (e.g. <code>--log-level trace</code>)</li>
-          <li><strong>Environment variables</strong> (e.g. <code>COMPANION_LOG_LEVEL=debug</code>)</li>
+          <li><strong>Environment variables</strong> (e.g. <code>GATEWAY_LOG_LEVEL=debug</code>)</li>
           <li><strong>Configuration file</strong> (<code>config.toml</code> inside Data Directory)</li>
           <li><strong>Built-in defaults</strong></li>
         </ol>
@@ -84,7 +84,7 @@ export default function SettingsScreen() {
       <div className="card">
         <h3>Privacy & Security Policy</h3>
         <p>
-          Companion telemetry is <strong>off by default</strong>. No project files, schematics, PCB layouts,
+          Gateway telemetry is <strong>off by default</strong>. No project files, schematics, PCB layouts,
           or audit records leave your machine unless specifically passed through an explicitly authorized transport flow.
         </p>
         <ul className="security-invariants">

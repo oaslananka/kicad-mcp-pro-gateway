@@ -1,6 +1,6 @@
 //! `companion-core`: strongly-typed domain identifiers and data model,
 //! error taxonomy, deterministic clock abstraction, and layered
-//! configuration for KiCad MCP Pro Companion.
+//! configuration for KiCad MCP Pro Gateway.
 //!
 //! This crate performs no I/O and holds no KiCad-specific knowledge. See
 //! `docs/architecture/component-boundaries.md` for why.

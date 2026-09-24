@@ -55,7 +55,7 @@ fn reopening_same_directory_after_close_is_idempotent() {
 fn corrupted_database_file_is_reported_as_typed_error_not_a_panic() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
-        dir.path().join("companion.db"),
+        dir.path().join("gateway.db"),
         b"not a sqlite database, just garbage bytes",
     )
     .unwrap();

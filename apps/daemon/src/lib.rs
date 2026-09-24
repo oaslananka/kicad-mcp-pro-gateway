@@ -1,4 +1,4 @@
-//! The Companion daemon: the single authoritative local runtime. See
+//! The Gateway daemon: the single authoritative local runtime. See
 //! `docs/architecture/component-boundaries.md`.
 
 pub mod errors;

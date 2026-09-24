@@ -23,7 +23,7 @@ impl Storage {
     pub fn open(data_dir: &Path) -> Result<Storage, StorageError> {
         std::fs::create_dir_all(data_dir)?;
 
-        let lock_path = data_dir.join("companion.lock");
+        let lock_path = data_dir.join("gateway.lock");
         let lock_file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -33,7 +33,7 @@ impl Storage {
             .try_lock_exclusive()
             .map_err(|_| StorageError::AnotherInstanceRunning)?;
 
-        let db_path = data_dir.join("companion.db");
+        let db_path = data_dir.join("gateway.db");
         let mut conn =
             Connection::open(&db_path).map_err(|e| StorageError::DbUnreadable(e.to_string()))?;
         run_migrations(&mut conn)?;

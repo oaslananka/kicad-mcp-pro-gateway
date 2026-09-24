@@ -17,7 +17,7 @@ apps/desktop/src-tauri/target/
 *.sqlite3
 .env
 .env.local
-companion.lock
+gateway.lock
 /data/
 /secrets/
 

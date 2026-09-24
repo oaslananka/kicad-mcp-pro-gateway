@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Tool-to-capability resolution and the deterministic policy evaluation engine for KiCad MCP Pro Companion."
+description = "Tool-to-capability resolution and the deterministic policy evaluation engine for KiCad MCP Pro Gateway."
 
 [dependencies]
 companion-core = { path = "../core" }

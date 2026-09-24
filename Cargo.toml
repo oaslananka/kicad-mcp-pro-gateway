@@ -6,7 +6,7 @@ members = ["crates/core", "crates/storage", "crates/identity", "crates/workspace
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/oaslananka/kicad-mcp-pro-companion"
+repository = "https://github.com/oaslananka/kicad-mcp-pro-gateway"
 rust-version = "1.88"
 
 [workspace.dependencies]

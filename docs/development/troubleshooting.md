@@ -1,6 +1,6 @@
-# Companion Production Troubleshooting Guide
+# Gateway Production Troubleshooting Guide
 
-This guide provides actionable steps for diagnosing and resolving runtime issues across the Companion daemon, desktop frontend, and IPC layer.
+This guide provides actionable steps for diagnosing and resolving runtime issues across the Gateway daemon, desktop frontend, and IPC layer.
 
 ## 1. Daemon Startup & Process Lifecycle
 
@@ -11,13 +11,13 @@ This guide provides actionable steps for diagnosing and resolving runtime issues
 ### Diagnostics
 1. **Check if daemon process is running:**
    ```bash
-   pgrep -af companion-daemon
+   pgrep -af kicad-mcp-gateway-daemon
    ```
 2. **Inspect daemon log output:**
-   - Linux / macOS: `~/.local/share/kicad-mcp-companion/logs/` or stdout.
-   - Windows: `%LOCALAPPDATA%\kicad-mcp-companion\logs\`
+   - Linux / macOS: `~/.local/share/kicad-mcp-gateway/logs/` or stdout.
+   - Windows: `%LOCALAPPDATA%\kicad-mcp-gateway\logs\`
 3. **Verify single-instance lock file:**
-   - Check if stale lockfile exists at `<data_dir>/companion-daemon.lock`.
+   - Check if stale lockfile exists at `<data_dir>/gateway.lock`.
 
 ## 2. IPC Sockets & Connectivity
 
@@ -26,9 +26,9 @@ This guide provides actionable steps for diagnosing and resolving runtime issues
 
 ### Diagnostics
 - **Linux / macOS (Domain Sockets):**
-  Verify domain socket permissions at `/tmp/kicad-mcp-companion-<hash>.sock` or user runtime dir.
+  Verify domain socket permissions at `/tmp/kicad-mcp-gateway-<hash>.sock` or user runtime dir.
 - **Windows (Named Pipes):**
-  Verify named pipe `\\.\pipe\kicad-mcp-companion-<hash>` is accessible without administrator elevation.
+  Verify named pipe `\\.\pipe\kicad-mcp-gateway-<hash>` is accessible without administrator elevation.
 
 ## 3. Keychain & Secure Storage
 
@@ -37,7 +37,7 @@ This guide provides actionable steps for diagnosing and resolving runtime issues
 
 ### Diagnostics
 - **Linux:** Ensure `dbus` and `secret-service` / `gnome-keychain` or `kwallet` are active. Fallback test mode is used in headless CI environments.
-- **macOS:** Ensure Keychain access is granted for `com.kicad-mcp.companion`.
+- **macOS:** Ensure Keychain access is granted for the app identifier `dev.oaslananka.kicad-mcp-gateway`.
 
 ## 4. WebView / GTK Integration (Linux)
 
@@ -65,4 +65,4 @@ This guide provides actionable steps for diagnosing and resolving runtime issues
 
 - **Application Binaries:** Removed by OS package manager / installer.
 - **Local Application Data:** Preserved by default at `<data_dir>` (database, audit logs, device identity) to prevent accidental data loss across upgrades.
-- **Complete Wipe:** Manually delete `<data_dir>` (`~/.local/share/kicad-mcp-companion` or `%LOCALAPPDATA%\kicad-mcp-companion`).
+- **Complete Wipe:** Manually delete `<data_dir>` (`~/.local/share/kicad-mcp-gateway` or `%LOCALAPPDATA%\kicad-mcp-gateway`).

@@ -14,7 +14,7 @@ pub async fn send_request(data_dir: &Path, request: IpcRequest) -> anyhow::Resul
     let name = companion_protocol::socket_name(data_dir).to_ns_name::<GenericNamespaced>()?;
     let mut stream = interprocess::local_socket::tokio::Stream::connect(name).await.map_err(|e| {
         anyhow::anyhow!(
-            "cannot reach the companion daemon ({e}). Is it running? Try `kicad-mcp-companion daemon start`."
+            "cannot reach the Gateway daemon ({e}). Is it running? Try `kicad-mcp-gateway daemon start`."
         )
     })?;
 

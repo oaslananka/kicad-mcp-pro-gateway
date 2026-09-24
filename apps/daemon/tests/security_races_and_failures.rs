@@ -15,7 +15,7 @@ use companion_protocol::{
 use companion_transport::{MockTransport, Transport};
 use interprocess::local_socket::tokio::prelude::*;
 use interprocess::local_socket::{GenericNamespaced, ToNsName};
-use kicad_mcp_companion_daemon::{build_state_with_secret_store, ipc_server, remote_processor};
+use kicad_mcp_gateway_daemon::{build_state_with_secret_store, ipc_server, remote_processor};
 use serde_json::json;
 
 async fn send_request(data_dir: &Path, request: IpcRequest) -> IpcResponse {
