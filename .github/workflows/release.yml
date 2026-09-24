@@ -41,7 +41,7 @@ jobs:
       - name: Build release CLI & Daemon binaries
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo build --release --target "$TARGET" -p kicad-mcp-companion-cli -p kicad-mcp-companion-daemon
+        run: cargo build --release --target "$TARGET" -p kicad-mcp-gateway-cli -p kicad-mcp-gateway-daemon
 
       - name: Package binaries
         shell: bash
@@ -51,10 +51,10 @@ jobs:
           SUFFIX: ${{ matrix.binary_suffix }}
           OS_NAME: ${{ runner.os }}
         run: |
-          STAGE_DIR="kicad-mcp-companion-${REF_NAME}-${TARGET}"
+          STAGE_DIR="kicad-mcp-gateway-${REF_NAME}-${TARGET}"
           mkdir -p "$STAGE_DIR"
-          cp "target/${TARGET}/release/companion-cli${SUFFIX}" "$STAGE_DIR/"
-          cp "target/${TARGET}/release/companion-daemon${SUFFIX}" "$STAGE_DIR/"
+          cp "target/${TARGET}/release/kicad-mcp-gateway${SUFFIX}" "$STAGE_DIR/"
+          cp "target/${TARGET}/release/kicad-mcp-gateway-daemon${SUFFIX}" "$STAGE_DIR/"
           cp README.md LICENSE "$STAGE_DIR/"
           if [ "$OS_NAME" = "Windows" ]; then
             7z a "${STAGE_DIR}.zip" "$STAGE_DIR"
@@ -100,5 +100,5 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           gh release create "$TAG_NAME" dist/* \
-            --title "KiCad MCP Pro Companion $TAG_NAME" \
+            --title "KiCad MCP Pro Gateway $TAG_NAME" \
             --generate-notes

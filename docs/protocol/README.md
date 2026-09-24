@@ -1,6 +1,6 @@
 # Protocol
 
-This directory documents the wire protocols Companion speaks. All protocols
+This directory documents the wire protocols Gateway speaks. All protocols
 here are **open and documented** per project principle 12 — nothing about
 pairing, session negotiation, or the operation envelope is a secret format.
 
@@ -9,18 +9,18 @@ pairing, session negotiation, or the operation envelope is a secret format.
 1. **Local core-bridge protocol**: standard MCP over Streamable HTTP, exactly
    as implemented by kicad-mcp-pro (`initialize`, `tools/list`, `tools/call`,
    JSON-RPC 2.0 envelopes, protocol version `2025-11-25` at the time of
-   writing, optional `MCP-Session-Id`). Companion is a client of this
+   writing, optional `MCP-Session-Id`). Gateway is a client of this
    protocol; it does not extend or modify it. See
    [`crates/core-bridge`](../../crates/core-bridge).
-2. **Companion transport protocol**: the envelope Companion uses to talk to
+2. **Gateway transport protocol**: the envelope Gateway uses to talk to
    a relay/cloud. The normal daemon starts with outbound transport disabled;
    an in-process mock is available only when explicitly selected for local
    development/testing. A production hosted relay is out of scope for this
    repository. See below.
 
-## Companion transport envelope (V1)
+## Gateway transport envelope (V1)
 
-Every message on the Companion transport is versioned and typed:
+Every message on the Gateway transport is versioned and typed:
 
 ```jsonc
 {
@@ -39,7 +39,7 @@ Every message on the Companion transport is versioned and typed:
 - `message_id` is unique per message and is the basis for replay detection
   on state-changing messages once a real relay exists.
 - `device_id` is mandatory on inbound `session.request` and
-  `operation.request` messages. Companion rejects the message unless it
+  `operation.request` messages. Gateway rejects the message unless it
   matches the persistent local `DeviceIdentity.device_id`; operation
   requests must also reference a session bound to that same device.
 - Unknown `message_type` values are rejected, not ignored — silent
@@ -50,15 +50,15 @@ Every message on the Companion transport is versioned and typed:
 
 | `message_type` | Direction | Purpose |
 |---|---|---|
-| `pairing.begin` | Companion → relay | Start device pairing |
-| `pairing.challenge` | relay → Companion | Server challenge nonce |
-| `pairing.proof` | Companion → relay | Signed device proof |
-| `pairing.result` | relay → Companion | Paired / rejected |
-| `session.request` | relay → Companion | Remote principal requests a session |
-| `session.decision` | Companion → relay | Local approve/deny |
-| `operation.request` | relay → Companion | `OperationRequest` for an active session |
-| `operation.result` | Companion → relay | `OperationResult` or typed error |
-| `session.revoke` | Companion → relay | Local revoke notification |
+| `pairing.begin` | Gateway → relay | Start device pairing |
+| `pairing.challenge` | relay → Gateway | Server challenge nonce |
+| `pairing.proof` | Gateway → relay | Signed device proof |
+| `pairing.result` | relay → Gateway | Paired / rejected |
+| `session.request` | relay → Gateway | Remote principal requests a session |
+| `session.decision` | Gateway → relay | Local approve/deny |
+| `operation.request` | relay → Gateway | `OperationRequest` for an active session |
+| `operation.result` | Gateway → relay | `OperationResult` or typed error |
+| `session.revoke` | Gateway → relay | Local revoke notification |
 | `heartbeat` | both | Liveness / reconnect signal |
 
 ## Security notes
@@ -79,5 +79,5 @@ Every message on the Companion transport is versioned and typed:
 ## Versioning
 
 Both protocols are explicitly versioned from day one. Breaking changes to
-the Companion transport envelope bump `protocol_version`'s major component;
+the Gateway transport envelope bump `protocol_version`'s major component;
 receivers must reject majors they do not understand rather than guess.

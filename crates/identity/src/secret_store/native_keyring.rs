@@ -12,7 +12,7 @@ use zeroize::Zeroizing;
 
 use super::{SecretStore, SecretStoreError, SigningKeyMaterial};
 
-const SERVICE_NAME: &str = "dev.oaslananka.kicad-mcp-pro-companion.device-key";
+const SERVICE_NAME: &str = "dev.oaslananka.kicad-mcp-pro-gateway.device-key";
 
 trait KeyringBackend: Send + Sync {
     fn set_secret(&self, service: &str, account: &str, secret: &[u8]) -> Result<(), String>;

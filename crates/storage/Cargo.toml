@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "SQLite persistence and migrations for KiCad MCP Pro Companion non-secret local state."
+description = "SQLite persistence and migrations for KiCad MCP Pro Gateway non-secret local state."
 
 [dependencies]
 companion-core = { path = "../core" }

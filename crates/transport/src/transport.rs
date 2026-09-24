@@ -9,7 +9,7 @@ pub struct TransportHealth {
     pub last_error: Option<String>,
 }
 
-/// Abstracts the pipe between Companion and a relay/cloud. Implementors
+/// Abstracts the pipe between Gateway and a relay/cloud. Implementors
 /// never decide authorization — a connected transport is not an active
 /// session (see `docs/security/trust-boundaries.md`).
 #[async_trait::async_trait]

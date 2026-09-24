@@ -1,5 +1,5 @@
 use companion_core::config::{self, CliOverrides};
-use kicad_mcp_companion_daemon::run;
+use kicad_mcp_gateway_daemon::run;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

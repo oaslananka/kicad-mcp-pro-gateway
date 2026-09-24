@@ -1763,7 +1763,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kicad-mcp-companion-desktop"
+name = "kicad-mcp-gateway-desktop"
 version = "0.1.0"
 dependencies = [
  "companion-core",

@@ -1,6 +1,6 @@
 use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig, MockMcpServer};
 use companion_policy::{TomlToolRegistry, ToolCapabilityResolver, ToolCatalogSnapshot};
-use kicad_mcp_companion_daemon::tool_reconciliation::reconcile_live_tool_registry;
+use kicad_mcp_gateway_daemon::tool_reconciliation::reconcile_live_tool_registry;
 
 #[tokio::test]
 async fn live_reconciliation_reports_unclassified_tools_without_authorizing_them() {

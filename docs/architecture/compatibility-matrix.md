@@ -1,10 +1,10 @@
-# Companion Canonical Compatibility Matrix
+# Gateway Canonical Compatibility Matrix
 
-This document defines the authoritative compatibility and platform support contract for KiCad MCP Pro Companion.
+This document defines the authoritative compatibility and platform support contract for KiCad MCP Pro Gateway.
 
 ## Platform & Architecture Support
 
-| OS | Architecture | Companion Status | CI / Validation Level | Installers Produced |
+| OS | Architecture | Gateway Status | CI / Validation Level | Installers Produced |
 |---|---|---|---|---|
 | **Linux** | `x86_64` (GNU) | **SUPPORTED** | CI-Validated (Ubuntu 22.04 / 24.04) | AppImage / `.deb` (Target) |
 | **Linux** | `aarch64` / ARM64 | **PLANNED** | Unvalidated | N/A |
@@ -19,9 +19,10 @@ This document defines the authoritative compatibility and platform support contr
 |---|---|---|
 | **KiCad** | 8.0.x, 8.99 (Nightly) | Required local EDA environment |
 | **kicad-mcp-pro** | `main` @ `18c7defe9a0828f6df4dbf03d3361b7ad7f395d7` | Pinned upstream tool snapshot (387 tools) |
-| **Companion Protocol** | Version `1.0.0` | Shared IPC envelope & binary framing codec |
+| **Gateway Protocol** | Version `1.0.0` | Shared IPC envelope & binary framing codec |
 | **Rust MSRV** | 1.88.0 | Enforced in CI across all crates |
 | **Node.js / pnpm** | Node 20+ / pnpm 9 | Frontend desktop app runtime & package manager |
+| **Product identity** | Companion → Gateway, pre-1.0 | Renamed before the first release; no installed population to migrate — see [identity-migration.md](../development/identity-migration.md) |
 
 ## Architecture Decisions Rationale
 

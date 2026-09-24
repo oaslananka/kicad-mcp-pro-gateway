@@ -1,4 +1,4 @@
-//! The Companion desktop shell's Tauri backend. Every command here is a
+//! The Gateway desktop shell's Tauri backend. Every command here is a
 //! thin forwarder to the daemon's local IPC API — no policy logic lives in
 //! this process. See `docs/architecture/component-boundaries.md`.
 
@@ -20,7 +20,7 @@ fn data_dir() -> PathBuf {
     // always talks to the same daemon instance those would.
     companion_core::config::load(companion_core::config::CliOverrides::default())
         .map(|c| c.data_dir)
-        .unwrap_or_else(|_| std::env::temp_dir().join("kicad-mcp-companion"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("kicad-mcp-gateway"))
 }
 
 async fn try_connect(
@@ -48,7 +48,7 @@ async fn send(request: IpcRequest) -> Result<IpcResponse, String> {
                 }
             }
             connected.ok_or_else(|| {
-                "cannot reach the companion daemon: connection refused. Is the companion-daemon process running?".to_string()
+                "cannot reach the Gateway daemon: connection refused. Is the kicad-mcp-gateway-daemon process running?".to_string()
             })?
         }
     };
@@ -219,7 +219,7 @@ fn main() {
             get_config,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running the companion desktop shell");
+        .expect("error while running the Gateway desktop shell");
 }
 
 #[cfg(test)]
