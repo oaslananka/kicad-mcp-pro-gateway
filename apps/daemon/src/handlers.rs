@@ -289,13 +289,13 @@ async fn list_pending_approvals(state: &Arc<DaemonState>) -> IpcResponse {
 async fn approve_operation(state: &Arc<DaemonState>, operation_id: OperationId) -> IpcResponse {
     match remote_processor::approve_pending_operation(state, operation_id).await {
         Ok(()) => IpcResponse::Ack,
-        Err(msg) => error_response(DaemonError::Internal(msg.to_string())),
+        Err(e) => error_response(e),
     }
 }
 
 async fn deny_operation(state: &Arc<DaemonState>, operation_id: OperationId) -> IpcResponse {
     match remote_processor::deny_pending_operation(state, operation_id).await {
         Ok(()) => IpcResponse::Ack,
-        Err(msg) => error_response(DaemonError::Internal(msg.to_string())),
+        Err(e) => error_response(e),
     }
 }
