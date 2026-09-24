@@ -75,6 +75,7 @@ fn build_state_from_parts(
     core_health_probe_config.timeout = CORE_HEALTH_PROBE_TIMEOUT;
 
     Ok(Arc::new(DaemonState {
+        instance_id: ulid::Ulid::new().to_string(),
         storage,
         identity_store,
         workspace_repo,
@@ -168,7 +169,11 @@ async fn run_transport_lifecycle(
 /// surfaces as an error from [`build_state`] before anything else starts.
 pub async fn run(config: CompanionConfig) -> anyhow::Result<()> {
     let state = build_state(&config)?;
-    tracing::info!(data_dir = %config.data_dir.display(), "daemon starting");
+    tracing::info!(
+        instance_id = %state.instance_id,
+        data_dir = %config.data_dir.display(),
+        "daemon starting"
+    );
 
     let transport = transport_for_mode(config.transport_mode);
     match config.transport_mode {

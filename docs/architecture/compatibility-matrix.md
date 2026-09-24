@@ -13,6 +13,11 @@ This document defines the authoritative compatibility and platform support contr
 | **Windows** | `x86_64` (MSVC) | **SUPPORTED** | CI-Validated (Windows Server 2022 / 2025) | MSI / NSIS (Target) |
 | **Windows** | `arm64` (ARM64) | **PLANNED** | Unvalidated | N/A |
 
+The supported desktop rows use the application-managed sidecar lifecycle;
+Gateway V1 does not install an OS service. Native IPC/restart tests and
+packaged `.deb` / `.dmg` / `.msi` sidecar verification are defined in the
+[daemon lifecycle evidence matrix](../development/daemon-lifecycle.md#automated-and-clean-machine-evidence).
+
 ## Component Dependencies & Compatibility
 
 | Component | Target / Version Range | Policy / Notes |

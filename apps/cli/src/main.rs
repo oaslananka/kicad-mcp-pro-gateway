@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use companion_core::config::{self, CliOverrides};
 use companion_protocol::{IpcRequest, IpcResponse};
-use kicad_mcp_gateway_cli::ipc_client::{ok_or_bail, send_request};
+use kicad_mcp_gateway_cli::ipc_client::{
+    ok_or_bail, probe_daemon, send_request, send_shutdown_request, wait_for_ready,
+    wait_for_stopped, ProbeError,
+};
 
 #[derive(Parser)]
 #[command(
@@ -42,9 +45,13 @@ enum Command {
 
 #[derive(Subcommand)]
 enum DaemonAction {
-    /// Start the daemon in the background.
+    /// Start the packaged sibling daemon and wait until its IPC identity is ready.
     Start,
-    /// Report whether the daemon is reachable.
+    /// Gracefully stop the local daemon and wait until its endpoint is gone.
+    Stop,
+    /// Gracefully stop and start the packaged sibling daemon.
+    Restart,
+    /// Report the validated daemon identity.
     Status,
 }
 
@@ -103,6 +110,8 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Setup => run_setup(&cfg).await,
         Command::Daemon(DaemonAction::Start) => daemon_start(&cfg).await,
+        Command::Daemon(DaemonAction::Stop) => daemon_stop(&cfg).await,
+        Command::Daemon(DaemonAction::Restart) => daemon_restart(&cfg).await,
         Command::Daemon(DaemonAction::Status) => daemon_status(&cfg).await,
         Command::Device(DeviceAction::Status) => device_status(&cfg).await,
         Command::Pair => pair(&cfg).await,
@@ -120,6 +129,7 @@ async fn run_setup(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> 
         "\u{2713} local data directory ready ({})",
         cfg.data_dir.display()
     );
+    daemon_start(cfg).await?;
 
     match send_request(&cfg.data_dir, IpcRequest::Status).await {
         Ok(response) => {
@@ -153,45 +163,164 @@ async fn run_setup(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> 
     Ok(())
 }
 
-async fn daemon_start(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
-    if send_request(&cfg.data_dir, IpcRequest::Status)
-        .await
-        .is_ok()
-    {
-        println!("daemon is already running");
-        return Ok(());
-    }
+const DAEMON_READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const DAEMON_STOP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-    let exe = std::env::current_exe()?;
-    let dir = exe
+fn sibling_daemon_binary() -> anyhow::Result<PathBuf> {
+    let executable = std::env::current_exe()?;
+    let directory = executable
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("cannot locate sibling daemon binary"))?;
-    let daemon_binary = dir.join(if cfg!(windows) {
+        .ok_or_else(|| anyhow::anyhow!("cannot locate packaged sibling daemon binary"))?;
+    Ok(directory.join(if cfg!(windows) {
         "kicad-mcp-gateway-daemon.exe"
     } else {
         "kicad-mcp-gateway-daemon"
-    });
+    }))
+}
 
-    std::process::Command::new(&daemon_binary)
-        .env("GATEWAY_DATA_DIR", &cfg.data_dir)
-        .spawn()
-        .map_err(|e| {
-            anyhow::anyhow!("failed to start daemon at {}: {e}", daemon_binary.display())
-        })?;
+fn stop_marker_path(cfg: &companion_core::CompanionConfig) -> PathBuf {
+    cfg.data_dir
+        .join(companion_core::config::DAEMON_STOP_MARKER_FILE)
+}
 
-    println!("daemon starting (data dir: {})", cfg.data_dir.display());
+fn clear_stop_marker(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
+    match std::fs::remove_file(stop_marker_path(cfg)) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(anyhow::anyhow!(
+            "could not clear the explicit daemon-stop marker: {error}"
+        )),
+    }
+}
+
+fn mark_daemon_stopped(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
+    std::fs::create_dir_all(&cfg.data_dir)?;
+    std::fs::write(stop_marker_path(cfg), b"stopped by user\n")?;
     Ok(())
 }
 
-async fn daemon_status(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
-    match send_request(&cfg.data_dir, IpcRequest::Status).await {
-        Ok(_) => {
-            println!("daemon: running");
+async fn daemon_start(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
+    match probe_daemon(&cfg.data_dir).await {
+        Ok(identity) => {
+            clear_stop_marker(cfg)?;
+            println!(
+                "daemon already ready (version {}, instance {})",
+                identity.daemon_version, identity.instance_id
+            );
+            return Ok(());
+        }
+        Err(ProbeError::Incompatible(message)) => {
+            anyhow::bail!(
+                "refusing untrusted or incompatible local endpoint: {message}; no alternate daemon was launched"
+            )
+        }
+        Err(ProbeError::VersionMismatch { expected, actual }) => {
+            stop_verified_daemon(cfg).await?;
+            println!("stopped stale Gateway daemon {actual} before starting {expected}");
+        }
+        Err(ProbeError::Unavailable(_)) => {}
+    }
+
+    clear_stop_marker(cfg)?;
+    let daemon_binary = sibling_daemon_binary()?;
+    std::process::Command::new(&daemon_binary)
+        .env("GATEWAY_DATA_DIR", &cfg.data_dir)
+        .env("GATEWAY_TRANSPORT_MODE", "disabled")
+        .spawn()
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "failed to start packaged daemon at {}: {e}; no alternate daemon was launched",
+                daemon_binary.display()
+            )
+        })?;
+
+    let identity = wait_for_ready(&cfg.data_dir, DAEMON_READY_TIMEOUT)
+        .await
+        .map_err(|e| anyhow::anyhow!("packaged daemon did not become ready: {e}"))?;
+    println!(
+        "daemon ready (version {}, instance {}, data dir {})",
+        identity.daemon_version,
+        identity.instance_id,
+        cfg.data_dir.display()
+    );
+    Ok(())
+}
+
+async fn stop_verified_daemon(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
+    let response = send_shutdown_request(&cfg.data_dir).await?;
+    match response {
+        IpcResponse::Ack => {}
+        IpcResponse::Error(_) => anyhow::bail!("daemon refused the shutdown request"),
+        _ => anyhow::bail!("unexpected daemon shutdown response variant"),
+    }
+    wait_for_stopped(&cfg.data_dir, DAEMON_STOP_TIMEOUT).await
+}
+
+async fn stop_verified_daemon_and_pause_supervisor(
+    cfg: &companion_core::CompanionConfig,
+) -> anyhow::Result<()> {
+    let result = stop_verified_daemon(cfg).await;
+    if result.is_err() {
+        clear_stop_marker(cfg)?;
+    }
+    result
+}
+
+async fn daemon_stop(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
+    // Publish the user's stop intent before shutdown so an open desktop
+    // watchdog cannot race the replacement start during the endpoint handoff.
+    mark_daemon_stopped(cfg)?;
+    match probe_daemon(&cfg.data_dir).await {
+        Ok(identity) => {
+            stop_verified_daemon_and_pause_supervisor(cfg).await?;
+            println!("daemon stopped (instance {})", identity.instance_id);
             Ok(())
         }
-        Err(_) => {
-            println!("daemon: not running");
+        Err(ProbeError::Unavailable(_)) => {
+            println!("daemon is already stopped");
             Ok(())
+        }
+        Err(ProbeError::VersionMismatch { expected, actual }) => {
+            stop_verified_daemon_and_pause_supervisor(cfg).await?;
+            println!("stale Gateway daemon stopped (expected {expected}, found {actual})");
+            Ok(())
+        }
+        Err(ProbeError::Incompatible(message)) => {
+            clear_stop_marker(cfg)?;
+            anyhow::bail!(
+                "refusing to send a lifecycle request to an unverified local endpoint: {message}; no alternate daemon was launched"
+            )
+        }
+    }
+}
+
+async fn daemon_restart(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
+    daemon_stop(cfg).await?;
+    daemon_start(cfg).await
+}
+
+async fn daemon_status(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
+    match probe_daemon(&cfg.data_dir).await {
+        Ok(identity) => {
+            println!(
+                "daemon: ready (version {}, instance {})",
+                identity.daemon_version, identity.instance_id
+            );
+            Ok(())
+        }
+        Err(ProbeError::Unavailable(_)) => {
+            if stop_marker_path(cfg).exists() {
+                println!("daemon: stopped by user");
+            } else {
+                println!("daemon: stopped");
+            }
+            Ok(())
+        }
+        Err(ProbeError::VersionMismatch { expected, actual }) => {
+            anyhow::bail!("stale Gateway daemon is running (expected {expected}, found {actual})")
+        }
+        Err(ProbeError::Incompatible(message)) => {
+            anyhow::bail!("local endpoint is not a compatible Gateway daemon: {message}")
         }
     }
 }
@@ -373,4 +502,35 @@ async fn audit_list(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()>
         println!("{}", view.note);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_stop_marker_round_trips_without_deleting_data() {
+        let temp = tempfile::tempdir().unwrap();
+        let data_dir = temp.path().join("data");
+        let cfg = config::load(CliOverrides {
+            data_dir: Some(data_dir.clone()),
+            ..Default::default()
+        })
+        .unwrap();
+        let unrelated_state = data_dir.join("gateway.db");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        std::fs::write(&unrelated_state, b"preserved").unwrap();
+
+        mark_daemon_stopped(&cfg).unwrap();
+        assert!(stop_marker_path(&cfg).exists());
+        assert_eq!(
+            std::fs::read(&unrelated_state).unwrap(),
+            b"preserved",
+            "lifecycle hand-off must not remove persisted state"
+        );
+
+        clear_stop_marker(&cfg).unwrap();
+        assert!(!stop_marker_path(&cfg).exists());
+        assert!(unrelated_state.exists());
+    }
 }

@@ -30,6 +30,7 @@ thiserror.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+ulid.workspace = true
 interprocess = { version = "2", features = ["tokio"] }
 
 [dev-dependencies]

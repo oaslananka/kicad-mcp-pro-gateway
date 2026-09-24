@@ -16,6 +16,7 @@ This codebase is under active development towards V1 Release Candidate readiness
 - [Security Automation & Governance](docs/development/security-automation.md)
 - [Release Architecture & Engineering](docs/development/release.md)
 - [Companion → Gateway Identity Migration & Compatibility Decision](docs/development/identity-migration.md)
+- [Production Daemon Lifecycle Contract](docs/development/daemon-lifecycle.md)
 
 ## Why Gateway exists
 

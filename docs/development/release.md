@@ -10,13 +10,26 @@ Workflow file: `.github/workflows/release.yml`
 
 ### Pipeline Stages
 
-1. **Build Binaries**: Compiles release binaries for CLI (`kicad-mcp-gateway`, package `kicad-mcp-gateway-cli`) and Daemon (`kicad-mcp-gateway-daemon`) on:
-   - Linux `x86_64-unknown-linux-gnu`
-   - macOS `aarch64-apple-darwin`
-   - Windows `x86_64-pc-windows-msvc`
-2. **Package Artifacts**: Packages binaries alongside `README.md` and `LICENSE` into `.tar.gz` (Linux/macOS) and `.zip` (Windows) archives.
-3. **Consolidate & Checksum**: Collects all platform archives, computes cryptographic SHA-256 checksums (`SHA256SUMS.txt`).
-4. **Publish Release**: Uploads artifacts and checksums to a GitHub Release with automatically generated release notes.
+1. **Build headless artifacts**: Compiles the CLI
+   (`kicad-mcp-gateway`) and daemon (`kicad-mcp-gateway-daemon`) for Linux
+   `x86_64-unknown-linux-gnu`, macOS `aarch64-apple-darwin`, and Windows
+   `x86_64-pc-windows-msvc`, then packages the sibling binaries with the
+   README and license.
+2. **Build desktop packages**: Runs the Tauri packaging path for the same
+   targets. `prepare-sidecar.mjs` first proves that the daemon, desktop, and
+   Tauri versions match, then stages the target-qualified daemon as
+   `externalBin`. The matrix produces `.deb`, `.dmg`, and `.msi` packages.
+3. **Verify embedded sidecars**: `verify:sidecar` requires a non-empty,
+   executable packaged daemon in every Tauri bundle before publication.
+4. **Consolidate and checksum**: Collects archives and desktop packages, then
+   computes SHA-256 checksums for every release asset.
+5. **Publish release**: Uploads all assets and checksums to a GitHub Release
+   with generated release notes.
+
+The authoritative ownership, update, rollback, and uninstall rules are in
+[daemon-lifecycle.md](daemon-lifecycle.md). Signing/notarization hooks do not
+change the requirement that the packaged sidecar be present and version
+matched.
 
 ---
 
@@ -55,14 +68,38 @@ Before promoting a release candidate (`v*`) to a stable production release, run 
 
 ### Linux / macOS / Windows Test Flow
 
-1. **Clean Installation**: Ensure no previous config or database exists in `<data_dir>`.
-2. **First Launch & Identity**: Start `kicad-mcp-gateway-daemon` or `kicad-mcp-gateway-desktop`. Confirm Device ID is generated and stored securely in native secret storage (Keyring / Secret Service / DPAPI).
-3. **Setup & Core Detection**: Run `kicad-mcp-gateway setup` or `kicad-mcp-gateway status`. Verify KiCad MCP Pro core bridge detection.
-4. **Workspace Management**: Authorize a KiCad project directory. Attempt relative path escape (`../`) to verify fail-closed path boundary enforcement.
-5. **Pairing & Remote Sessions**: Initiate pairing flow, approve session request, verify session status is Active.
-6. **Read-only Tool Execution**: Execute a classified read-only tool (e.g. `pcb_get_layers`). Confirm execution succeeds and audit log records event.
-7. **High-Risk Operation Approval**: Execute a high-risk tool (e.g. manufacturing Gerber export). Confirm operation is blocked pending explicit user approval.
-8. **Revocation & Reconnect**: Revoke session from desktop/CLI. Attempt reconnection and verify revoked session cannot reactivate.
+1. **Clean Installation**: Install the platform package and confirm no previous
+   config or database exists in `<data_dir>`.
+2. **Packaged Sidecar Evidence**: Inspect the package and record the bundled
+   daemon path. Run `pnpm verify:sidecar` against the produced bundle when
+   reproducing locally; CI uploads the verified package artifact.
+3. **First Launch & Readiness**: Launch the desktop with no daemon already
+   running. Confirm it starts only the packaged sidecar and reaches Ready with
+   product `kicad-mcp-gateway`, the expected daemon version, and a non-empty
+   per-process instance ID.
+4. **Setup & Core Detection**: Run `kicad-mcp-gateway setup` or
+   `kicad-mcp-gateway status`. Verify KiCad MCP Pro core bridge detection.
+5. **Workspace Management**: Authorize a KiCad project directory. Attempt
+   relative path escape (`../`) to verify fail-closed path boundary
+   enforcement.
+6. **Pairing & Remote Sessions**: Initiate pairing, approve a session request,
+   and verify the session becomes Active.
+7. **Read-only Tool Execution**: Execute a classified read-only tool (for
+   example `pcb_get_layers`). Confirm success and the audit record.
+8. **High-Risk Approval**: Attempt manufacturing export and confirm it remains
+   blocked pending explicit approval.
+9. **Crash & Revocation Recovery**: Terminate the daemon, confirm desktop
+   recovery, revoke a session, restart again, and verify the revoked session
+   cannot reactivate.
+10. **CLI Ownership Hand-off**: Run `daemon stop` while the desktop is open and
+    confirm its watchdog does not restart the daemon; run `daemon start` and
+    confirm readiness returns.
+11. **Failure Evidence**: Repeat first launch with the packaged sidecar
+    temporarily unavailable. Capture the safe UI failure banner and a redacted
+    log excerpt; verify no alternate daemon or endpoint is launched.
+12. **Update & Uninstall**: Upgrade in place and confirm data/revocation
+    continuity, then stop/uninstall and confirm binaries are removed while
+    `<data_dir>` remains until the user performs a deliberate data wipe.
 
 ---
 
