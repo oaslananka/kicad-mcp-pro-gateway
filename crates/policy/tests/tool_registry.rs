@@ -1,8 +1,15 @@
-use companion_policy::{TomlToolRegistry, ToolCapabilityResolver, ToolCatalogSnapshot};
+use companion_policy::{
+    OperationEffect, TomlToolRegistry, ToolCapabilityResolver, ToolCatalogSnapshot,
+    ToolRegistryError,
+};
 
 #[test]
 fn embedded_tool_registry_is_valid() {
-    let _registry = TomlToolRegistry::embedded();
+    let registry = TomlToolRegistry::try_embedded().expect("embedded policy source is pinned");
+    let snapshot = ToolCatalogSnapshot::embedded();
+    registry
+        .validate_source(&snapshot)
+        .expect("effect contracts match the upstream snapshot");
 }
 
 #[test]
@@ -101,6 +108,206 @@ fn coverage_report_separates_classified_unclassified_and_stale_tools() {
     assert_eq!(report.stale, vec!["stale_tool"]);
     assert_eq!(report.catalog_total, 2);
     assert_eq!(report.registry_total, 2);
+    assert!(report.effect_modelled.is_empty());
+    assert_eq!(report.effect_unmodelled, vec!["known_tool", "stale_tool"]);
+}
+
+#[test]
+fn embedded_effect_contracts_are_reviewed_against_the_pinned_upstream_snapshot() {
+    let registry = TomlToolRegistry::try_embedded().unwrap();
+    let snapshot = ToolCatalogSnapshot::embedded();
+    let source = registry.contract_source().unwrap();
+
+    assert_eq!(source.source_repository, snapshot.source_repository);
+    assert_eq!(source.source_ref, snapshot.source_ref);
+    assert_eq!(source.source_sha, snapshot.source_sha);
+    assert_eq!(
+        registry.effect_contract_names(),
+        vec![
+            "export_gerber",
+            "kicad_create_new_project",
+            "lib_create_custom_symbol",
+            "pcb_auto_place_by_schematic",
+            "pcb_delete_items",
+            "sch_get_symbols",
+        ]
+    );
+    for tool in registry.effect_contract_names() {
+        assert!(
+            snapshot.contains(&tool),
+            "{tool} is absent from the pinned snapshot"
+        );
+    }
+}
+
+#[test]
+fn embedded_v1_contracts_cover_all_effect_kinds_and_path_arguments() {
+    use std::collections::BTreeSet;
+
+    let registry = TomlToolRegistry::try_embedded().unwrap();
+
+    let read = registry.effect_contract("sch_get_symbols").unwrap();
+    assert_eq!(
+        read.arguments(),
+        &BTreeSet::from(["sheet".into(), "sheet_file".into()])
+    );
+    assert_eq!(read.effects(), &BTreeSet::from([OperationEffect::Read]));
+    let sheet_file = read.path_arguments().get("sheet_file").unwrap();
+    assert_eq!(
+        sheet_file.effects(),
+        &BTreeSet::from([OperationEffect::Read])
+    );
+
+    let export = registry.effect_contract("export_gerber").unwrap();
+    assert_eq!(
+        export.arguments(),
+        &BTreeSet::from([
+            "layers".into(),
+            "output_subdir".into(),
+            "variant_name".into()
+        ])
+    );
+    assert_eq!(
+        export.effects(),
+        &BTreeSet::from([OperationEffect::Read, OperationEffect::Write])
+    );
+    assert_eq!(
+        export
+            .path_arguments()
+            .get("output_subdir")
+            .unwrap()
+            .effects(),
+        &BTreeSet::from([OperationEffect::Create, OperationEffect::Write])
+    );
+
+    let placement = registry
+        .effect_contract("pcb_auto_place_by_schematic")
+        .unwrap();
+    assert_eq!(
+        placement.effects(),
+        &BTreeSet::from([
+            OperationEffect::Read,
+            OperationEffect::Write,
+            OperationEffect::Create,
+        ])
+    );
+
+    let project = registry
+        .effect_contract("kicad_create_new_project")
+        .unwrap();
+    for argument in ["path", "name"] {
+        assert_eq!(
+            project.path_arguments().get(argument).unwrap().effects(),
+            &BTreeSet::from([
+                OperationEffect::Read,
+                OperationEffect::Write,
+                OperationEffect::Create,
+            ])
+        );
+    }
+
+    assert_eq!(
+        project
+            .path_arguments()
+            .get("name")
+            .unwrap()
+            .base_argument(),
+        Some("path")
+    );
+
+    let symbol = registry
+        .effect_contract("lib_create_custom_symbol")
+        .unwrap();
+    assert_eq!(
+        symbol.effects(),
+        &BTreeSet::from([
+            OperationEffect::Read,
+            OperationEffect::Write,
+            OperationEffect::Create,
+        ])
+    );
+
+    let delete = registry.effect_contract("pcb_delete_items").unwrap();
+    assert_eq!(
+        delete.effects(),
+        &BTreeSet::from([OperationEffect::Read, OperationEffect::Delete])
+    );
+}
+
+#[test]
+fn stale_effect_contract_source_is_rejected() {
+    let result = TomlToolRegistry::from_toml_str(
+        r#"
+        contract_version = 1
+        source_repository = "oaslananka/kicad-mcp-pro"
+        source_ref = "main"
+        source_sha = "0000000000000000000000000000000000000000"
+
+        [[tool]]
+        name = "sch_get_symbols"
+        capability = "schematic.read"
+        risk = "low"
+        arguments = []
+        effects = ["read"]
+        "#,
+    );
+
+    assert!(matches!(
+        result,
+        Err(ToolRegistryError::ContractSourceMismatch {
+            field: "source_sha",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn effect_contract_without_pinned_source_is_rejected() {
+    let result = TomlToolRegistry::from_toml_str(
+        r#"
+        [[tool]]
+        name = "sch_get_symbols"
+        capability = "schematic.read"
+        risk = "low"
+        arguments = []
+        effects = ["read"]
+        "#,
+    );
+
+    assert!(matches!(
+        result,
+        Err(ToolRegistryError::MissingContractSource)
+    ));
+}
+
+#[test]
+fn misspelled_path_contract_field_is_rejected() {
+    let result = TomlToolRegistry::from_toml_str(
+        r#"
+        contract_version = 1
+        source_repository = "oaslananka/kicad-mcp-pro"
+        source_ref = "main"
+        source_sha = "18c7defe9a0828f6df4dbf03d3361b7ad7f395d7"
+
+        [[tool]]
+        name = "kicad_create_new_project"
+        capability = "project.write"
+        risk = "normal"
+        arguments = ["path", "name"]
+        effects = []
+        [[tool.path_arguments]]
+        argument = "path"
+        effects = ["create"]
+        required = true
+        [[tool.path_arguments]]
+        argument = "name"
+        base_argumn = "path"
+        effects = ["create"]
+        required = true
+        "#,
+    );
+
+    assert!(matches!(result, Err(ToolRegistryError::Malformed(_))));
 }
 
 #[test]

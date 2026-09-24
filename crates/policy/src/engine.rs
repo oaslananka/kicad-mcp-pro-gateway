@@ -8,6 +8,7 @@
 use companion_core::{Capability, Clock, OperationRequest, RiskLevel, Session, SessionStatus};
 use companion_workspace::{WorkspaceAuthorization, WorkspaceBoundary};
 
+use crate::operation_effects::{NormalizedOperationEffects, OperationEffectNormalizationError};
 use crate::tool_registry::ToolCapabilityResolver;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +20,8 @@ pub enum DenyReason {
     WorkspaceNotAuthorized,
     PathEscapesWorkspace,
     UnknownTool,
+    UnmodelledToolContract,
+    MalformedToolArguments,
     CapabilityNotGranted,
 }
 
@@ -50,6 +53,32 @@ pub struct PolicyEngine<R: ToolCapabilityResolver> {
 impl<R: ToolCapabilityResolver> PolicyEngine<R> {
     pub fn new(resolver: R) -> Self {
         Self { resolver }
+    }
+
+    /// Derives operation effects from the tool name, forwarded arguments, and
+    /// the reviewed contract pinned in the trusted registry. Caller-supplied
+    /// `target_path` is intentionally ignored as authorization evidence.
+    pub fn normalize_operation_effects(
+        &self,
+        request: &OperationRequest,
+        workspace: &WorkspaceAuthorization,
+    ) -> Result<NormalizedOperationEffects, DenyReason> {
+        if request.tool_name.trim().is_empty() {
+            return Err(DenyReason::MalformedRequest);
+        }
+        if self.resolver.resolve(&request.tool_name).is_none() {
+            return Err(DenyReason::UnknownTool);
+        }
+        let contract = self
+            .resolver
+            .effect_contract(&request.tool_name)
+            .ok_or(DenyReason::UnmodelledToolContract)?;
+        contract
+            .normalize(&request.arguments, &workspace.canonical_root)
+            .map_err(|error| match error {
+                OperationEffectNormalizationError::NoEffects => DenyReason::UnmodelledToolContract,
+                _ => DenyReason::MalformedToolArguments,
+            })
     }
 
     pub fn evaluate(
@@ -93,12 +122,17 @@ impl<R: ToolCapabilityResolver> PolicyEngine<R> {
             };
         }
 
-        if let Some(target) = &request.target_path {
-            if workspace.resolve_within(target).is_err() {
-                return PolicyDecision::Deny {
-                    reason: DenyReason::PathEscapesWorkspace,
-                };
-            }
+        let effects = match self.normalize_operation_effects(request, workspace) {
+            Ok(effects) => effects,
+            Err(reason) => return PolicyDecision::Deny { reason },
+        };
+        if effects
+            .iter()
+            .any(|(_, path)| workspace.resolve_within(path).is_err())
+        {
+            return PolicyDecision::Deny {
+                reason: DenyReason::PathEscapesWorkspace,
+            };
         }
 
         let Some((capability, risk)) = self.resolver.resolve(&request.tool_name) else {

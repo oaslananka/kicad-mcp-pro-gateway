@@ -1,7 +1,7 @@
 //! An `OperationRequest` is a single candidate action a remote session wants
 //! to perform. It is opaque with respect to KiCad domain semantics — this
-//! crate never knows what `tool_name` "does," only what it is named and
-//! where it targets.
+//! crate never knows what `tool_name` "does." The policy crate derives effects
+//! from reviewed contracts; `target_path` is non-authoritative caller metadata.
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -15,9 +15,13 @@ pub struct OperationRequest {
     pub workspace_id: WorkspaceId,
     /// The tool name exactly as named by kicad-mcp-pro's MCP tool registry.
     pub tool_name: String,
-    /// JSON object forwarded unchanged as MCP `tools/call.arguments`.
+    /// JSON object forwarded unchanged as MCP `tools/call.arguments`. Policy
+    /// derives filesystem effects from reviewed tool contracts, not from a
+    /// caller-declared effect summary.
     #[serde(default)]
     pub arguments: serde_json::Map<String, serde_json::Value>,
+    /// Legacy caller metadata retained for wire compatibility. Gateway policy
+    /// deliberately ignores it as authorization evidence.
     pub target_path: Option<std::path::PathBuf>,
     #[serde(with = "time::serde::rfc3339")]
     pub requested_at: OffsetDateTime,

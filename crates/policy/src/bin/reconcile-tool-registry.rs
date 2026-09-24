@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         source_sha,
         &markdown,
     )?;
-    let registry = TomlToolRegistry::embedded();
+    let registry = TomlToolRegistry::try_embedded()?;
     let report = registry.coverage_against(&snapshot);
 
     let snapshot_toml = snapshot.to_toml_pretty()?;
@@ -39,12 +39,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!(
-        "catalog={} registry={} classified={} unclassified={} stale={}",
+        "catalog={} registry={} classified={} unclassified={} stale={} effect_modelled={} effect_unmodelled={}",
         report.catalog_total,
         report.registry_total,
         report.classified.len(),
         report.unclassified.len(),
-        report.stale.len()
+        report.stale.len(),
+        report.effect_modelled.len(),
+        report.effect_unmodelled.len()
     );
     if !report.unclassified.is_empty() {
         eprintln!(

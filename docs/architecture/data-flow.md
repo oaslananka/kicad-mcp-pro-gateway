@@ -11,11 +11,15 @@ pipeline. No step may be skipped, reordered, or short-circuited.
 3. Session resolved by session_id
 4. Session state machine checked: Active, not expired, not revoked
 5. Operation's target workspace checked against session.workspace_ids
-6. Workspace path boundary enforced (canonicalized root, no traversal/symlink escape)
-7. Tool/operation name resolved to a Capability via ToolCapabilityResolver
+6. Tool name + forwarded arguments normalized through the SHA-pinned, reviewed
+   tool-effect contract into reads/writes/creates/deletes and absolute path
+   effects; `OperationRequest.target_path` is ignored as caller metadata
+   -> unknown argument, missing contract, or malformed effect = DENY
+7. Workspace boundary enforced for every Gateway-derived effect path
+   (canonicalized root, no traversal/symlink escape)
+8. Tool/operation capability and risk resolved from the same trusted contract
    -> unknown tool = DENY, no fallback
-8. Capability checked against session's effective capabilities
-9. Risk classified for the operation
+9. Capability checked against session's effective capabilities
 10. Approval requirement evaluated (policy + risk); if required and not
     already granted for this operation, session moves the operation to
     PendingApproval and stops here until a local decision is made
@@ -27,8 +31,8 @@ pipeline. No step may be skipped, reordered, or short-circuited.
 ```
 
 Steps 3–11 are the policy engine's responsibility and are pure/deterministic
-given `(OperationRequest, Session, WorkspaceAuthorization, capability
-mapping, risk classification, current time, policy)` — see
+given `(OperationRequest, Session, WorkspaceAuthorization, reviewed tool-effect
+contracts, current time, policy)` — see
 [`crates/policy`](../../crates/policy). Nothing upstream of the policy engine
 is trusted; nothing downstream of it (core-bridge, kicad-mcp-pro) is reached
 without a policy `Allow`.

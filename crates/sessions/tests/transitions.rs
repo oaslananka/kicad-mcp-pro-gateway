@@ -17,10 +17,17 @@ use time::OffsetDateTime;
 fn registry() -> TomlToolRegistry {
     TomlToolRegistry::from_toml_str(
         r#"
+        contract_version = 1
+        source_repository = "oaslananka/kicad-mcp-pro"
+        source_ref = "main"
+        source_sha = "18c7defe9a0828f6df4dbf03d3361b7ad7f395d7"
+
         [[tool]]
         name = "schematic.read"
         capability = "schematic.read"
         risk = "low"
+        arguments = []
+        effects = ["read"]
         "#,
     )
     .unwrap()
