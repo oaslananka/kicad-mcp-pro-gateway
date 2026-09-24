@@ -15,6 +15,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Release Engineering Workflow**: Created `.github/workflows/release.yml` tag-triggered automated release pipeline generating multi-platform CLI/daemon binary packages and SHA-256 checksums (`SHA256SUMS.txt`).
 - **Release Documentation**: Added `docs/development/release.md` detailing code signing (macOS Developer ID, Windows Authenticode), notarization, release engineering, and multi-OS manual QA procedures.
 - **Full Catalog Disposition & Snapshot Reconciliation**: Enforced 100% explicit disposition coverage for upstream tool catalog snapshots and automated reconciliation tooling.
+- **Trusted Tool-Effect Contracts**: Added source-pinned read/write/create/delete normalization and argument-path containment for reviewed V1 tools; unreviewed effects now fail closed independently of caller `target_path`.
 
 ### Changed
 

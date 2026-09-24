@@ -14,20 +14,57 @@ use time::OffsetDateTime;
 fn registry() -> TomlToolRegistry {
     TomlToolRegistry::from_toml_str(
         r#"
+        contract_version = 1
+        source_repository = "oaslananka/kicad-mcp-pro"
+        source_ref = "main"
+        source_sha = "18c7defe9a0828f6df4dbf03d3361b7ad7f395d7"
+
         [[tool]]
         name = "schematic.read"
         capability = "schematic.read"
         risk = "low"
+        arguments = ["path", "paths"]
+        effects = ["read"]
+        [[tool.path_arguments]]
+        argument = "path"
+        effects = ["read"]
+        [[tool.path_arguments]]
+        argument = "paths"
+        effects = ["read"]
 
         [[tool]]
         name = "schematic.add_symbol"
         capability = "schematic.write"
         risk = "normal"
+        arguments = []
+        effects = ["write", "create"]
 
         [[tool]]
         name = "manufacturing.export_gerber"
         capability = "manufacturing.export"
         risk = "high"
+        arguments = ["output_dir"]
+        effects = ["read"]
+        [[tool.path_arguments]]
+        argument = "output_dir"
+        effects = ["create"]
+        required = false
+        default = "manufacturing"
+
+        [[tool]]
+        name = "schematic.unmodelled_write"
+        capability = "schematic.write"
+        risk = "normal"
+
+        [[tool]]
+        name = "schematic.optional_path"
+        capability = "schematic.read"
+        risk = "low"
+        arguments = ["path"]
+        effects = []
+        [[tool.path_arguments]]
+        argument = "path"
+        effects = ["read"]
         "#,
     )
     .unwrap()
@@ -176,12 +213,269 @@ fn denies_when_path_escapes_workspace() {
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
     let mut req = request(ws.workspace_id, "schematic.read");
-    req.target_path = Some(evil.join("file.kicad_sch"));
+    req.arguments.insert(
+        "path".into(),
+        serde_json::json!(evil.join("file.kicad_sch").to_string_lossy()),
+    );
+    // A caller-declared in-workspace path cannot override the argument-derived
+    // out-of-workspace effect.
+    req.target_path = Some(root.join("caller-claimed.kicad_sch"));
     let engine = PolicyEngine::new(registry());
 
     let decision = engine.evaluate(&req, &session, &ws, &clock);
     assert_eq!(
         decision,
+        PolicyDecision::Deny {
+            reason: DenyReason::PathEscapesWorkspace
+        }
+    );
+}
+
+#[test]
+fn denies_when_any_path_in_a_multi_path_argument_escapes() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("project");
+    std::fs::create_dir_all(root.join("safe")).unwrap();
+    let ws = workspace(&root);
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let mut req = request(ws.workspace_id, "schematic.read");
+    req.arguments.insert(
+        "paths".into(),
+        serde_json::json!(["safe/one.kicad_sch", "../outside.kicad_sch"]),
+    );
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate(&req, &session, &ws, &clock),
+        PolicyDecision::Deny {
+            reason: DenyReason::PathEscapesWorkspace
+        }
+    );
+}
+
+#[test]
+fn caller_target_path_is_not_authorization_evidence() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("project");
+    let outside = parent.path().join("outside.kicad_sch");
+    std::fs::create_dir_all(&root).unwrap();
+    let ws = workspace(&root);
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let mut req = request(ws.workspace_id, "schematic.read");
+    req.target_path = Some(outside);
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate(&req, &session, &ws, &clock),
+        PolicyDecision::Allow {
+            capability: Capability::SCHEMATIC_READ,
+            risk: RiskLevel::Low
+        },
+        "caller metadata may be wrong without expanding or changing derived authority"
+    );
+}
+
+#[test]
+fn denies_arguments_absent_from_the_reviewed_input_contract() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let mut req = request(ws.workspace_id, "schematic.read");
+    req.arguments
+        .insert("unreviewed_path".into(), serde_json::json!("inside"));
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate(&req, &session, &ws, &clock),
+        PolicyDecision::Deny {
+            reason: DenyReason::MalformedToolArguments
+        }
+    );
+}
+
+#[test]
+fn denies_nested_path_arrays_in_argument_contracts() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let mut req = request(ws.workspace_id, "schematic.read");
+    req.arguments
+        .insert("path".into(), serde_json::json!([["inside.kicad_sch"]]));
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate(&req, &session, &ws, &clock),
+        PolicyDecision::Deny {
+            reason: DenyReason::MalformedToolArguments
+        }
+    );
+}
+
+#[test]
+fn denies_mixed_separator_traversal_from_argument_paths() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("project");
+    std::fs::create_dir_all(root.join("safe")).unwrap();
+    let ws = workspace(&root);
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let mut req = request(ws.workspace_id, "schematic.read");
+    req.arguments.insert(
+        "path".into(),
+        serde_json::json!(r"safe\..\..\outside.kicad_sch"),
+    );
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate(&req, &session, &ws, &clock),
+        PolicyDecision::Deny {
+            reason: DenyReason::PathEscapesWorkspace
+        }
+    );
+}
+
+#[test]
+fn denies_alternate_path_syntax_from_arguments() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let mut req = request(ws.workspace_id, "schematic.read");
+    req.arguments
+        .insert("path".into(), serde_json::json!("$HOME/outside.kicad_sch"));
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate(&req, &session, &ws, &clock),
+        PolicyDecision::Deny {
+            reason: DenyReason::MalformedToolArguments
+        }
+    );
+}
+
+#[test]
+fn denies_foreign_absolute_path_from_argument() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let mut req = request(ws.workspace_id, "schematic.read");
+    req.arguments.insert(
+        "path".into(),
+        serde_json::json!(r"\\server\share\outside.kicad_sch"),
+    );
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate(&req, &session, &ws, &clock),
+        PolicyDecision::Deny {
+            reason: DenyReason::PathEscapesWorkspace
+        }
+    );
+}
+
+#[test]
+fn denies_when_reviewed_contract_normalizes_to_no_effects() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate(
+            &request(ws.workspace_id, "schematic.optional_path"),
+            &session,
+            &ws,
+            &clock,
+        ),
+        PolicyDecision::Deny {
+            reason: DenyReason::UnmodelledToolContract
+        }
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn denies_composed_project_path_that_escapes_through_a_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("project");
+    let nested = root.join("nested");
+    let outside = parent.path().join("outside");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    symlink(&outside, nested.join("alias")).unwrap();
+
+    let ws = workspace(&root);
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Design, &clock);
+    let mut req = request(ws.workspace_id, "kicad_create_new_project");
+    req.arguments = [
+        ("path".into(), serde_json::json!("nested")),
+        ("name".into(), serde_json::json!("alias")),
+        ("confirm_overwrite".into(), serde_json::json!(true)),
+    ]
+    .into_iter()
+    .collect();
+    req.target_path = Some(root.join("caller-claimed.kicad_pro"));
+    let engine = PolicyEngine::new(TomlToolRegistry::try_embedded().unwrap());
+
+    assert_eq!(
+        engine.evaluate(&req, &session, &ws, &clock),
+        PolicyDecision::Deny {
+            reason: DenyReason::PathEscapesWorkspace
+        }
+    );
+}
+
+#[test]
+fn denies_known_effectful_tool_until_its_effect_contract_is_reviewed() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate(
+            &request(ws.workspace_id, "schematic.unmodelled_write"),
+            &session,
+            &ws,
+            &clock,
+        ),
+        PolicyDecision::Deny {
+            reason: DenyReason::UnmodelledToolContract
+        }
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn denies_symlinked_argument_path_that_escapes_workspace() {
+    use std::os::unix::fs::symlink;
+
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("project");
+    let outside = parent.path().join("outside");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    symlink(&outside, root.join("alias")).unwrap();
+    let ws = workspace(&root);
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let mut req = request(ws.workspace_id, "schematic.read");
+    req.arguments
+        .insert("path".into(), serde_json::json!("alias/file.kicad_sch"));
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate(&req, &session, &ws, &clock),
         PolicyDecision::Deny {
             reason: DenyReason::PathEscapesWorkspace
         }
