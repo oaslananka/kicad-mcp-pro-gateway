@@ -34,6 +34,10 @@ interprocess = { version = "2", features = ["tokio"] }
 
 [dev-dependencies]
 tempfile = "3"
+# Used only by failure-injection tests that open a second connection to the
+# daemon's own SQLite file (locked/corrupt audit store scenarios). Same
+# version/features as `companion-storage`, so no second SQLite build.
+rusqlite = { version = "0.31", features = ["bundled"] }
 companion-identity = { path = "../../crates/identity", features = ["test-util"] }
 companion-core-bridge = { path = "../../crates/core-bridge", features = ["test-util"] }
 companion-core = { path = "../../crates/core", features = ["test-util"] }

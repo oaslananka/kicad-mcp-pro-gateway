@@ -347,6 +347,134 @@ mod tests {
     }
 
     #[test]
+    fn failed_record_is_atomic_and_leaves_no_partial_row() {
+        let repository = repo();
+        reject_writes(&repository, "audit_events", "INSERT");
+
+        let event = sample_event(OperationId::new(), SessionId::new());
+        let error = repository.record(&event).unwrap_err();
+        assert!(matches!(error, AuditError::Storage(_)), "got {error:?}");
+
+        // Recovery: nothing partial is left behind, so the very same event
+        // can be recorded once the store accepts writes again.
+        drop_rejection(&repository);
+        assert!(
+            repository.list_recent(10).unwrap().is_empty(),
+            "a failed insert must leave no partial audit state"
+        );
+        repository.record(&event).unwrap();
+        let recent = repository.list_recent(10).unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].operation_id, event.operation_id);
+    }
+
+    #[test]
+    fn rolled_back_transaction_leaves_no_audit_row() {
+        let repository = repo();
+        let event = sample_event(OperationId::new(), SessionId::new());
+
+        // `record` is a single statement, so it joins any enclosing
+        // transaction and rolls back with it rather than committing a
+        // half-written audit trail.
+        {
+            let conn = repository
+                .storage
+                .connection()
+                .lock()
+                .expect("storage mutex poisoned");
+            conn.execute_batch("BEGIN").expect("transaction opens");
+        }
+        repository
+            .record(&event)
+            .expect("record joins the transaction");
+        {
+            let conn = repository
+                .storage
+                .connection()
+                .lock()
+                .expect("storage mutex poisoned");
+            conn.execute_batch("ROLLBACK")
+                .expect("transaction rolls back");
+        }
+
+        assert!(
+            repository.list_recent(10).unwrap().is_empty(),
+            "an uncommitted audit write must not survive a rollback"
+        );
+    }
+
+    #[test]
+    fn duplicate_operation_id_is_rejected_and_the_existing_row_is_unchanged() {
+        let repository = repo();
+        let event = sample_event(OperationId::new(), SessionId::new());
+        repository.record(&event).unwrap();
+        repository
+            .update_execution(event.operation_id, ExecutionStatus::Success, None, Some(12))
+            .unwrap();
+
+        let mut replay = sample_event(event.operation_id, SessionId::new());
+        replay.policy_result = PolicyResultKind::Deny;
+        let error = repository.record(&replay).unwrap_err();
+        assert!(matches!(error, AuditError::Storage(_)), "got {error:?}");
+
+        let recent = repository.list_recent(10).unwrap();
+        assert_eq!(recent.len(), 1, "the replay must not create a second row");
+        assert_eq!(recent[0].policy_result, PolicyResultKind::Allow);
+        assert_eq!(recent[0].execution_status, ExecutionStatus::Success);
+    }
+
+    #[test]
+    fn failed_approval_update_preserves_the_already_persisted_decision() {
+        let repository = repo();
+        let event = sample_event(OperationId::new(), SessionId::new());
+        repository.record(&event).unwrap();
+        repository
+            .update_approval_decision(event.operation_id, ApprovalDecisionKind::AllowOnce)
+            .unwrap();
+
+        reject_writes(&repository, "audit_events", "UPDATE");
+        let error = repository
+            .update_approval_decision(event.operation_id, ApprovalDecisionKind::Denied)
+            .unwrap_err();
+        assert!(matches!(error, AuditError::Storage(_)), "got {error:?}");
+
+        let recent = repository.list_recent(10).unwrap();
+        assert_eq!(
+            recent[0].approval_decision,
+            Some(ApprovalDecisionKind::AllowOnce),
+            "a failed write must never clear an already-persisted approval record"
+        );
+    }
+
+    /// Installs a trigger that aborts the given statement class on `table` —
+    /// the injected persistence failure the daemon has to fail closed on.
+    fn reject_writes(repository: &AuditRepository, table: &str, when: &str) {
+        let conn = repository
+            .storage
+            .connection()
+            .lock()
+            .expect("storage mutex poisoned");
+        conn.execute_batch(&format!(
+            "CREATE TRIGGER reject_{when}_on_{table} BEFORE {when} ON {table} \
+             BEGIN SELECT RAISE(ABORT, 'injected persistence failure'); END;"
+        ))
+        .expect("trigger installs");
+    }
+
+    fn drop_rejection(repository: &AuditRepository) {
+        let conn = repository
+            .storage
+            .connection()
+            .lock()
+            .expect("storage mutex poisoned");
+        conn.execute_batch(
+            "DROP TRIGGER IF EXISTS reject_INSERT_on_audit_events;
+             DROP TRIGGER IF EXISTS reject_UPDATE_on_audit_events;",
+        )
+        .expect("trigger drops");
+    }
+
+    #[test]
     fn audit_event_shape_never_carries_a_raw_payload_or_target_path_field() {
         // Regression guard: AuditEvent must never grow a field that could
         // carry secret material or full project source contents (see
