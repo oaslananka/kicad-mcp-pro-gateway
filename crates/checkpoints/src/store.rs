@@ -402,7 +402,7 @@ mod tests {
 
         let workspace_dir = tempfile::tempdir().unwrap();
         std::fs::write(workspace_dir.path().join("board.kicad_pcb"), "v1").unwrap();
-        let checkpoints_root = workspace_dir.path().join(".companion-checkpoints");
+        let checkpoints_root = workspace_dir.path().join(".gateway-checkpoints");
         std::fs::create_dir_all(&checkpoints_root).unwrap();
 
         let workspace = WorkspaceAuthorization::new("proj".into(), workspace_dir.path()).unwrap();
@@ -414,7 +414,7 @@ mod tests {
         // checkpoints_root, inside the workspace).
         let second = store.create(&workspace, None, None).unwrap();
 
-        let leaked_nested_copy = second.root_snapshot_path.join(".companion-checkpoints");
+        let leaked_nested_copy = second.root_snapshot_path.join(".gateway-checkpoints");
         assert!(
             !leaked_nested_copy.exists(),
             "second snapshot must not contain the checkpoints root itself"

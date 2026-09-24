@@ -7,13 +7,13 @@ use companion_identity::InMemorySecretStore;
 use companion_protocol::{read_message, write_message, IpcRequest, IpcResponse};
 use interprocess::local_socket::tokio::prelude::*;
 use interprocess::local_socket::{GenericNamespaced, ToNsName};
-use kicad_mcp_companion_daemon::{build_state_with_secret_store, run_runtime};
+use kicad_mcp_gateway_daemon::{build_state_with_secret_store, run_runtime};
 
 fn fresh_dir() -> PathBuf {
     tempfile::tempdir().unwrap().keep()
 }
 
-fn build_test_state(data_dir: PathBuf) -> Arc<kicad_mcp_companion_daemon::state::DaemonState> {
+fn build_test_state(data_dir: PathBuf) -> Arc<kicad_mcp_gateway_daemon::state::DaemonState> {
     let cfg = config::load(CliOverrides {
         data_dir: Some(data_dir),
         core_bridge_endpoint: Some("http://127.0.0.1:1/mcp".into()),

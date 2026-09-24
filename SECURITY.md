@@ -1,6 +1,6 @@
 # Security Policy
 
-KiCad MCP Pro Companion is a security boundary by design: it decides
+KiCad MCP Pro Gateway is a security boundary by design: it decides
 whether a remote AI agent or cloud service may operate on a user's local
 KiCad MCP Pro installation. Its threat model is documented in
 [`docs/security/threat-model.md`](docs/security/threat-model.md) and its
@@ -22,7 +22,7 @@ Please **do not** open a public GitHub issue for a suspected vulnerability.
 
 Instead, use GitHub's private vulnerability reporting for this repository
 (Security tab → "Report a vulnerability"), or open a
-[GitHub Security Advisory](https://github.com/oaslananka/kicad-mcp-pro-companion/security/advisories/new).
+[GitHub Security Advisory](https://github.com/oaslananka/kicad-mcp-pro-gateway/security/advisories/new).
 
 Please include:
 

@@ -1381,7 +1381,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kicad-mcp-companion-cli"
+name = "kicad-mcp-gateway-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1394,7 +1394,7 @@ dependencies = [
  "companion-storage",
  "companion-workspace",
  "interprocess",
- "kicad-mcp-companion-daemon",
+ "kicad-mcp-gateway-daemon",
  "serde_json",
  "tempfile",
  "time",
@@ -1402,7 +1402,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kicad-mcp-companion-daemon"
+name = "kicad-mcp-gateway-daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",

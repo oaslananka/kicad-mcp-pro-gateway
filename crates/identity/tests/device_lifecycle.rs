@@ -50,7 +50,7 @@ fn sign_produces_a_signature_verifiable_against_the_public_key() {
     let store = store();
     let identity = store.create("dev-machine").unwrap();
 
-    let message = b"hello companion";
+    let message = b"hello gateway";
     let signature = store.sign(message).unwrap();
 
     let verifying_key = VerifyingKey::from_bytes(&identity.public_key.0).unwrap();

@@ -1,4 +1,4 @@
-//! The versioned Companion transport envelope. See `docs/protocol/README.md`
+//! The versioned Gateway transport envelope. See `docs/protocol/README.md`
 //! for the full message type registry and security notes. This is a wire
 //! format, not a trust decision: everything received in an envelope is
 //! untrusted input until session/policy validation says otherwise.

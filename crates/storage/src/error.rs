@@ -8,7 +8,7 @@ pub enum StorageError {
     #[error("migration failed: {0}")]
     MigrationFailed(String),
 
-    #[error("another companion instance is already running against this data directory")]
+    #[error("another Gateway instance is already running against this data directory")]
     AnotherInstanceRunning,
 
     #[error("io error: {0}")]

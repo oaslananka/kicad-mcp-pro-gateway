@@ -93,10 +93,10 @@ impl CompanionError for ConfigError {
 const DEFAULT_LOG_LEVEL: &str = "info";
 const DEFAULT_CORE_BRIDGE_ENDPOINT: &str = "http://127.0.0.1:3334/mcp";
 const DEFAULT_TRANSPORT_MODE: TransportMode = TransportMode::Disabled;
-const ENV_DATA_DIR: &str = "COMPANION_DATA_DIR";
-const ENV_LOG_LEVEL: &str = "COMPANION_LOG_LEVEL";
-const ENV_CORE_BRIDGE_ENDPOINT: &str = "COMPANION_CORE_BRIDGE_ENDPOINT";
-const ENV_TRANSPORT_MODE: &str = "COMPANION_TRANSPORT_MODE";
+const ENV_DATA_DIR: &str = "GATEWAY_DATA_DIR";
+const ENV_LOG_LEVEL: &str = "GATEWAY_LOG_LEVEL";
+const ENV_CORE_BRIDGE_ENDPOINT: &str = "GATEWAY_CORE_BRIDGE_ENDPOINT";
+const ENV_TRANSPORT_MODE: &str = "GATEWAY_TRANSPORT_MODE";
 
 /// Production entry point: layers real process environment variables under
 /// `overrides`.
@@ -198,7 +198,7 @@ fn resolved_data_dir(overrides: &CliOverrides, env: &HashMap<String, String>) ->
 fn default_data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("kicad-mcp-companion")
+        .join("kicad-mcp-gateway")
 }
 
 #[cfg(test)]
@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn missing_config_file_uses_defaults() {
         let dir = std::env::temp_dir().join(format!(
-            "companion-config-missing-{}-{}",
+            "gateway-config-missing-{}-{}",
             std::process::id(),
             ulid::Ulid::new()
         ));
@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn load_with_env_reads_config_from_resolved_data_dir() {
         let dir = std::env::temp_dir().join(format!(
-            "companion-config-test-{}-{}",
+            "gateway-config-test-{}-{}",
             std::process::id(),
             ulid::Ulid::new()
         ));

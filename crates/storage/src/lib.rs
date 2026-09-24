@@ -1,5 +1,5 @@
 //! `companion-storage`: SQLite persistence and migrations for all
-//! non-secret Companion state (device metadata, workspaces, sessions,
+//! non-secret Gateway state (device metadata, workspaces, sessions,
 //! approvals, audit events, settings, checkpoints).
 //!
 //! Private key material is never persisted here — see
