@@ -1,108 +1,115 @@
-# Release Engineering & Code Signing Procedures
+# Release Engineering and Manual QA
 
-This document outlines the automated release pipeline, signing readiness configuration, and manual QA procedures for KiCad MCP Pro Gateway releases.
+This document describes the release artifacts that the current workflow
+actually produces and the manual checks required before a release candidate is
+promoted. The supported platform baseline is maintained only in the
+[canonical compatibility matrix](../architecture/compatibility-matrix.md).
 
-## Release Pipeline Overview
+## Automated Release Pipeline
 
-Releases are triggered automatically when a version tag matching `v*` (e.g., `v0.1.0-rc1` or `v0.1.0`) is pushed to GitHub.
+A tag matching `v*` pushed to GitHub starts
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml). The
+workflow performs exactly these steps:
 
-Workflow file: `.github/workflows/release.yml`
-
-### Pipeline Stages
-
-1. **Build Binaries**: Compiles release binaries for CLI (`kicad-mcp-gateway`, package `kicad-mcp-gateway-cli`) and Daemon (`kicad-mcp-gateway-daemon`) on:
+1. **Build binaries:** release builds of the CLI (`kicad-mcp-gateway`) and
+   daemon (`kicad-mcp-gateway-daemon`) for:
    - Linux `x86_64-unknown-linux-gnu`
    - macOS `aarch64-apple-darwin`
    - Windows `x86_64-pc-windows-msvc`
-2. **Package Artifacts**: Packages binaries alongside `README.md` and `LICENSE` into `.tar.gz` (Linux/macOS) and `.zip` (Windows) archives.
-3. **Consolidate & Checksum**: Collects all platform archives, computes cryptographic SHA-256 checksums (`SHA256SUMS.txt`).
-4. **Publish Release**: Uploads artifacts and checksums to a GitHub Release with automatically generated release notes.
+2. **Package archives:** each archive contains the two binaries, `README.md`,
+   and `LICENSE`. Linux/macOS use `.tar.gz`; Windows uses `.zip`.
+3. **Consolidate and checksum:** the workflow copies the archives to `dist/` and
+   writes `SHA256SUMS.txt`.
+4. **Publish:** GitHub CLI creates a GitHub Release for the tag, uploads the
+   archives and checksum file, and generates release notes.
 
----
+### Not produced by the current workflow
 
-## Code Signing & Notarization Readiness
+There is currently **no** automated desktop/app bundle, AppImage, `.deb`, DMG,
+`.app`, MSI, or NSIS installer. There is also no macOS code-signing or
+notarization step, Windows Authenticode signing, SBOM generation, artifact
+attestation, release validation gate, or uninstaller. These are future work
+that requires reviewed workflow changes; repository configuration or a
+checklist item is not evidence that they are implemented.
 
-Production releases on macOS and Windows require code signing to prevent OS gatekeeper/smartscreen warnings.
+The release archives are unsigned. Users must verify the published
+`SHA256SUMS.txt`; they must not expect platform trust prompts or an installer
+to be resolved by this workflow.
 
-### macOS (Apple Developer ID)
+## Manual Release-Candidate Verification
 
-For macOS releases, code signing and Apple notarization require the following GitHub Secrets:
+Before promoting a tag, verify the following on clean test machines for the
+three supported platform targets. These checks validate the archives, not an
+installer or a production hosted relay.
 
-- `APPLE_CERTIFICATE`: Base64-encoded Developer ID Application `.p12` certificate.
-- `APPLE_CERTIFICATE_PASSWORD`: Password for the `.p12` certificate.
-- `APPLE_NOTARIZATION_USERNAME`: Apple ID email address.
-- `APPLE_NOTARIZATION_PASSWORD`: App-specific password generated at appleid.apple.com.
-- `APPLE_TEAM_ID`: 10-character Apple Developer Team ID.
+1. **Artifact integrity:** download the release archives and `SHA256SUMS.txt`;
+   run `sha256sum -c SHA256SUMS.txt` (or the platform equivalent) and confirm
+   the expected CLI and daemon files are present.
+2. **First launch and identity:** extract the archive, start
+   `kicad-mcp-gateway-daemon` or the CLI, and confirm the Device ID is stored
+   in the platform's native secret store (Secret Service, Keychain, or DPAPI).
+   There is no installer or service auto-start to verify.
+3. **Core detection:** with the approved local environment from the
+   compatibility matrix, run `kicad-mcp-gateway setup` or
+   `kicad-mcp-gateway status` and confirm the core-bridge detection result.
+4. **Workspace containment:** authorize a KiCad project directory and verify a
+   relative `../` path escape is denied.
+5. **Policy enforcement:** run a classified read-only operation (for example
+   `pcb_get_layers`) and confirm the audit event is recorded. Confirm an
+   unclassified tool is denied.
+6. **High-risk approval:** start a high-risk operation and confirm it remains
+   blocked until explicit local approval.
+7. **Session controls:** exercise revocation using the in-process test
+   transport. A production hosted relay is not part of this repository.
+8. **Data cleanup:** remove the test data directory using the documented
+   platform path and confirm the expected files are removed. There is no
+   automated uninstaller to test.
 
-When these secrets are provided, the Tauri build and macOS binary steps sign the executables with `codesign` and submit the final app bundle to `xcrun notarytool`.
+### Platform-specific archive checks
 
-### Windows (Authenticode)
+| Platform | Archive | Required check |
+|---|---|---|
+| Ubuntu / Linux `x86_64` | `.tar.gz` | Extract outside any prior data directory, launch both binaries, and verify Secret Service-backed identity storage. |
+| macOS Apple Silicon (`aarch64`) | `.tar.gz` | Extract and launch both binaries; record the expected unsigned-binary Gatekeeper behavior and verify Keychain-backed identity storage. Do not require a notarization ticket. |
+| Windows `x86_64` | `.zip` | Extract and launch both `.exe` files; verify DPAPI-backed identity storage. Do not require an Authenticode signature. |
 
-For Windows releases, code signing requires:
-
-- `WINDOWS_PFX_BASE64`: Base64-encoded Code Signing Certificate (`.pfx`).
-- `WINDOWS_PFX_PASSWORD`: Password for the PFX certificate.
-
-Alternatively, Azure Trusted Signing can be configured using `azure/trusted-signing-action`.
-
-*Note: Unsigned release builds produced without these secrets display explicit unsigned notices and must be tested in developer mode.*
-
----
-
-## Manual QA Verification Matrix
-
-Before promoting a release candidate (`v*`) to a stable production release, run the following verification matrix on clean test machines for each supported OS:
-
-### Linux / macOS / Windows Test Flow
-
-1. **Clean Installation**: Ensure no previous config or database exists in `<data_dir>`.
-2. **First Launch & Identity**: Start `kicad-mcp-gateway-daemon` or `kicad-mcp-gateway-desktop`. Confirm Device ID is generated and stored securely in native secret storage (Keyring / Secret Service / DPAPI).
-3. **Setup & Core Detection**: Run `kicad-mcp-gateway setup` or `kicad-mcp-gateway status`. Verify KiCad MCP Pro core bridge detection.
-4. **Workspace Management**: Authorize a KiCad project directory. Attempt relative path escape (`../`) to verify fail-closed path boundary enforcement.
-5. **Pairing & Remote Sessions**: Initiate pairing flow, approve session request, verify session status is Active.
-6. **Read-only Tool Execution**: Execute a classified read-only tool (e.g. `pcb_get_layers`). Confirm execution succeeds and audit log records event.
-7. **High-Risk Operation Approval**: Execute a high-risk tool (e.g. manufacturing Gerber export). Confirm operation is blocked pending explicit user approval.
-8. **Revocation & Reconnect**: Revoke session from desktop/CLI. Attempt reconnection and verify revoked session cannot reactivate.
-
----
-
-## Release Blockers & External Verification Checklists
+## Release Blockers and External Verification Checklists
 
 ### Issue #4 — Upstream Dependency Exception (glib 0.18.5)
-- **Current State:** Tracked in apps/desktop/src-tauri/osv-scanner.toml with expiry 2026-10-31.
+- **Current State:** Tracked in `apps/desktop/src-tauri/osv-scanner.toml` with expiry 2026-10-31.
 - **Constraint:** Constrained by Tauri 2.11 GTK3 stack bindings; no direct VariantStrIter usage in Gateway code.
-- **Verification:** osv_expiry_test in Tauri crate enforces exception freshness on every build.
+- **Verification:** `osv_expiry_test` in the Tauri crate enforces exception freshness on every build.
 - **Next Step:** Re-check upstream Tauri 2.x/3.x GTK updates prior to 2026-10-31.
 
 ### Issue #24 — Real KiCad MCP Pro E2E Integration Checklist
-- [x] Mock MCP core bridge protocol client & server tests (crates/core-bridge/tests/client.rs)
-- [ ] Checked-out upstream kicad-mcp-pro server execution (http://127.0.0.1:3334/mcp)
-- [ ] E2E reconciliation pass against live tool catalog
-- [ ] Real KiCad 10.0.x GUI application driven via Gateway policy boundary
+- [x] Mock MCP core bridge protocol client and server tests (`crates/core-bridge/tests/client.rs`).
+- [ ] Checked-out upstream kicad-mcp-pro server execution (`http://127.0.0.1:3334/mcp`).
+- [ ] E2E reconciliation pass against the live tool catalog.
+- [ ] Real KiCad 10.0.x GUI application driven through the Gateway policy boundary.
 
-### Issue #26 — Clean-Machine Manual QA Verification Checklist
-- [x] Automated installer build workflow in CI
-- [ ] Fresh Ubuntu 24.04 LTS clean machine first-launch validation
-- [ ] Fresh macOS Apple Silicon clean machine first-launch validation
-- [ ] Fresh Windows 11 clean machine first-launch validation
-- [ ] Uninstaller and data-directory cleanup verification
+### Issue #26 — Clean-Machine Archive QA Verification Checklist
+- [x] Automated CLI/daemon archive release workflow.
+- [ ] Fresh Ubuntu 24.04 LTS clean-machine archive validation.
+- [ ] Fresh macOS Apple Silicon clean-machine archive validation.
+- [ ] Fresh Windows clean-machine archive validation.
+- [ ] Manual data-directory cleanup verification.
+- [ ] Installer and uninstaller workflows (not implemented).
 
-### Issue #34 — Production Code Signing & Notarization Checklist
-- [x] Workflow parameters and secret integration hooks in .github/workflows/release.yml
-- [ ] Apple Developer ID .p12 certificate secret configured (APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD)
-- [ ] Apple Notarization credentials configured (APPLE_NOTARIZATION_USERNAME, APPLE_NOTARIZATION_PASSWORD, APPLE_TEAM_ID)
-- [ ] Windows Code Signing Certificate configured (WINDOWS_PFX_BASE64, WINDOWS_PFX_PASSWORD or Azure Trusted Signing)
-- [ ] Verification of signed binary signatures via codesign --verify and signtool verify
+### Issue #34 — Production Signing and Notarization Checklist
+- [ ] Add a reviewed macOS `codesign` and `notarytool` workflow.
+- [ ] Add a reviewed Windows Authenticode or Trusted Signing workflow.
+- [ ] Verify signatures in release QA once those workflows exist.
 
 ### Issue #36 — Release Candidate Readiness Checklist
-- [x] Verified release gate in .github/workflows/release.yml (validate-release)
-- [x] Multi-platform release binary & installer build jobs
-- [x] SPDX SBOM generation (generate-sbom)
-- [x] GitHub Artifact Attestations (attest-artifacts via actions/attest-build-provenance@v2)
-- [ ] Maintainer explicit release tag trigger (e.g. v0.1.0-rc.1)
+- [x] Tag-triggered release workflow in `.github/workflows/release.yml`.
+- [x] Multi-platform CLI/daemon binary archive jobs.
+- [x] SHA-256 checksum generation.
+- [ ] Add installer/app-bundle jobs if they become a release requirement.
+- [ ] Add SBOM generation and artifact attestations if required for release.
+- [ ] Maintainer explicit release tag trigger (for example `v0.1.0-rc.1`).
 
 ### Issue #39 — Final Stable V1 Sign-off Checklist
-- [x] Security invariants verified and tested
-- [x] Fail-closed policy, workspace boundary, and session revocation tests passing
-- [ ] Resolution of all open release blockers (#4, #24, #26, #34, #36)
-- [ ] Official release tag trigger (v1.0.0) and production release publication
+- [x] Security invariants verified and tested.
+- [x] Fail-closed policy, workspace boundary, and session-revocation tests passing.
+- [ ] Resolution of all open release blockers (#4, #24, #26, #34, #36).
+- [ ] Official release tag trigger (`v1.0.0`) and production release publication.
