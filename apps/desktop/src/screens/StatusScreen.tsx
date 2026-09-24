@@ -7,7 +7,7 @@ export default function StatusScreen() {
 
   return (
     <div>
-      <h2>KiCad MCP Pro Companion</h2>
+      <h2>KiCad MCP Pro Gateway</h2>
 
       {error && <div className="error-banner">Daemon not reachable: {error}</div>}
 

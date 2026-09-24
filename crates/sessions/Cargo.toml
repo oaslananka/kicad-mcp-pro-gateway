@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "The explicit session state machine and session persistence for KiCad MCP Pro Companion."
+description = "The explicit session state machine and session persistence for KiCad MCP Pro Gateway."
 
 [dependencies]
 companion-core = { path = "../core" }

@@ -37,10 +37,10 @@ without a policy `Allow`.
 
 | Boundary | Data that crosses | Data that must NOT cross |
 |---|---|---|
-| Cloud ⇄ Companion transport | Envelopes: pairing messages, session requests, `OperationRequest`/`OperationResult`, heartbeats | Private key material, raw project file contents beyond what a tool result legitimately returns, unrelated workspace paths |
-| Companion daemon ⇄ Desktop/CLI (local IPC) | Status, session/workspace/audit views, approval decisions | Private key material, raw secrets/tokens |
-| Companion ⇄ kicad-mcp-pro (loopback MCP) | `initialize`, `tools/list`, `tools/call` for the single authorized operation, with correlation id | Nothing about other sessions/workspaces; the bridge only ever performs the one operation policy allowed |
-| Companion ⇄ SQLite | Device metadata (public), workspaces, sessions, approvals, audit, checkpoint metadata, settings | Private key material (goes through `SecretStore`, never the DB) |
+| Cloud ⇄ Gateway transport | Envelopes: pairing messages, session requests, `OperationRequest`/`OperationResult`, heartbeats | Private key material, raw project file contents beyond what a tool result legitimately returns, unrelated workspace paths |
+| Gateway daemon ⇄ Desktop/CLI (local IPC) | Status, session/workspace/audit views, approval decisions | Private key material, raw secrets/tokens |
+| Gateway ⇄ kicad-mcp-pro (loopback MCP) | `initialize`, `tools/list`, `tools/call` for the single authorized operation, with correlation id | Nothing about other sessions/workspaces; the bridge only ever performs the one operation policy allowed |
+| Gateway ⇄ SQLite | Device metadata (public), workspaces, sessions, approvals, audit, checkpoint metadata, settings | Private key material (goes through `SecretStore`, never the DB) |
 
 ## Local-only data (never leaves the machine by default)
 

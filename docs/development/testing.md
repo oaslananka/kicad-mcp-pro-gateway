@@ -1,6 +1,6 @@
 # Testing
 
-Companion is a security boundary, so it is test-heavy by requirement, not by
+Gateway is a security boundary, so it is test-heavy by requirement, not by
 preference. Prefer TDD: write the failing test first, especially for policy,
 session-state, and workspace-boundary code.
 
@@ -108,7 +108,7 @@ endpoint, then run the ignored probe:
 
 ```bash
 KICAD_MCP_LIVE_ENDPOINT=http://127.0.0.1:3334/mcp \
-  cargo test -p kicad-mcp-companion-daemon \
+  cargo test -p kicad-mcp-gateway-daemon \
   --test tool_reconciliation \
   live_core_can_be_reconciled_without_granting_unknown_tools \
   -- --ignored --nocapture

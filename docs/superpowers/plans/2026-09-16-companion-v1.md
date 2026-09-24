@@ -1,5 +1,14 @@
 # KiCad MCP Pro Companion V1 Implementation Plan
 
+> **Historical record — product naming.** This document was written in
+> September 2026 under the project's former name, *KiCad MCP Pro Companion*
+> (`kicad-mcp-pro-companion`). The project is now **KiCad MCP Pro Gateway**
+> (`kicad-mcp-pro-gateway`). The original text and filenames are preserved
+> unchanged as design history: names, paths, and identifiers inside are the
+> historical ones, not current ones. Current naming and the compatibility
+> decision live in
+> [`docs/development/identity-migration.md`](../../development/identity-migration.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the local trust-boundary core of KiCad MCP Pro Companion —

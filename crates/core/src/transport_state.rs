@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// State of the Companion-to-relay transport pipe itself. This is
+/// State of the Gateway-to-relay transport pipe itself. This is
 /// independent of any session's authorization state — see
 /// `docs/security/trust-boundaries.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -12,7 +12,7 @@ vi.mock("../../api/client", () => ({
 describe("SettingsScreen", () => {
   it("renders configuration details when loaded successfully", async () => {
     vi.mocked(api.getConfig).mockResolvedValueOnce({
-      data_dir: "/home/user/.local/share/kicad-mcp-companion",
+      data_dir: "/home/user/.local/share/kicad-mcp-gateway",
       log_level: "info",
       core_bridge_endpoint: "http://127.0.0.1:4444/mcp",
       transport_mode: "disabled",
@@ -23,7 +23,7 @@ describe("SettingsScreen", () => {
     expect(screen.getByText("Loading configuration...")).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText("/home/user/.local/share/kicad-mcp-companion")).toBeInTheDocument();
+      expect(screen.getByText("/home/user/.local/share/kicad-mcp-gateway")).toBeInTheDocument();
     });
 
     expect(screen.getByText("info")).toBeInTheDocument();

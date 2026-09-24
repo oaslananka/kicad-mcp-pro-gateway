@@ -1,7 +1,7 @@
 //! CLI <-> daemon local IPC integration tests. The daemon runs in-process
-//! (via `kicad_mcp_companion_daemon::run`) against a temp data directory,
+//! (via `kicad_mcp_gateway_daemon::run`) against a temp data directory,
 //! and the CLI's own `ipc_client` is used to talk to it — exactly the path
-//! the real `kicad-mcp-companion` binary takes.
+//! the real `kicad-mcp-gateway` binary takes.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -10,8 +10,8 @@ use companion_core::config::{self, CliOverrides};
 use companion_core_bridge::MockMcpServer;
 use companion_identity::InMemorySecretStore;
 use companion_protocol::{IpcRequest, IpcResponse};
-use kicad_mcp_companion_cli::ipc_client::send_request;
-use kicad_mcp_companion_daemon::{build_state_with_secret_store, ipc_server};
+use kicad_mcp_gateway_cli::ipc_client::send_request;
+use kicad_mcp_gateway_daemon::{build_state_with_secret_store, ipc_server};
 
 async fn wait_for_daemon(data_dir: &Path) {
     for _ in 0..100 {
@@ -37,7 +37,7 @@ fn spawn_test_daemon(cfg: companion_core::CompanionConfig) {
 }
 
 fn run_setup_cli(data_dir: &Path) -> String {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_kicad-mcp-companion"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_kicad-mcp-gateway"))
         .arg("--data-dir")
         .arg(data_dir)
         .arg("setup")

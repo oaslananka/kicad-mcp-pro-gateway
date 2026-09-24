@@ -3,7 +3,7 @@
 //! This is deliberately a *minimal* client surface (`initialize`,
 //! `tools/list`, `tools/call`) rather than a full MCP SDK: kicad-mcp-pro's
 //! documented contract at the time of writing needs only these three
-//! methods for Companion's purposes, and a smaller surface is easier to
+//! methods for Gateway's purposes, and a smaller surface is easier to
 //! keep correct and audited. See `docs/protocol/README.md`.
 
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -56,7 +56,7 @@ impl CoreBridgeClient {
     }
 
     /// Performs the MCP `initialize` handshake. Returns the raw server
-    /// `result` payload — Companion does not need to interpret every field
+    /// `result` payload — Gateway does not need to interpret every field
     /// of it, only that the call succeeded.
     pub async fn initialize(
         &self,
@@ -65,7 +65,7 @@ impl CoreBridgeClient {
         let params = json!({
             "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": { "name": "kicad-mcp-pro-companion", "version": env!("CARGO_PKG_VERSION") },
+            "clientInfo": { "name": "kicad-mcp-pro-gateway", "version": env!("CARGO_PKG_VERSION") },
         });
         self.send("initialize", params, correlation_id).await
     }
