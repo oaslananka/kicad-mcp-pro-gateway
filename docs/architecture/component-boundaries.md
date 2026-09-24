@@ -5,12 +5,12 @@
 | Project | Owns | Does NOT own |
 |---|---|---|
 | `kicad-mcp-pro` (external, unmodified) | What can be done inside KiCad: schematic/PCB tools, ERC/DRC, manufacturing export, MCP tool surface | Who may invoke it, from where, under what authorization |
-| `kicad-mcp-pro-companion` (this repo) | Device identity, pairing (client side), session lifecycle, workspace authorization, capability policy, risk classification, approvals, audit, checkpoints, secure transport (client side) | KiCad domain logic of any kind; the hosted cloud control plane |
-| Future private cloud service | Accounts, device registry, hosted relay, cloud workspaces, billing, collaboration/teams | The local trust boundary — it is always treated as **untrusted input** by Companion |
+| `kicad-mcp-pro-gateway` (this repo) | Device identity, pairing (client side), session lifecycle, workspace authorization, capability policy, risk classification, approvals, audit, checkpoints, secure transport (client side) | KiCad domain logic of any kind; the hosted cloud control plane |
+| Future private cloud service | Accounts, device registry, hosted relay, cloud workspaces, billing, collaboration/teams | The local trust boundary — it is always treated as **untrusted input** by Gateway |
 
-Companion must never grow KiCad-specific tool logic. If a change requires
+Gateway must never grow KiCad-specific tool logic. If a change requires
 knowing *how* to edit a schematic, it belongs in kicad-mcp-pro. If a change
-requires knowing *whether* a request is allowed, it belongs in Companion.
+requires knowing *whether* a request is allowed, it belongs in Gateway.
 
 ## Internal crate/app boundaries
 

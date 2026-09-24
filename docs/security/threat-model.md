@@ -13,8 +13,8 @@
 | Actor | Trust | Rationale |
 |---|---|---|
 | Local user (via desktop UI / CLI) | Trusted | Physical/session access to the machine; the only actor who can approve, pause, revoke |
-| Companion daemon | Trusted, authoritative | Owns and enforces the policy boundary |
-| kicad-mcp-pro (local) | Trusted for its own domain, not for authorization | It executes what Companion forwards; it does not decide what's allowed |
+| Gateway daemon | Trusted, authoritative | Owns and enforces the policy boundary |
+| kicad-mcp-pro (local) | Trusted for its own domain, not for authorization | It executes what Gateway forwards; it does not decide what's allowed |
 | Cloud relay / remote AI agent | **Untrusted input**, always | Everything arriving over the transport is treated as attacker-controlled until proven otherwise by session + policy checks |
 | Another local process on the same machine | Partially untrusted | Local IPC must not be reachable by an arbitrary unauthenticated local process with no relationship to the daemon's state directory |
 

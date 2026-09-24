@@ -5,11 +5,11 @@
 [workspace]
 
 [package]
-name = "kicad-mcp-companion-desktop"
+name = "kicad-mcp-gateway-desktop"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
-description = "KiCad MCP Pro Companion desktop shell. Talks only to the daemon's local IPC API."
+description = "KiCad MCP Pro Gateway desktop shell. Talks only to the daemon's local IPC API."
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -24,5 +24,5 @@ companion-protocol = { path = "../../../crates/protocol" }
 companion-core = { path = "../../../crates/core" }
 
 [[bin]]
-name = "kicad-mcp-companion-desktop"
+name = "kicad-mcp-gateway-desktop"
 path = "src/main.rs"

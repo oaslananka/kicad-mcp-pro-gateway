@@ -1,5 +1,14 @@
 # KiCad MCP Pro Companion — V1 Design Spec
 
+> **Historical record — product naming.** This document was written in
+> September 2026 under the project's former name, *KiCad MCP Pro Companion*
+> (`kicad-mcp-pro-companion`). The project is now **KiCad MCP Pro Gateway**
+> (`kicad-mcp-pro-gateway`). The original text and filenames are preserved
+> unchanged as design history: names, paths, and identifiers inside are the
+> historical ones, not current ones. Current naming and the compatibility
+> decision live in
+> [`docs/development/identity-migration.md`](../../development/identity-migration.md).
+
 Status: approved architectural direction (see project principles below).
 This spec is the source of truth the implementation plan
 (`docs/superpowers/plans/2026-09-16-companion-v1.md`) argues from.

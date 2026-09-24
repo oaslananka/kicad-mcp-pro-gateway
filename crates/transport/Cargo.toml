@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Transport abstraction, mock transport, and reconnect/backoff for KiCad MCP Pro Companion. No production cloud transport lives here yet."
+description = "Transport abstraction, mock transport, and reconnect/backoff for KiCad MCP Pro Gateway. No production cloud transport lives here yet."
 
 [dependencies]
 companion-core = { path = "../core" }

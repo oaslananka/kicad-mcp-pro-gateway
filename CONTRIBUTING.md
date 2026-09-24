@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in KiCad MCP Pro Companion. This project is a
+Thanks for your interest in KiCad MCP Pro Gateway. This project is a
 security boundary, so contributions are held to a higher testing bar than a
 typical feature repo — see [`docs/development/testing.md`](docs/development/testing.md)
 before opening a PR that touches `crates/policy`, `crates/sessions`,
@@ -13,8 +13,8 @@ installed automatically by `rustup` on first build), and, once
 `apps/desktop` exists, Node.js + pnpm for the frontend.
 
 ```bash
-git clone https://github.com/oaslananka/kicad-mcp-pro-companion.git
-cd kicad-mcp-pro-companion
+git clone https://github.com/oaslananka/kicad-mcp-pro-gateway.git
+cd kicad-mcp-pro-gateway
 cp .env.example .env
 cargo build --workspace
 cargo test --workspace

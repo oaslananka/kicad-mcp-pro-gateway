@@ -10,7 +10,7 @@ use companion_identity::InMemorySecretStore;
 use companion_protocol::{IpcRequest, IpcResponse};
 use companion_sessions::new_unpaired_session;
 use companion_workspace::WorkspaceAuthorization;
-use kicad_mcp_companion_daemon::{build_state_with_secret_store, handlers};
+use kicad_mcp_gateway_daemon::{build_state_with_secret_store, handlers};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -18,7 +18,7 @@ fn build_test_state(
     endpoint: String,
 ) -> (
     tempfile::TempDir,
-    Arc<kicad_mcp_companion_daemon::state::DaemonState>,
+    Arc<kicad_mcp_gateway_daemon::state::DaemonState>,
 ) {
     let data_dir = tempfile::tempdir().unwrap();
     let cfg = config::load(CliOverrides {
@@ -33,7 +33,7 @@ fn build_test_state(
 }
 
 async fn status(
-    state: &Arc<kicad_mcp_companion_daemon::state::DaemonState>,
+    state: &Arc<kicad_mcp_gateway_daemon::state::DaemonState>,
 ) -> companion_protocol::DaemonStatusView {
     match handlers::handle_request(state, IpcRequest::Status).await {
         IpcResponse::Status(view) => view,

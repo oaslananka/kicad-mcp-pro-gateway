@@ -3,13 +3,13 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use companion_core::config::{self, CliOverrides};
 use companion_protocol::{IpcRequest, IpcResponse};
-use kicad_mcp_companion_cli::ipc_client::{ok_or_bail, send_request};
+use kicad_mcp_gateway_cli::ipc_client::{ok_or_bail, send_request};
 
 #[derive(Parser)]
 #[command(
-    name = "kicad-mcp-companion",
+    name = "kicad-mcp-gateway",
     version,
-    about = "KiCad MCP Pro Companion CLI"
+    about = "KiCad MCP Pro Gateway CLI"
 )]
 struct Cli {
     /// Override the data directory (defaults to the platform data dir / env / config).
@@ -114,7 +114,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_setup(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
-    println!("KiCad MCP Pro Companion\n");
+    println!("KiCad MCP Pro Gateway\n");
     std::fs::create_dir_all(&cfg.data_dir)?;
     println!(
         "\u{2713} local data directory ready ({})",
@@ -128,7 +128,7 @@ async fn run_setup(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> 
                 if status.device_fingerprint.is_some() {
                     println!("\u{2713} secure device identity ready");
                 } else {
-                    println!("\u{2717} no device identity yet \u{2014} run `kicad-mcp-companion pair` after starting the daemon");
+                    println!("\u{2717} no device identity yet \u{2014} run `kicad-mcp-gateway pair` after starting the daemon");
                 }
                 println!(
                     "{} KiCad MCP Pro {}",
@@ -147,7 +147,7 @@ async fn run_setup(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> 
             println!("\u{2713} local daemon available");
         }
         Err(_) => {
-            println!("\u{2717} local daemon not reachable \u{2014} run `kicad-mcp-companion daemon start` first");
+            println!("\u{2717} local daemon not reachable \u{2014} run `kicad-mcp-gateway daemon start` first");
         }
     }
     Ok(())
@@ -167,13 +167,13 @@ async fn daemon_start(cfg: &companion_core::CompanionConfig) -> anyhow::Result<(
         .parent()
         .ok_or_else(|| anyhow::anyhow!("cannot locate sibling daemon binary"))?;
     let daemon_binary = dir.join(if cfg!(windows) {
-        "kicad-mcp-companion-daemon.exe"
+        "kicad-mcp-gateway-daemon.exe"
     } else {
-        "kicad-mcp-companion-daemon"
+        "kicad-mcp-gateway-daemon"
     });
 
     std::process::Command::new(&daemon_binary)
-        .env("COMPANION_DATA_DIR", &cfg.data_dir)
+        .env("GATEWAY_DATA_DIR", &cfg.data_dir)
         .spawn()
         .map_err(|e| {
             anyhow::anyhow!("failed to start daemon at {}: {e}", daemon_binary.display())
@@ -220,7 +220,7 @@ async fn pair(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
 async fn status(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
     let response = ok_or_bail(send_request(&cfg.data_dir, IpcRequest::Status).await?)?;
     if let IpcResponse::Status(view) = response {
-        println!("KiCad MCP Pro Companion\n");
+        println!("KiCad MCP Pro Gateway\n");
         println!(
             "Device: {}",
             view.device_fingerprint

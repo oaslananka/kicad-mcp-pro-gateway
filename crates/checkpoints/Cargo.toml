@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Local safe-snapshot checkpoints for authorized workspaces in KiCad MCP Pro Companion."
+description = "Local safe-snapshot checkpoints for authorized workspaces in KiCad MCP Pro Gateway."
 
 [dependencies]
 companion-core = { path = "../core" }

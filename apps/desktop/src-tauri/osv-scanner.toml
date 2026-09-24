@@ -1,37 +1,41 @@
 # Temporary exceptions for transitive Tauri 2.x Linux/GTK dependencies.
 # Every exception is explicit, justified, and expires so it must be re-reviewed.
+#
+# Last re-review: 2026-09-24 — Tauri updated from 2.11.5 to 2.11.6 (Cargo.lock refreshed).
+# Upstream tauri 2.11.6 was applied as the only available patched path; glib/urlpattern
+# remain constrained by the Tauri 2.x GTK3 stack. See issue OASL-2.
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0429"
-ignoreUntil = 2026-10-31
-reason = "glib 0.18.5 is constrained by Tauri 2.11.5's GTK3 stack; current stable-compatible Tauri has no patched glib >=0.20 path. The desktop code does not directly use VariantStrIter. Re-review Tauri/GTK upstream before expiry."
+ignoreUntil = 2027-06-30
+reason = "glib 0.18.5 is constrained by Tauri 2.x's GTK3 stack; no stable-compatible Tauri 2.x release provides glib >=0.20. Tauri 2.11.6 was applied as the latest upstream patch but does not bump glib. The desktop code does not directly use VariantStrIter. Exploitability: low — requires a privileged GTK process to trigger via VariantStrIter API. Owner: osaslananka@oaslananka.dev. Next expiry: 2027-06-30. Resolution path: upgrade to Tauri 3.x (breaking change) or wait for Tauri 2.x glib >=0.20 support."
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0370"
-ignoreUntil = 2026-12-31
-reason = "INFO/unmaintained proc-macro-error is transitive through GTK3 macros in the current stable Tauri 2.x Linux stack; no direct dependency or patched release exists."
+ignoreUntil = 2027-06-30
+reason = "INFO/unmaintained proc-macro-error is transitive through GTK3 macros (glib-macros) in the Tauri 2.x Linux stack; no direct dependency or patched release exists. Exploitability: negligible — proc-macro-error is a build-time only crate, not present in the final binary. Owner: osaslananka@oaslananka.dev. Next expiry: 2027-06-30. Resolution path: upstream glib version bump or removal of glib-macros from the dependency tree."
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0075"
-ignoreUntil = 2026-12-31
-reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency; no patched release exists. Track upstream replacement."
+ignoreUntil = 2027-06-30
+reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency (urlpattern v0.3.0); no patched release exists. Exploitability: low — regex-based pattern matching; potential ReDoS vector if attacker-controlled patterns are accepted. Owner: osaslananka@oaslananka.dev. Next expiry: 2027-06-30. Resolution path: track upstream urlpattern replacement for rust-unic; consider direct regex substitution."
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0080"
-ignoreUntil = 2026-12-31
-reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency; no patched release exists. Track upstream replacement."
+ignoreUntil = 2027-06-30
+reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency (urlpattern v0.3.0); no patched release exists. Exploitability: low — regex-based pattern matching; potential ReDoS vector if attacker-controlled patterns are accepted. Owner: osaslananka@oaslananka.dev. Next expiry: 2027-06-30. Resolution path: track upstream urlpattern replacement for rust-unic; consider direct regex substitution."
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0081"
-ignoreUntil = 2026-12-31
-reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency; no patched release exists. Track upstream replacement."
+ignoreUntil = 2027-06-30
+reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency (urlpattern v0.3.0); no patched release exists. Exploitability: low — regex-based pattern matching; potential ReDoS vector if attacker-controlled patterns are accepted. Owner: osaslananka@oaslananka.dev. Next expiry: 2027-06-30. Resolution path: track upstream urlpattern replacement for rust-unic; consider direct regex substitution."
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0098"
-ignoreUntil = 2026-12-31
-reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency; no patched release exists. Track upstream replacement."
+ignoreUntil = 2027-06-30
+reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency (urlpattern v0.3.0); no patched release exists. Exploitability: low — regex-based pattern matching; potential ReDoS vector if attacker-controlled patterns are accepted. Owner: osaslananka@oaslananka.dev. Next expiry: 2027-06-30. Resolution path: track upstream urlpattern replacement for rust-unic; consider direct regex substitution."
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0100"
-ignoreUntil = 2026-12-31
-reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency; no patched release exists. Track upstream replacement."
+ignoreUntil = 2027-06-30
+reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency (urlpattern v0.3.0); no patched release exists. Exploitability: low — regex-based pattern matching; potential ReDoS vector if attacker-controlled patterns are accepted. Owner: osaslananka@oaslananka.dev. Next expiry: 2027-06-30. Resolution path: track upstream urlpattern replacement for rust-unic; consider direct regex substitution."

@@ -5,7 +5,7 @@
 //!
 //! This is the single strongest proof in the repository of the project's
 //! core claim: a mock remote client cannot call arbitrary KiCad MCP tools
-//! merely because it has network connectivity to Companion.
+//! merely because it has network connectivity to Gateway.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,7 +21,7 @@ use companion_protocol::{
 use companion_transport::{MockTransport, Transport};
 use interprocess::local_socket::tokio::prelude::*;
 use interprocess::local_socket::{GenericNamespaced, ToNsName};
-use kicad_mcp_companion_daemon::{build_state_with_secret_store, ipc_server, remote_processor};
+use kicad_mcp_gateway_daemon::{build_state_with_secret_store, ipc_server, remote_processor};
 use serde_json::json;
 
 async fn send_request(data_dir: &Path, request: IpcRequest) -> IpcResponse {
@@ -60,7 +60,7 @@ async fn full_vertical_slice_from_pairing_through_revocation() {
     // 1. Start fake KiCad MCP test server.
     let fake_kicad = MockMcpServer::start().await;
 
-    // 2-3. Start the Companion daemon (creates/loads device identity lazily).
+    // 2-3. Start the Gateway daemon (creates/loads device identity lazily).
     let data_dir = fresh_dir();
     let cfg = config::load(CliOverrides {
         data_dir: Some(data_dir.clone()),
@@ -105,7 +105,7 @@ async fn full_vertical_slice_from_pairing_through_revocation() {
         other => panic!("unexpected response authorizing workspace: {other:?}"),
     };
 
-    // 5. Connect Companion to MOCK relay.
+    // 5. Connect Gateway to MOCK relay.
     let mock_relay = Arc::new(MockTransport::new());
     mock_relay.connect().await.unwrap();
     tokio::spawn(remote_processor::run_remote_processor(
@@ -255,7 +255,7 @@ async fn full_vertical_slice_from_pairing_through_revocation() {
         "{response:?}"
     );
 
-    // 15. Companion does NOT execute immediately: still only 1 call reached the fake server.
+    // 15. Gateway does NOT execute immediately: still only 1 call reached the fake server.
     assert_eq!(
         fake_kicad.tool_call_count(),
         1,
