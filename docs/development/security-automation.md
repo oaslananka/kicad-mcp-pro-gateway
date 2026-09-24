@@ -1,6 +1,6 @@
 # Repository security automation
 
-This document records the repository-level security and quality automation baseline as of 2026-09-17.
+This document records the repository-level security and quality automation baseline. The GitHub-native `main` quality-gate state was last verified against the live API on 2026-09-24.
 
 ## Enforced in repository workflows
 
@@ -26,9 +26,7 @@ Dependabot is configured weekly for Cargo, `apps/desktop` npm/pnpm dependencies,
 
 ## Mergify
 
-Mergify is already installed for this repository. `.mergify.yml` configures only Merge Protections for `main`: Conventional Commit-style PR titles plus the core Rust, cargo-audit, desktop, Dependency Review, zizmor, and OSV PR checks.
-
-Auto-merge/auto-queue is intentionally not configured. The `auto_merge_conditions` setting is omitted so merging remains an explicit maintainer action.
+Mergify is installed and emits `Mergify Merge Protections`, `Mergify Merge Queue`, and `Summary` check signals. This repository has no checked-in `.mergify.yml`; those signals are informational and none is required by the active `main` ruleset. The repository does not configure Mergify auto-merge or a merge queue in source control, and the quality gate below does not depend on Mergify.
 
 ## SonarQube Cloud
 
@@ -42,20 +40,43 @@ No placeholder project key, fake token, or workflow that claims Sonar is enabled
 
 Scorecard was evaluated but is not enabled in this baseline. As of 2026-09-17, the supported action is v2.4.4 or newer, while an upstream open issue documents that the action's runtime container is referenced by a mutable tag. That weakens the guarantee provided by SHA-pinning the outer action, so the repository does not add that extra supply-chain dependency until the runtime image is immutable/digest-pinned.
 
-## GitHub branch/ruleset enforcement
+## GitHub native `main` quality gate
 
-A repository ruleset named `main quality gate` is staged in GitHub with enforcement set to `disabled` until this baseline is merged to the default branch. It targets `main` and is preconfigured to require pull requests, resolved review threads, the core Rust/desktop/security checks, and `Mergify Merge Protections`; required check sources are pinned to their GitHub App integration IDs. It also blocks force-pushes and deletion when activated. The ruleset intentionally requires zero approving reviews so a single-maintainer repository remains operable, and automatic merging is not enabled by the ruleset. After this baseline is merged and the checks run successfully from `main`, activate the staged ruleset without changing its check set unless a real check name/source has changed.
+The repository ruleset named `main quality gate` (ID `23952106`) is active and targets the default branch, `main`. Its live policy:
 
-## Production Branch Protection & Review Policy (#44)
+- requires every change to `main` to arrive through a pull request;
+- requires zero approving reviews and no named reviewers, so a single maintainer is not forced to self-approve;
+- requires all review threads to be resolved;
+- requires the 12 contexts listed below;
+- blocks force-pushes and branch deletion; and
+- permits merge, squash, and rebase merges, but does not enable automatic merging.
 
-The `main` branch of this repository is protected by GitHub Rulesets and automated quality gates:
+### Required-check inventory
 
-### Quality Gates
-- **Main Quality Gate Ruleset:** Active and enforced on `main`.
-- **Pull Request Requirement:** All changes to `main` must arrive via a pull request.
-- **Required Checks:** CI (`cargo test`, `pnpm test`), CodeQL analysis, OSV security scan, and cargo-audit must pass before merging.
-- **Resolved Review Threads:** All PR conversation threads must be resolved before merging.
-- **Mergify Enforcement:** Auto-merge and queueing are managed via Mergify. PR titles must strictly match Conventional Commit syntax (`type(scope): description`) without slashes in the scope.
+| Source | Integration ID | Context | Definition or producer |
+|---|---:|---|---|
+| GitHub Actions | `15368` | `rust / ubuntu-latest` | `.github/workflows/ci.yml`, `rust` matrix |
+| GitHub Actions | `15368` | `rust / windows-latest` | `.github/workflows/ci.yml`, `rust` matrix |
+| GitHub Actions | `15368` | `rust / macos-latest` | `.github/workflows/ci.yml`, `rust` matrix |
+| GitHub Actions | `15368` | `rust / msrv-1.88` | `.github/workflows/ci.yml`, `msrv` |
+| GitHub Actions | `15368` | `frontend (apps/desktop)` | `.github/workflows/ci.yml`, `frontend` |
+| GitHub Actions | `15368` | `security / cargo-audit` | `.github/workflows/ci.yml`, `security` |
+| GitHub Actions | `15368` | `security / dependency-review` | `.github/workflows/security.yml`, `dependency-review` |
+| GitHub Actions | `15368` | `security / osv-pr / osv-scan` | `.github/workflows/security.yml`, `osv-pr` and its reusable workflow |
+| GitHub Actions | `15368` | `security / zizmor` | `.github/workflows/security.yml`, `workflow-audit` |
+| Semgrep Cloud | `4384945` | `semgrep-cloud-platform/scan` | Semgrep Cloud GitHub App |
+| GitGuardian | `46505` | `GitGuardian Security Checks` | GitGuardian GitHub App |
+| Commit status | not pinned | `Independent Review` | Required commit status; GitHub's API intentionally omits an integration ID for this context |
 
-### Solo Maintainer Rationale
-As a single-maintainer project during the current development phase, mandatory approving reviews are set to zero to avoid self-approval blocking while maintaining automated CI quality gates. Security-critical changes (policy, secret storage, IPC codecs) undergo full automated regression testing in CI before merge.
+The observed CodeQL, full-repository OSV, Socket, Mergify, and Dependabot signals are not part of this required set. CodeQL and full-repository OSV provide additional analysis, Socket supplies informational dependency findings, Mergify supplies coordination signals, and Dependabot is an update actor rather than a pull-request quality gate. Do not add a context to the ruleset until its current workflow or App source has been observed and mapped as above.
+
+### Verification record
+
+Live API state was captured at `2026-09-24T22:42:08Z`:
+
+- The [rulesets index](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/rulesets) returned one ruleset, and [ruleset `23952106`](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/rulesets/23952106) reported `enforcement: active`, the pull-request, required-status-check, deletion, and non-fast-forward rules, and the 12 contexts above.
+- Main commit [`7c6a28b`](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/commits/7c6a28bacd41b2d1050a6942dae46b5cfb63f321/check-runs) had 12 check runs, all successful. All six required contexts that run on a push to `main` were present and successful. The other six are pull-request or external gates and therefore do not report on the main-branch push.
+- [PR #29](https://github.com/oaslananka/kicad-mcp-pro-gateway/pull/29) head [`4202108`](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/commits/4202108c7128e42dfef617fdee1023d2c265ef79/check-runs) reported all 12 current required contexts as successful and had combined status `success`; its [`Independent Review` status](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/commits/4202108c7128e42dfef617fdee1023d2c265ef79/status) also passed. It required no GitHub approving review and merged as main commit `7c6a28b`.
+- The governance verification recorded for this baseline reported that a non-bypass direct-push canary performed earlier on 2026-09-24 was rejected with `GH013` (`Changes must be made through a pull request`) and created no commit. Its message reported the then-current 13-check set; the later live API snapshot above is the source of truth for the present 12-context set.
+
+Revalidate these endpoints before changing the ruleset or this inventory. The live GitHub configuration, not this dated record, remains authoritative.
