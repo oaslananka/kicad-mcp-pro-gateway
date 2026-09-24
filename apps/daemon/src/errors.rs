@@ -18,6 +18,8 @@ pub enum DaemonError {
     SecretStoreUnavailable,
     #[error("session not found")]
     SessionNotFound,
+    #[error("durable audit record could not be persisted ({code}); operation was not executed")]
+    AuditPersistence { code: &'static str },
     #[error("internal error: {0}")]
     Internal(String),
 }
@@ -31,6 +33,10 @@ impl CompanionError for DaemonError {
             DaemonError::Storage(e) => e.code(),
             DaemonError::SecretStoreUnavailable => "IDENTITY_SECRET_STORE_UNAVAILABLE",
             DaemonError::SessionNotFound => "SESSION_NOT_FOUND",
+            // Carries the underlying audit error class (AUDIT_STORAGE /
+            // AUDIT_NOT_FOUND) so a caller can tell an audit-gate refusal
+            // apart from a generic IPC failure.
+            DaemonError::AuditPersistence { code } => code,
             DaemonError::Internal(_) => "IPC_INTERNAL",
         }
     }

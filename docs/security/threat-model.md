@@ -38,6 +38,7 @@
 | T14 | Replay of a captured protocol message | Protocol envelopes carry `message_id`/`correlation_id`/`timestamp`; state-changing message handling is designed for replay detection once a real relay exists (see [protocol/README.md](../protocol/README.md)) |
 | T15 | Arbitrary shell / arbitrary filesystem access via a "convenience" tool mapping | Forbidden outright in V1; not modeled as a capability at all |
 | T16 | Relay traffic intended for another registered device is accepted locally | `session.request` and `operation.request` envelopes must carry the persistent local `device_id`; operation requests are additionally checked against `session.device_id` before policy evaluation can lead to execution |
+| T17 | An operation executes although the audit evidence for it could not be durably recorded | Fail-closed pre-execution audit gate: no `tools/call` and no approval execution without a committed record, reads and writes alike, with approval decisions persisted before execution — see [audit-fail-closed.md](audit-fail-closed.md) |
 
 ## Explicitly out of scope for V1 (tracked, not solved here)
 
