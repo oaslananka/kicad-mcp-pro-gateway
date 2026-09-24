@@ -1,0 +1,37 @@
+# Temporary exceptions for transitive Tauri 2.x Linux/GTK dependencies.
+# Every exception is explicit, justified, and expires so it must be re-reviewed.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = 2026-10-31
+reason = "glib 0.18.5 is constrained by Tauri 2.11.5's GTK3 stack; current stable-compatible Tauri has no patched glib >=0.20 path. The desktop code does not directly use VariantStrIter. Re-review Tauri/GTK upstream before expiry."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = 2026-12-31
+reason = "INFO/unmaintained proc-macro-error is transitive through GTK3 macros in the current stable Tauri 2.x Linux stack; no direct dependency or patched release exists."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0075"
+ignoreUntil = 2026-12-31
+reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency; no patched release exists. Track upstream replacement."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0080"
+ignoreUntil = 2026-12-31
+reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency; no patched release exists. Track upstream replacement."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0081"
+ignoreUntil = 2026-12-31
+reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency; no patched release exists. Track upstream replacement."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0098"
+ignoreUntil = 2026-12-31
+reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency; no patched release exists. Track upstream replacement."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0100"
+ignoreUntil = 2026-12-31
+reason = "INFO/unmaintained rust-unic crate is transitive through Tauri's urlpattern dependency; no patched release exists. Track upstream replacement."

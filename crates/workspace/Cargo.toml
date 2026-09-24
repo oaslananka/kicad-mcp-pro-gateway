@@ -1,0 +1,21 @@
+[package]
+name = "companion-workspace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Authorized workspace records and canonical filesystem path boundary enforcement for KiCad MCP Pro Companion."
+
+[dependencies]
+companion-core = { path = "../core" }
+companion-storage = { path = "../storage" }
+thiserror.workspace = true
+time.workspace = true
+dunce = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"
+dunce = "1"
+proptest.workspace = true

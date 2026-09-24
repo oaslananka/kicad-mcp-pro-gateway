@@ -1,0 +1,1867 @@
+# Maps kicad-mcp-pro MCP tool names to a required capability and a risk
+# classification. Any tool name not listed here is denied by
+# TomlToolRegistry::resolve — there is no fallback allow.
+#
+# Authorization allowlist only. Upstream discovery never grants access.
+# Drift is tracked separately in upstream_tool_snapshot.toml and checked by
+# crates/policy/tests/tool_registry.rs.
+
+[[tool]]
+name = "add_footprint_inner_layer_graphic"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "check_design_for_manufacture"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "check_power_integrity"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "dfm_calculate_manufacturing_cost"
+capability = "manufacturing.read"
+risk = "low"
+
+[[tool]]
+name = "dfm_load_manufacturer_profile"
+capability = "manufacturing.read"
+risk = "low"
+
+[[tool]]
+name = "dfm_run_manufacturer_check"
+capability = "manufacturing.read"
+risk = "low"
+
+[[tool]]
+name = "drc_add_exclusion"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "drc_check_rule_conflicts"
+capability = "drc.run"
+risk = "low"
+
+[[tool]]
+name = "drc_export_rules"
+capability = "drc.run"
+risk = "low"
+
+[[tool]]
+name = "drc_list_exclusions"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "drc_list_rules"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "drc_remove_exclusion"
+capability = "drc.run"
+risk = "normal"
+
+[[tool]]
+name = "drc_rule_create"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "drc_rule_delete"
+capability = "drc.run"
+risk = "normal"
+
+[[tool]]
+name = "drc_rule_enable"
+capability = "drc.run"
+risk = "normal"
+
+[[tool]]
+name = "drc_validate_exclusions"
+capability = "drc.run"
+risk = "low"
+
+[[tool]]
+name = "emc_check_decoupling_placement"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "emc_check_differential_pair_symmetry"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "emc_check_ground_plane_voids"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "emc_check_high_speed_routing_rules"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "emc_check_return_path_continuity"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "emc_check_split_plane_crossing"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "emc_check_via_stitching"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "emc_run_full_compliance"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "erc_list_rules"
+capability = "erc.run"
+risk = "low"
+
+[[tool]]
+name = "erc_reset_rules"
+capability = "erc.run"
+risk = "low"
+
+[[tool]]
+name = "erc_set_rule_severity"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "export_3d_render"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_3d_step"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_bom"
+capability = "manufacturing.export"
+risk = "normal"
+
+[[tool]]
+name = "export_brep"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_drill"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_dxf"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_gencad"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_gerber"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_glb"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_ipc2581"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_ipc_d356"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_manufacturing_package"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_netlist"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_odb"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_pcb_pdf"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_pick_and_place"
+capability = "manufacturing.export"
+risk = "normal"
+
+[[tool]]
+name = "export_ply"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_ps"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_sch_dxf"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_sch_pdf"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_sch_python_bom"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_sch_svg"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_spice_netlist"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_step"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_stepz"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_stl"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_svg"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_u3d"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_vrml"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "export_xao"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "fp_export"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "fp_export_svg"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "fp_get_info"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "fp_upgrade"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "generate_board_constraints"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "get_board_stats"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "get_courtyard_violations"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "get_silk_to_pad_violations"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "get_unconnected_nets"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "jobset_export"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "jobset_list_templates"
+capability = "manufacturing.read"
+risk = "low"
+
+[[tool]]
+name = "jobset_validate"
+capability = "manufacturing.read"
+risk = "low"
+
+[[tool]]
+name = "kicad_capability_parity"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "kicad_create_new_project"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "kicad_get_project_info"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "kicad_get_server_info"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "kicad_get_tools_in_category"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "kicad_get_version"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "kicad_help"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "kicad_list_tool_categories"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "kicad_set_project"
+capability = "workspace.read"
+risk = "low"
+
+[[tool]]
+name = "lib_assign_footprint"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_assign_lcsc_to_symbol"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_bind_part_to_symbol"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_bulk_assign_3d_models"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_certify_footprint"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_check_derating"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_check_sourcing_policy"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_check_stock_availability"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_create_custom_symbol"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_find_alternative_parts"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_generate_footprint_ipc7351"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_generate_symbol_from_pintable"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_get_bom_with_pricing"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_get_component_details"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_get_datasheet_url"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_get_footprint_3d_model"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_get_footprint_info"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_get_symbol_info"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_list_footprints"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_rebuild_index"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_recommend_part"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_remove_3d_model"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_search_components"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_search_footprints"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_search_symbols"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_set_3d_model_path"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "lib_validate_footprint_ipc7351"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "lib_verify_component_contract"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "manufacturing_quality_gate"
+capability = "manufacturing.read"
+risk = "low"
+
+[[tool]]
+name = "mfg_check_import_support"
+capability = "manufacturing.read"
+risk = "low"
+
+[[tool]]
+name = "mfg_correct_cpl_rotations"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "mfg_create_release_evidence"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "mfg_generate_release_manifest"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "mfg_generate_test_plan"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "mfg_panelize"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "pcb_add_barcode"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_bitmap_board_art"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_blind_via"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_circle"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_copper_zone"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_fiducial_marks"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_microvia"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_mounting_holes"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_rectangle"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_segment"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_teardrops"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_test_point"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_text"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_track"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_tracks_bulk"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_via"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_add_zone"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_align_footprints"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_auto_place_by_schematic"
+capability = "pcb.write"
+risk = "high"
+
+[[tool]]
+name = "pcb_auto_place_force_directed"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_begin_commit"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_bga_fanout"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_block_create_from_selection"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_block_list"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_block_place"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_check_creepage_clearance"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_check_test_coverage"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_critique_placement"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_delete_items"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_delete_object"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_drop_commit"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_export_3d_pdf"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "pcb_export_stats"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_board_as_string"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_board_summary"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_design_rules"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_footprint_layers"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_footprints"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_groups"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_impedance_for_trace"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_layers"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_live_edit_state"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_net_statistics"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_nets"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_origin"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_pads"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_ratsnest"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_selection"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_shapes"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_stackup"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_tracks"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_vias"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_get_zones"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_group_by_function"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_highlight_net"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_list_test_points"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_move_component"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_move_footprint"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_net_inspector"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_optimize_test_point_placement"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_place_component"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_place_decoupling_caps"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_placement_quality_gate"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_placement_quality_report"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_push_commit"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_quality_gate"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "pcb_refill_zones"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_revert"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_route_corner_style_gate"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_route_trace"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_save"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_score_placement"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_set_board_outline"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_set_design_rules"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_set_footprint_layer"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_set_keepout_zone"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_set_net_class"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_set_origin"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_set_stackup"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_set_title_block_info"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_stackup_consistency_gate"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_sync_from_schematic"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_transfer_quality_gate"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pcb_upgrade"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "pcb_visual_qa"
+capability = "pcb.read"
+risk = "low"
+
+[[tool]]
+name = "pdn_calculate_voltage_drop"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "pdn_check_copper_weight"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "pdn_generate_power_plane"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "pdn_recommend_decoupling_caps"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "project_assess_edit_impact"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_auto_fix_loop"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "project_design_report"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_design_workflow"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_full_validation_loop"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_gate_trend"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_generate_design_prompt"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_get_design_intent"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_get_design_spec"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_get_next_action"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_import_design_spec"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "project_infer_design_spec"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_list_embedded_files"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_professional_release_gate"
+capability = "manufacturing.read"
+risk = "low"
+
+[[tool]]
+name = "project_quality_gate"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "project_quality_gate_report"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_release_readiness"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_revalidate_after_edit"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "project_set_design_intent"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "project_signoff_report"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "project_validate_design_spec"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "route_apply_ses"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "route_apply_tuning_profile"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "route_autoroute_freerouting"
+capability = "pcb.write"
+risk = "high"
+
+[[tool]]
+name = "route_create_tuning_profile"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "route_differential_pair"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "route_from_pad_to_pad"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "route_list_tuning_profiles"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "route_set_net_class_rules"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "route_single_track"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "route_tune_length"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "route_tune_time_domain"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "run_drc"
+capability = "drc.run"
+risk = "normal"
+
+[[tool]]
+name = "run_erc"
+capability = "erc.run"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_bus"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_bus_wire_entry"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_component"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_global_label"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_hierarchical_label"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_jumper"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_label"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_labels"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_missing_junctions"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_no_connect"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_pin_labels"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_power_symbol"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_sheet_pin"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_symbol"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_add_wire"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_align_to_grid"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_analyze_net_compilation"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_annotate"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_apply_plan"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_auto_place_functional"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_auto_place_symbols"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_auto_resize_sheet"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_autoplace_fields"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_build_circuit"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_check_power_flags"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_cosmetic_score"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_create_sheet"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_delete_label"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_delete_no_connect"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_delete_sheet"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_delete_symbol"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_delete_wire"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_find_free_placement"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_fix_readability"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_get_bounding_boxes"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_get_circuit_ir"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_get_connectivity_graph"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_get_labels"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_get_net_names"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_get_pin_positions"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_get_population_status"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_get_sheet_info"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_get_symbols"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_get_template_info"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_get_wires"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_import_sheet_pins"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_instantiate_template"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_list_sheet_pins"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_list_sheets"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_list_swappable_pins"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_list_templates"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_live_preview"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_modify_label"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_modify_property"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_move_label"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_move_sheet"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_move_symbol"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_normalize_power_orientation"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_normalize_text_sizes"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_plan_from_spec"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_preview_plan"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_reload"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_render_png"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_render_visual_diff"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_resolve_label_overlaps"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_rollback_plan"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_route_wire_between_pins"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_set_dnp"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_set_hop_over"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_set_sheet_size"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_set_title_block_info"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_spread_sheets"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_straighten_wires"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_swap_gates"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_swap_pins"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_trace_net"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "sch_update_properties"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_upgrade"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_verify_plan"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_visual_baseline_compare"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_visual_baseline_set"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "sch_visual_qa"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "sch_wire_sheet_pins"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "schematic_connectivity_gate"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "schematic_design_rule_check"
+capability = "schematic.read"
+risk = "low"
+
+[[tool]]
+name = "schematic_quality_gate"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "si_analyze_high_speed_channel"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "si_bind_interfaces_to_net_classes"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "si_calculate_decoupling_placement"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "si_calculate_trace_impedance"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "si_calculate_trace_width_for_impedance"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "si_check_differential_pair_skew"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "si_check_via_stub"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "si_generate_stackup"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "si_get_solver_capabilities"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "si_list_dielectric_materials"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "si_synthesize_stackup_for_interfaces"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "si_validate_length_matching"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "sim_add_spice_directive"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "sim_add_spice_library"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "sim_assign_spice_model"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "sim_check_stability"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "sim_list_spice_libraries"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "sim_remove_spice_library"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "sim_run_ac_analysis"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "sim_run_dc_sweep"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "sim_run_operating_point"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "sim_run_transient"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "sim_validate_spice_setup"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "studio_push_context"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "sym_export"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "sym_export_svg"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "sym_upgrade"
+capability = "schematic.write"
+risk = "normal"
+
+[[tool]]
+name = "thermal_calculate_via_count"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "thermal_check_copper_pour"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "thermal_simulate_plane_spreading"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "tune_diff_pair_length"
+capability = "pcb.write"
+risk = "normal"
+
+[[tool]]
+name = "validate_design"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "validate_footprints_vs_schematic"
+capability = "validation.run"
+risk = "low"
+
+[[tool]]
+name = "variant_clone"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "variant_create"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "variant_delete"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "variant_diff_bom"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "variant_export_bom"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "variant_export_manufacturing_package"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "variant_export_schematic"
+capability = "manufacturing.export"
+risk = "high"
+
+[[tool]]
+name = "variant_get_component_status"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "variant_list"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "variant_set_active"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "variant_set_component_override"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "vcs_commit_checkpoint"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "vcs_diff_with_checkpoint"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "vcs_init_git"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "vcs_list_checkpoints"
+capability = "project.read"
+risk = "low"
+
+[[tool]]
+name = "vcs_restore_checkpoint"
+capability = "project.write"
+risk = "normal"
+
+[[tool]]
+name = "vcs_tag_release"
+capability = "project.write"
+risk = "normal"

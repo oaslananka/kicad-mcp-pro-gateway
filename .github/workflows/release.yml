@@ -1,0 +1,104 @@
+name: Release Engineering
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+jobs:
+  build-binaries:
+    name: build / ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_suffix: ""
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary_suffix: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_suffix: ".exe"
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master @ 2026-09-17
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Build release CLI & Daemon binaries
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --target "$TARGET" -p kicad-mcp-companion-cli -p kicad-mcp-companion-daemon
+
+      - name: Package binaries
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+          SUFFIX: ${{ matrix.binary_suffix }}
+          OS_NAME: ${{ runner.os }}
+        run: |
+          STAGE_DIR="kicad-mcp-companion-${REF_NAME}-${TARGET}"
+          mkdir -p "$STAGE_DIR"
+          cp "target/${TARGET}/release/companion-cli${SUFFIX}" "$STAGE_DIR/"
+          cp "target/${TARGET}/release/companion-daemon${SUFFIX}" "$STAGE_DIR/"
+          cp README.md LICENSE "$STAGE_DIR/"
+          if [ "$OS_NAME" = "Windows" ]; then
+            7z a "${STAGE_DIR}.zip" "$STAGE_DIR"
+            echo "ARCHIVE_PATH=${STAGE_DIR}.zip" >> "$GITHUB_ENV"
+          else
+            tar -czvf "${STAGE_DIR}.tar.gz" "$STAGE_DIR"
+            echo "ARCHIVE_PATH=${STAGE_DIR}.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: binaries-${{ matrix.target }}
+          path: ${{ env.ARCHIVE_PATH }}
+
+  publish-release:
+    name: publish / github-release
+    needs: [build-binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: release-assets
+
+      - name: Consolidate assets & compute checksums
+        run: |
+          mkdir -p dist
+          find release-assets -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} dist/ \;
+          cd dist
+          sha256sum ./*.tar.gz ./*.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create GitHub Release using CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG_NAME" dist/* \
+            --title "KiCad MCP Pro Companion $TAG_NAME" \
+            --generate-notes

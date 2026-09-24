@@ -1,0 +1,23 @@
+[package]
+name = "companion-sessions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The explicit session state machine and session persistence for KiCad MCP Pro Companion."
+
+[dependencies]
+companion-core = { path = "../core" }
+companion-storage = { path = "../storage" }
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"
+companion-core = { path = "../core", features = ["test-util"] }
+companion-policy = { path = "../policy" }
+companion-workspace = { path = "../workspace" }

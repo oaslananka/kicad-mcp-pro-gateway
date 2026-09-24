@@ -1,0 +1,20 @@
+[package]
+name = "companion-policy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Tool-to-capability resolution and the deterministic policy evaluation engine for KiCad MCP Pro Companion."
+
+[dependencies]
+companion-core = { path = "../core" }
+companion-workspace = { path = "../workspace" }
+thiserror.workspace = true
+serde.workspace = true
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+time.workspace = true
+companion-core = { path = "../core", features = ["test-util"] }

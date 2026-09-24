@@ -1,0 +1,35 @@
+# Rust
+/target/
+**/target/
+Cargo.lock.bak
+
+# Node / frontend
+node_modules/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
+.pnpm-store/
+
+# Local data / secrets
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite3
+.env
+.env.local
+companion.lock
+/data/
+/secrets/
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.pdb
+*.exe
+*.dll

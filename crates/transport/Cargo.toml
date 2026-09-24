@@ -1,0 +1,19 @@
+[package]
+name = "companion-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Transport abstraction, mock transport, and reconnect/backoff for KiCad MCP Pro Companion. No production cloud transport lives here yet."
+
+[dependencies]
+companion-core = { path = "../core" }
+companion-protocol = { path = "../protocol" }
+thiserror.workspace = true
+async-trait = "0.1"
+tokio = { workspace = true, features = ["time", "sync"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["time", "sync", "macros", "rt", "test-util"] }
+serde_json.workspace = true

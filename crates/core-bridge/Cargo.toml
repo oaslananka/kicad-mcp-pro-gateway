@@ -1,0 +1,29 @@
+[package]
+name = "companion-core-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "MCP Streamable HTTP client adapter to the local kicad-mcp-pro server. No KiCad domain logic lives here."
+
+[features]
+test-util = ["dep:tokio"]
+
+[dependencies]
+companion-core = { path = "../core" }
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+url.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { workspace = true, optional = true, features = ["net", "rt", "sync", "io-util"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "sync", "io-util", "macros", "time"] }
+companion-core-bridge = { path = ".", features = ["test-util"] }
+companion-policy = { path = "../policy" }
+companion-workspace = { path = "../workspace" }
+companion-core = { path = "../core", features = ["test-util"] }
+time.workspace = true
+tempfile = "3"

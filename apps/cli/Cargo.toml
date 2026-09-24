@@ -1,0 +1,32 @@
+[package]
+name = "kicad-mcp-companion-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "kicad-mcp-companion: the CLI client for the KiCad MCP Pro Companion daemon."
+
+[[bin]]
+name = "kicad-mcp-companion"
+path = "src/main.rs"
+
+[dependencies]
+companion-core = { path = "../../crates/core" }
+companion-protocol = { path = "../../crates/protocol" }
+clap = { version = "4", features = ["derive"] }
+tokio = { workspace = true, features = ["io-util", "net", "rt", "process"] }
+interprocess = { version = "2", features = ["tokio"] }
+anyhow.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+kicad-mcp-companion-daemon = { path = "../daemon" }
+companion-identity = { path = "../../crates/identity", features = ["test-util"] }
+companion-storage = { path = "../../crates/storage" }
+companion-sessions = { path = "../../crates/sessions" }
+companion-workspace = { path = "../../crates/workspace" }
+companion-core-bridge = { path = "../../crates/core-bridge", features = ["test-util"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+time.workspace = true
+tempfile = "3"
