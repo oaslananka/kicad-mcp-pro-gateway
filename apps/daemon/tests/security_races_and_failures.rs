@@ -154,7 +154,10 @@ async fn revoke_racing_operation_execution_fails_closed() {
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].workspace_id, workspace_id);
     assert_eq!(
-        pending[0].workspace.as_ref().map(|workspace| workspace.display_name.as_str()),
+        pending[0]
+            .workspace
+            .as_ref()
+            .map(|workspace| workspace.display_name.as_str()),
         Some("Test Project")
     );
 
