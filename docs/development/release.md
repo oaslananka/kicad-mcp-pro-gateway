@@ -75,11 +75,10 @@ installer or a production hosted relay.
 
 ## Release Blockers and External Verification Checklists
 
-### Issue #4 — Upstream Dependency Exception (glib 0.18.5)
-- **Current State:** Tracked in `apps/desktop/src-tauri/osv-scanner.toml` with expiry 2026-10-31.
-- **Constraint:** Constrained by Tauri 2.11 GTK3 stack bindings; no direct VariantStrIter usage in Gateway code.
-- **Verification:** `osv_expiry_test` in the Tauri crate enforces exception freshness on every build.
-- **Next Step:** Re-check upstream Tauri 2.x/3.x GTK updates prior to 2026-10-31.
+### Issue #4 — GTK3 / glib Compatibility Set
+- **Current State:** Tauri 2.11.x still constrains its Linux GTK3 stack to gtk-rs package versions that normally resolve glib 0.18. The reviewed compatibility set in `apps/desktop/src-tauri/vendor/compat` preserves those package versions while rebasing gtk-rs-core dependencies to glib 0.20; `Cargo.lock` contains no glib 0.18 package and the vulnerability is not suppressed.
+- **Verification:** `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --locked` and the same command under Rust 1.88 pass; `cargo tree` shows glib 0.20 only; OSV remains fail-closed for new vulnerabilities.
+- **Next Step:** Remove the compatibility set when Tauri publishes a release whose Linux stack resolves maintained gtk-rs/glib versions directly.
 
 ### Issue #24 — Real KiCad MCP Pro E2E Integration Checklist
 - [x] Mock MCP core bridge protocol client and server tests (`crates/core-bridge/tests/client.rs`).
@@ -111,5 +110,5 @@ installer or a production hosted relay.
 ### Issue #39 — Final Stable V1 Sign-off Checklist
 - [x] Security invariants verified and tested.
 - [x] Fail-closed policy, workspace boundary, and session-revocation tests passing.
-- [ ] Resolution of all open release blockers (#4, #24, #26, #34, #36).
+- [ ] Resolution of remaining open release blockers (#24, #26, #34, #36).
 - [ ] Official release tag trigger (`v1.0.0`) and production release publication.

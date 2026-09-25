@@ -1,6 +1,6 @@
 # Repository security automation
 
-This document records the repository-level security and quality automation baseline. The GitHub-native `main` quality-gate state was last verified against the live API on 2026-09-24.
+This document records the repository-level security and quality automation baseline. The GitHub-native `main` quality-gate state was last verified against the live API on 2026-09-24; the GTK3/glib compatibility set was reviewed on 2026-09-25.
 
 ## Enforced in repository workflows
 
@@ -14,7 +14,7 @@ This document records the repository-level security and quality automation basel
 - OSV-Scanner compares PR dependency state against the base branch and rejects newly introduced known vulnerabilities.
 - A weekly and main-push OSV full scan checks the complete current dependency baseline and uploads SARIF to GitHub code scanning.
 
-The Tauri lockfile currently requires time-bounded OSV exceptions in `apps/desktop/src-tauri/osv-scanner.toml`. They cover one `glib` unsoundness constrained by the current stable Tauri 2.x GTK3 stack (expiry 2026-10-31) and INFO/unmaintained transitives from GTK/urlpattern (expiry 2026-12-31). OSV prints each exception and its reason during scans; new advisories remain fail-closed.
+The Tauri lockfile uses a reviewed GTK3 compatibility set under `apps/desktop/src-tauri/vendor/compat`. It preserves the package versions required by Tauri 2.11.x while rebasing the gtk-rs-core dependencies onto glib 0.20, so the vulnerable glib 0.18 package is absent from `Cargo.lock`. `vendor/compat/README.md` records the provenance and verification contract. The remaining time-bounded OSV exceptions cover only INFO/unmaintained transitives from GTK/urlpattern. OSV prints each exception and its reason during scans; new advisories remain fail-closed.
 
 ## GitHub native protections
 

@@ -26,3 +26,32 @@ companion-core = { path = "../../../crates/core" }
 [[bin]]
 name = "kicad-mcp-gateway-desktop"
 path = "src/main.rs"
+
+# Tauri 2.11.x still depends on the GTK3 0.18 line.  The compatibility
+# crates below keep those public package versions for Tauri's semver constraints
+# while rebasing their gtk-rs-core dependencies onto the maintained glib 0.20
+# line.  Tauri/tao/wry carry only the small API-adaptation surface needed for
+# that rebase.  See vendor/compat/README.md for provenance and verification.
+[patch.crates-io]
+tauri = { path = "vendor/compat/tauri" }
+tauri-runtime-wry = { path = "vendor/compat/tauri-runtime-wry" }
+tauri-runtime = { path = "vendor/compat/tauri-runtime" }
+wry = { path = "vendor/compat/wry" }
+tao = { path = "vendor/compat/tao" }
+atk = { path = "vendor/compat/atk" }
+atk-sys = { path = "vendor/compat/atk-sys" }
+gdk = { path = "vendor/compat/gdk" }
+gdk-sys = { path = "vendor/compat/gdk-sys" }
+gtk = { path = "vendor/compat/gtk" }
+gtk-sys = { path = "vendor/compat/gtk-sys" }
+gdkx11 = { path = "vendor/compat/gdkx11" }
+gdkx11-sys = { path = "vendor/compat/gdkx11-sys" }
+gdkwayland-sys = { path = "vendor/compat/gdkwayland-sys" }
+webkit2gtk = { path = "vendor/compat/webkit2gtk" }
+webkit2gtk-sys = { path = "vendor/compat/webkit2gtk-sys" }
+javascriptcore-rs = { path = "vendor/compat/javascriptcore-rs" }
+javascriptcore-rs-sys = { path = "vendor/compat/javascriptcore-rs-sys" }
+soup3 = { path = "vendor/compat/soup3" }
+soup3-sys = { path = "vendor/compat/soup3-sys" }
+libappindicator = { path = "vendor/compat/libappindicator" }
+libappindicator-sys = { path = "vendor/compat/libappindicator-sys" }
