@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. Format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0-rc1] - 2026-09-25
+
+### Added
+
+- **Release Candidate Engineering**: Complete fail-closed release pipeline with multi-platform CLI/daemon archives, signed desktop installers (`.deb`, `.dmg`, `.msi`), exact package/sidecar verification, SPDX SBOM generation, SHA-256 manifests, GitHub provenance/SBOM attestations, and draft-prerelease-only publication.
+- **Release Documentation**: Added `docs/development/release.md` detailing code signing (macOS Developer ID, Windows Authenticode), notarization, release engineering, and multi-OS manual QA procedures.
+- **Compatibility Matrix**: Canonical platform baseline in `docs/architecture/compatibility-matrix.md` for Ubuntu 24.04 LTS x86_64, macOS Apple Silicon, and Windows 11 x86_64.
+
+### Changed
+
+- **Companion → Gateway identity migration**: Completed rename from KiCad MCP Pro Companion to KiCad MCP Pro Gateway across all package metadata, binary names, Tauri bundle identifier, release workflow artifacts, data directory, IPC socket/pipe prefix, keyring service label, environment variable prefix, and MCP clientInfo.name.
+
+### Security
+
+- **Policy-Bounded Authorization TTLs**: Remote session lifetimes clamped by validated local capability-profile and risk-class ceilings with conservative one-minute Critical defaults.
+- **Fail-Closed Audit Persistence**: Daemon durably persists every approval decision and request envelope before any remote `tools/call`; operations refused with typed `AuditPersistence` error when audit store unavailable.
+
 ## [Unreleased]
 
 ### Added
