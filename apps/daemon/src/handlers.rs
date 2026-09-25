@@ -307,18 +307,36 @@ async fn audit_summary(state: &Arc<DaemonState>) -> IpcResponse {
 
 async fn list_pending_approvals(state: &Arc<DaemonState>) -> IpcResponse {
     let summaries = remote_processor::list_pending_operations(state);
-    IpcResponse::PendingApprovals(
+    let workspace_repo = state.workspace_repo.clone();
+    let result = tokio::task::spawn_blocking(move || {
         summaries
             .into_iter()
-            .map(|s| PendingApprovalView {
-                operation_id: s.operation_id,
-                session_id: s.session_id,
-                workspace_id: s.workspace_id,
-                tool_name: s.tool_name,
-                risk: format!("{:?}", s.risk),
+            .map(|s| {
+                let workspace = workspace_repo
+                    .load(s.workspace_id)
+                    .map_err(DaemonError::Workspace)?
+                    .map(|ws| WorkspaceInfo {
+                        workspace_id: ws.workspace_id,
+                        display_name: ws.display_name,
+                    });
+                Ok::<_, DaemonError>(PendingApprovalView {
+                    operation_id: s.operation_id,
+                    session_id: s.session_id,
+                    workspace_id: s.workspace_id,
+                    workspace,
+                    tool_name: s.tool_name,
+                    risk: format!("{:?}", s.risk),
+                })
             })
-            .collect(),
-    )
+            .collect::<Result<Vec<_>, DaemonError>>()
+    })
+    .await;
+
+    match result {
+        Ok(Ok(approvals)) => IpcResponse::PendingApprovals(approvals),
+        Ok(Err(e)) => error_response(e),
+        Err(_) => join_error("list_pending_approvals"),
+    }
 }
 
 async fn approve_operation(state: &Arc<DaemonState>, operation_id: OperationId) -> IpcResponse {

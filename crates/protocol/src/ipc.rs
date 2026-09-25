@@ -195,6 +195,7 @@ pub struct PendingApprovalView {
     pub operation_id: OperationId,
     pub session_id: SessionId,
     pub workspace_id: WorkspaceId,
+    pub workspace: Option<WorkspaceInfo>,
     pub tool_name: String,
     pub risk: String,
 }

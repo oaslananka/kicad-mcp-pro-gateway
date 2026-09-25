@@ -196,7 +196,9 @@ export default function SessionsScreen() {
             <div className="row">
               <span className="label">Workspace</span>
               <span className="mono" style={{ overflowWrap: "break-word" }}>
-                {opDialog.workspace_id}
+                {opDialog.workspace
+                  ? `${opDialog.workspace.display_name} (${opDialog.workspace.workspace_id})`
+                  : opDialog.workspace_id}
               </span>
             </div>
             <div style={{ marginTop: 16 }}>

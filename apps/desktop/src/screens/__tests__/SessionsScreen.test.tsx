@@ -38,6 +38,7 @@ function createMockPendingApproval(overrides: Partial<PendingApprovalView> = {})
     operation_id: "op_200",
     session_id: "ses_100",
     workspace_id: "ws_001",
+    workspace: { workspace_id: "ws_001", display_name: "Test Workspace" },
     tool_name: "pcb_export_gerber",
     risk: "High",
     ...overrides,
@@ -187,6 +188,7 @@ describe("SessionsScreen", () => {
     expect(modal).toBeInTheDocument();
     expect(within(modal).getByText(/pcb_export_gerber/i)).toBeInTheDocument();
     expect(within(modal).getByText("High")).toBeInTheDocument();
+    expect(within(modal).getByText("Test Workspace (ws_001)")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Allow Once" })).toBeInTheDocument();
   });

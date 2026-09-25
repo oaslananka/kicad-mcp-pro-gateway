@@ -68,6 +68,7 @@ export interface PendingApprovalView {
   operation_id: string;
   session_id: string;
   workspace_id: string;
+  workspace: WorkspaceInfo | null;
   tool_name: string;
   risk: string;
 }
