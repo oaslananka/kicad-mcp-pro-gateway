@@ -31,5 +31,12 @@ repository MSRV (`cargo +1.88.0 check --all-targets --locked`). The lockfile mus
 contain `glib >= 0.20` and no `glib 0.18.x`. OSV remains fail-closed; the glib
 advisory is deliberately not listed in `osv-scanner.toml`.
 
+Security hardening applied while vendored: GDK user-data lookup returns `None`
+for a null native pointer instead of dereferencing it, and native cookies read
+from WebKit/WebView2/WKWebView are normalized to `Secure=true` before they are
+exposed through Wry. The Gateway shell does not support insecure-cookie
+round-trips, so this prevents a read/modify/write path from downgrading cookie
+transport security.
+
 Remove this directory when upstream Tauri publishes a release whose Linux GTK3
 stack resolves to maintained gtk-rs/glib packages without compatibility patches.

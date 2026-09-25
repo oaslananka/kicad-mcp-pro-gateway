@@ -946,8 +946,9 @@ impl InnerWebView {
     let http_only = cookie.is_http_only();
     cookie_builder = cookie_builder.http_only(http_only);
 
-    let secure = cookie.is_secure();
-    cookie_builder = cookie_builder.secure(secure);
+    // Imported cookies are normalized to Secure so a read/modify/write cycle
+    // cannot downgrade transport security in the embedded Gateway shell.
+    cookie_builder = cookie_builder.secure(true);
 
     let same_site = cookie.same_site_policy();
     let same_site = match same_site {

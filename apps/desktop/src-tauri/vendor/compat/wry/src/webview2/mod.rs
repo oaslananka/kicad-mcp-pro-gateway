@@ -1533,9 +1533,9 @@ impl InnerWebView {
     cookie.IsHttpOnly(&mut http_only)?;
     cookie_builder = cookie_builder.http_only(http_only.as_bool());
 
-    let mut secure: BOOL = false.into();
-    cookie.IsSecure(&mut secure)?;
-    cookie_builder = cookie_builder.secure(secure.as_bool());
+    // Imported cookies are normalized to Secure so a read/modify/write cycle
+    // cannot downgrade transport security in the embedded Gateway shell.
+    cookie_builder = cookie_builder.secure(true);
 
     let mut same_site = COREWEBVIEW2_COOKIE_SAME_SITE_KIND_LAX;
     cookie.SameSite(&mut same_site)?;

@@ -178,10 +178,10 @@ pub trait WindowExtManual: IsA<Window> + sealed::Sealed + 'static {
     #[allow(clippy::mut_from_ref)]
     #[doc(alias = "gdk_window_get_user_data")]
     #[doc(alias = "get_user_data")]
-    unsafe fn user_data<T>(&self) -> &mut T {
+    unsafe fn user_data<T>(&self) -> Option<&mut T> {
         let mut pointer = ::std::ptr::null_mut();
         ffi::gdk_window_get_user_data(self.as_ref().to_glib_none().0, &mut pointer);
-        &mut *(pointer as *mut T)
+        (pointer as *mut T).as_mut()
     }
 
     #[doc(alias = "gdk_get_default_root_window")]

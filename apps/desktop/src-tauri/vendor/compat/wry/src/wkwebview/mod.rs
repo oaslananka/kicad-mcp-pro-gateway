@@ -1070,8 +1070,9 @@ r#"Object.defineProperty(window, 'ipc', {
     let http_only = cookie.isHTTPOnly();
     cookie_builder = cookie_builder.http_only(http_only);
 
-    let secure = cookie.isSecure();
-    cookie_builder = cookie_builder.secure(secure);
+    // Imported cookies are normalized to Secure so a read/modify/write cycle
+    // cannot downgrade transport security in the embedded Gateway shell.
+    cookie_builder = cookie_builder.secure(true);
 
     // Using string comparison because of https://github.com/tauri-apps/wry/issues/1616
     let (major, minor, _) = util::operating_system_version();
