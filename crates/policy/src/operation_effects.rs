@@ -649,7 +649,6 @@ mod tests {
             "~/.ssh/authorized_keys",
             "$HOME/authorized_keys",
             "%USERPROFILE%/authorized_keys",
-            r"C:\Users\example\authorized_keys",
         ] {
             let argument = json!({ "paths": [raw] });
             let error = contract()
@@ -663,5 +662,22 @@ mod tests {
             );
             assert!(!error.to_string().contains("authorized_keys"));
         }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn rejects_foreign_windows_drive_syntax_without_echoing_the_value() {
+        let root = Path::new("/workspace/project");
+        let argument = json!({ "paths": [r"C:\Users\example\authorized_keys"] });
+        let error = contract()
+            .normalize(argument.as_object().unwrap(), root)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            OperationEffectNormalizationError::UnsupportedPathSyntax {
+                argument: "paths".into()
+            }
+        );
+        assert!(!error.to_string().contains("authorized_keys"));
     }
 }
