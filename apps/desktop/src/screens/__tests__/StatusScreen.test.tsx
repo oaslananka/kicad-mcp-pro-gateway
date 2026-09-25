@@ -38,6 +38,7 @@ describe("StatusScreen", () => {
         capability_profile: "Design",
         task_scope: "General editing",
         expires_at: "2026-10-01T00:00:00Z",
+        workspace_ids: ["ws_001"],
       },
     ]);
 
@@ -214,6 +215,7 @@ describe("StatusScreen", () => {
         capability_profile: "Design",
         task_scope: "General editing",
         expires_at: "2026-10-01T00:00:00Z",
+        workspace_ids: ["ws_001"],
       },
       {
         session_id: "ses_2",
@@ -222,6 +224,7 @@ describe("StatusScreen", () => {
         capability_profile: "View",
         task_scope: "Read-only review",
         expires_at: "2026-10-02T00:00:00Z",
+        workspace_ids: ["ws_001"],
       },
       {
         session_id: "ses_3",
@@ -230,6 +233,7 @@ describe("StatusScreen", () => {
         capability_profile: "Automation",
         task_scope: "CI build",
         expires_at: "2026-10-03T00:00:00Z",
+        workspace_ids: ["ws_001"],
       },
     ]);
 
@@ -304,6 +308,7 @@ describe("StatusScreen", () => {
         capability_profile: "Design",
         task_scope: "General editing",
         expires_at: "2026-10-01T12:34:56Z",
+        workspace_ids: ["ws_001"],
       },
     ]);
 
