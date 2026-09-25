@@ -12,9 +12,11 @@ companion-core = { path = "../core" }
 companion-workspace = { path = "../workspace" }
 thiserror.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 toml = "0.8"
 
 [dev-dependencies]
 tempfile = "3"
 time.workspace = true
+proptest.workspace = true
 companion-core = { path = "../core", features = ["test-util"] }

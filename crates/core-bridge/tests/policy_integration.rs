@@ -11,17 +11,27 @@ use companion_core::{
     SessionId, SessionStatus,
 };
 use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig, MockMcpServer};
-use companion_policy::{PolicyDecision, PolicyEngine, TomlToolRegistry};
+use companion_policy::{DenyReason, PolicyDecision, PolicyEngine, TomlToolRegistry};
 use companion_workspace::WorkspaceAuthorization;
 use time::OffsetDateTime;
 
 fn registry() -> TomlToolRegistry {
     TomlToolRegistry::from_toml_str(
         r#"
+        contract_version = 1
+        source_repository = "oaslananka/kicad-mcp-pro"
+        source_ref = "main"
+        source_sha = "f641a92596ab7adc1e134287578b1ae5ff9580ad"
+
         [[tool]]
         name = "schematic.read"
         capability = "schematic.read"
         risk = "low"
+        arguments = ["sheet_file"]
+        effects = ["read"]
+        [[tool.path_arguments]]
+        argument = "sheet_file"
+        effects = ["read"]
         "#,
     )
     .unwrap()
@@ -66,7 +76,9 @@ async fn policy_allow_reaches_the_core_bridge_and_deny_never_does() {
         session_id: session.session_id,
         workspace_id: workspace.workspace_id,
         tool_name: "schematic.read".into(),
-        arguments: Default::default(),
+        arguments: [("sheet_file".into(), serde_json::json!("child.kicad_sch"))]
+            .into_iter()
+            .collect(),
         target_path: None,
         requested_at: clock.now(),
     };
@@ -74,7 +86,11 @@ async fn policy_allow_reaches_the_core_bridge_and_deny_never_does() {
     assert!(matches!(decision, PolicyDecision::Allow { .. }));
     if matches!(decision, PolicyDecision::Allow { .. }) {
         bridge
-            .call_tool("schematic.read", serde_json::json!({}), "corr-allow")
+            .call_tool(
+                "schematic.read",
+                serde_json::json!({ "sheet_file": "child.kicad_sch" }),
+                "corr-allow",
+            )
             .await
             .unwrap();
     }
@@ -82,6 +98,35 @@ async fn policy_allow_reaches_the_core_bridge_and_deny_never_does() {
         server.tool_call_count(),
         1,
         "an Allow decision must reach the core bridge exactly once"
+    );
+
+    // The caller claims an in-workspace target, but the forwarded argument
+    // derives an escape. Policy must trust the argument-derived effect and the
+    // call must never reach kicad-mcp-pro.
+    let mismatched_request = OperationRequest {
+        operation_id: OperationId::new(),
+        session_id: session.session_id,
+        workspace_id: workspace.workspace_id,
+        tool_name: "schematic.read".into(),
+        arguments: [(
+            "sheet_file".into(),
+            serde_json::json!("../outside.kicad_sch"),
+        )]
+        .into_iter()
+        .collect(),
+        target_path: Some(dir.path().join("caller-claimed.kicad_sch")),
+        requested_at: clock.now(),
+    };
+    assert_eq!(
+        engine.evaluate(&mismatched_request, &session, &workspace, &clock),
+        PolicyDecision::Deny {
+            reason: DenyReason::PathEscapesWorkspace
+        }
+    );
+    assert_eq!(
+        server.tool_call_count(),
+        1,
+        "an argument-derived path escape must never reach the core bridge"
     );
 
     // An unknown tool: policy denies it, and the daemon must never call the

@@ -37,7 +37,7 @@ job is present in the release workflow.
 | Component | Target / Version Range | Policy / Notes |
 |---|---|---|
 | **KiCad** | `10.0.x` primary; `10.0.6` latest verified | Required local EDA environment. `8.x` is deprecated upstream and is **not** a Gateway-supported baseline; `9.x` is dropped; `11.x` is preview-only. |
-| **kicad-mcp-pro** | `3.35.0`, `main` @ `f641a92596ab7adc1e134287578b1ae5ff9580ad` | Reviewed upstream tool snapshot: 387 tools. Newly discovered or unclassified tools remain denied. |
+| **kicad-mcp-pro** | `3.35.0`, `main` @ `f641a92596ab7adc1e134287578b1ae5ff9580ad` | Reviewed upstream tool snapshot and tool-effect contract source: 387 tools. Newly discovered or unclassified tools remain denied. |
 | **MCP core-bridge protocol** | `2025-11-25` | Standard MCP Streamable HTTP client lane implemented by `crates/core-bridge`; it does not extend MCP. |
 | **Gateway transport protocol** | `0.1.0` | Gateway's versioned transport envelope; incompatible major versions are rejected. |
 | **Rust MSRV** | 1.88.0 | Checked in CI in addition to stable-toolchain checks. |
