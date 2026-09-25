@@ -128,7 +128,7 @@ export default function SessionsScreen() {
       )}
 
       {sessionDialog && (
-        <div className="modal-backdrop" onClick={() => setSessionDialog(null)}>
+        <div className="modal-backdrop" onClick={() => setSessionDialog(null)} data-testid="session-dialog-backdrop">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Remote access request</h3>
             <div className="row">
@@ -172,7 +172,7 @@ export default function SessionsScreen() {
       )}
 
       {opDialog && (
-        <div className="modal-backdrop" onClick={() => setOpDialog(null)}>
+        <div className="modal-backdrop" onClick={() => setOpDialog(null)} data-testid="operation-dialog-backdrop">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>High-risk action requires approval</h3>
             <div className="row">
