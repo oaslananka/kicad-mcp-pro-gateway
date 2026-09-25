@@ -66,7 +66,7 @@ fn build_state_from_parts(
 ) -> anyhow::Result<Arc<DaemonState>> {
     let workspace_repo = Arc::new(WorkspaceRepository::new(Arc::clone(&storage)));
     let session_repo = Arc::new(SessionRepository::new(Arc::clone(&storage)));
-    let policy_engine = Arc::new(PolicyEngine::new(TomlToolRegistry::embedded()));
+    let policy_engine = Arc::new(PolicyEngine::new(TomlToolRegistry::try_embedded()?));
     let audit_repo = Arc::new(AuditRepository::new(Arc::clone(&storage)));
     let core_bridge = Arc::new(CoreBridgeClient::new(CoreBridgeConfig::new(
         config.core_bridge_endpoint.clone(),
