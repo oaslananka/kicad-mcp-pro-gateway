@@ -103,7 +103,7 @@ jobs:
 
       - name: Install kicad-mcp-pro ${{ env.KICAD_MCP_PRO_VERSION }}
         run: |
-          uv tool install "kicad-mcp-pro==$KICAD_MCP_PRO_VERSION"
+          uv tool install --python 3.13 "kicad-mcp-pro[http]==$KICAD_MCP_PRO_VERSION"
           kicad-mcp-pro version --json
           kicad-mcp-pro health --json
 
