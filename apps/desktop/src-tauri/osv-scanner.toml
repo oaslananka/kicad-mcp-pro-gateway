@@ -1,10 +1,10 @@
 # Temporary exceptions for transitive Tauri 2.x Linux/GTK dependencies.
 # Every exception is explicit, justified, and expires so it must be re-reviewed.
-# The glib VariantStrIter advisory is not excepted: the compatible 0.18 API is
-# supplied by the reviewed local backport in `vendor/glib`.
+# The glib VariantStrIter advisory is not excepted: the Linux GTK3 compatibility
+# set rebases Tauri's dependency graph onto glib >= 0.20.
 #
-# Last re-review: 2026-09-25 — removed the glib exception after backporting the
-# upstream VariantStrIter soundness fix into the locked GTK3 dependency.
+# Last re-review: 2026-09-25 — removed the glib exception after replacing the
+# vulnerable glib 0.18 lockfile entry with the maintained 0.20 line.
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0370"

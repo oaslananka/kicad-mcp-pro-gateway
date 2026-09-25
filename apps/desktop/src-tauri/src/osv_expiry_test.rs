@@ -36,11 +36,22 @@ mod tests {
             "the glib VariantStrIter advisory must be fixed, not suppressed"
         );
 
-        let patched_source =
-            fs::read_to_string(manifest_dir.join("vendor/glib/src/variant_iter.rs"))
-                .expect("the local glib backport must exist");
-        assert!(patched_source.contains("let mut p: *mut libc::c_char"));
-        assert!(patched_source.contains("&mut p,"));
+        let lock = fs::read_to_string(manifest_dir.join("Cargo.lock"))
+            .expect("apps/desktop/src-tauri/Cargo.lock must exist");
+        let glib = lock
+            .split("[[package]]")
+            .find(|section| section.contains("name = \"glib\""))
+            .expect("Cargo.lock must contain glib");
+        assert!(
+            glib.contains("version = \"0.20.")
+                || glib.contains("version = \"0.21.")
+                || glib.contains("version = \"0.22."),
+            "glib must resolve to a patched >=0.20 release; lock section was: {glib}"
+        );
+        assert!(
+            !lock.contains("name = \"glib\"\nversion = \"0.18."),
+            "the vulnerable glib 0.18 line must not remain in Cargo.lock"
+        );
     }
 
     #[test]

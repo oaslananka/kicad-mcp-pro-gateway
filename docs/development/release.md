@@ -68,10 +68,10 @@ Before promoting a release candidate (`v*`) to a stable production release, run 
 
 ## Security Compatibility & External Verification Checklists
 
-### Issue #4 — Upstream glib Compatibility Patch
-- **Current State:** The Tauri 2.x GTK3 stack requires the glib 0.18 API, while the upstream soundness fix first shipped in glib 0.20.0. A reviewed local backport in `apps/desktop/src-tauri/vendor/glib` applies that exact upstream fix; the vulnerable advisory is not suppressed.
-- **Verification:** The vendor diff is limited to the `VariantStrIter::impl_get` pointer mutability fix, `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --locked` passes, and `cargo audit --file apps/desktop/src-tauri/Cargo.lock` reports no vulnerability findings.
-- **Next Step:** Remove the compatibility patch when Tauri provides a release using the maintained GTK bindings and glib >= 0.20.
+### Issue #4 — GTK3 / glib Compatibility Set
+- **Current State:** Tauri 2.11.x still constrains its Linux GTK3 stack to gtk-rs package versions that normally resolve glib 0.18. The reviewed compatibility set in `apps/desktop/src-tauri/vendor/compat` preserves those package versions while rebasing gtk-rs-core dependencies to glib 0.20; `Cargo.lock` contains no glib 0.18 package and the vulnerability is not suppressed.
+- **Verification:** `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --locked` and the same command under Rust 1.88 pass; `cargo tree` shows glib 0.20 only; OSV remains fail-closed for new vulnerabilities.
+- **Next Step:** Remove the compatibility set when Tauri publishes a release whose Linux stack resolves maintained gtk-rs/glib versions directly.
 
 ### Issue #24 — Real KiCad MCP Pro E2E Integration Checklist
 - [x] Mock MCP core bridge protocol client & server tests (crates/core-bridge/tests/client.rs)
