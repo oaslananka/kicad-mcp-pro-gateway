@@ -72,8 +72,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             python3 python3-pip python3-venv \
-            uv \
             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "latest-known"
+          python-version: "3.13"
+          enable-cache: true
 
       - name: Validate compatibility inputs
         shell: bash
@@ -98,8 +104,8 @@ jobs:
       - name: Install kicad-mcp-pro ${{ env.KICAD_MCP_PRO_VERSION }}
         run: |
           uv tool install "kicad-mcp-pro==$KICAD_MCP_PRO_VERSION"
-          kicad-mcp-pro --version
-          kicad-mcp-pro doctor
+          kicad-mcp-pro version --json
+          kicad-mcp-pro health --json
 
       - name: Prepare test fixture
         run: |
@@ -112,9 +118,9 @@ jobs:
         run: |
           # Start kicad-mcp-pro in streamable-http mode on loopback
           KICAD_MCP_PROJECT_DIR="$FIXTURE_DIR" \
-          KICAD_MCP_PROFILE=default \
-          KICAD_MCP_OPERATING_MODE=readwrite \
-          uv run kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334 &
+          KICAD_MCP_PROFILE=builder \
+          KICAD_MCP_OPERATING_MODE=write \
+          kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334 &
           SERVER_PID=$!
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
           
@@ -128,7 +134,7 @@ jobs:
           done
           
           # Verify server is responding
-          curl -s http://127.0.1.1:3334/mcp || true
+          curl -s http://127.0.0.1:3334/mcp || true
           sleep 2
 
       - name: Record environment evidence
@@ -142,8 +148,11 @@ jobs:
           echo "--- KiCad Version ---" >> e2e-evidence.txt
           kicad-cli --version >> e2e-evidence.txt 2>&1
           echo "" >> e2e-evidence.txt
+          echo "--- uv Version ---" >> e2e-evidence.txt
+          uv --version >> e2e-evidence.txt 2>&1
+          echo "" >> e2e-evidence.txt
           echo "--- kicad-mcp-pro Version ---" >> e2e-evidence.txt
-          kicad-mcp-pro --version >> e2e-evidence.txt 2>&1
+          kicad-mcp-pro version --json >> e2e-evidence.txt 2>&1
           echo "" >> e2e-evidence.txt
           echo "--- kicad-mcp-pro Commit ---" >> e2e-evidence.txt
           echo "Pinned commit: ${{ env.KICAD_MCP_PRO_COMMIT }}" >> e2e-evidence.txt
