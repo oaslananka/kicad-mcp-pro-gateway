@@ -27,6 +27,23 @@ mod tests {
     }
 
     #[test]
+    fn glib_advisory_is_fixed_without_suppression() {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let osv_toml = fs::read_to_string(manifest_dir.join("osv-scanner.toml"))
+            .expect("apps/desktop/src-tauri/osv-scanner.toml must exist");
+        assert!(
+            !osv_toml.contains("RUSTSEC-2024-0429"),
+            "the glib VariantStrIter advisory must be fixed, not suppressed"
+        );
+
+        let patched_source =
+            fs::read_to_string(manifest_dir.join("vendor/glib/src/variant_iter.rs"))
+                .expect("the local glib backport must exist");
+        assert!(patched_source.contains("let mut p: *mut libc::c_char"));
+        assert!(patched_source.contains("&mut p,"));
+    }
+
+    #[test]
     fn osv_scanner_exceptions_have_not_expired() {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let osv_toml_path = manifest_dir.join("osv-scanner.toml");

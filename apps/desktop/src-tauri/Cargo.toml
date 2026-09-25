@@ -26,3 +26,10 @@ companion-core = { path = "../../../crates/core" }
 [[bin]]
 name = "kicad-mcp-gateway-desktop"
 path = "src/main.rs"
+
+# Tauri 2's GTK3 stack is pinned to glib 0.18, whose VariantStrIter
+# implementation contains the unsound shared-reference write fixed in
+# glib 0.20.0. Keep the compatible 0.18 API and carry the upstream fix as a
+# reviewed local patch until Tauri moves to the maintained GTK bindings.
+[patch.crates-io]
+glib = { path = "vendor/glib" }

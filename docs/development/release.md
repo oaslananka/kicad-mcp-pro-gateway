@@ -66,13 +66,12 @@ Before promoting a release candidate (`v*`) to a stable production release, run 
 
 ---
 
-## Release Blockers & External Verification Checklists
+## Security Compatibility & External Verification Checklists
 
-### Issue #4 — Upstream Dependency Exception (glib 0.18.5)
-- **Current State:** Tracked in apps/desktop/src-tauri/osv-scanner.toml with expiry 2026-10-31.
-- **Constraint:** Constrained by Tauri 2.11 GTK3 stack bindings; no direct VariantStrIter usage in Gateway code.
-- **Verification:** osv_expiry_test in Tauri crate enforces exception freshness on every build.
-- **Next Step:** Re-check upstream Tauri 2.x/3.x GTK updates prior to 2026-10-31.
+### Issue #4 — Upstream glib Compatibility Patch
+- **Current State:** The Tauri 2.x GTK3 stack requires the glib 0.18 API, while the upstream soundness fix first shipped in glib 0.20.0. A reviewed local backport in `apps/desktop/src-tauri/vendor/glib` applies that exact upstream fix; the vulnerable advisory is not suppressed.
+- **Verification:** The vendor diff is limited to the `VariantStrIter::impl_get` pointer mutability fix, `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --locked` passes, and `cargo audit --file apps/desktop/src-tauri/Cargo.lock` reports no vulnerability findings.
+- **Next Step:** Remove the compatibility patch when Tauri provides a release using the maintained GTK bindings and glib >= 0.20.
 
 ### Issue #24 — Real KiCad MCP Pro E2E Integration Checklist
 - [x] Mock MCP core bridge protocol client & server tests (crates/core-bridge/tests/client.rs)
@@ -104,5 +103,5 @@ Before promoting a release candidate (`v*`) to a stable production release, run 
 ### Issue #39 — Final Stable V1 Sign-off Checklist
 - [x] Security invariants verified and tested
 - [x] Fail-closed policy, workspace boundary, and session revocation tests passing
-- [ ] Resolution of all open release blockers (#4, #24, #26, #34, #36)
+- [ ] Resolution of remaining open release blockers (#24, #26, #34, #36)
 - [ ] Official release tag trigger (v1.0.0) and production release publication
