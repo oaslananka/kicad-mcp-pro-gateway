@@ -59,7 +59,7 @@ ChatGPT / Claude / Web / Agent
              v
    Local KiCad MCP Pro (http://127.0.0.1:3334/mcp)
              |
-      Local KiCad 8.x
+      Local KiCad 10.0.x
 ```
 
 ## Security Invariants

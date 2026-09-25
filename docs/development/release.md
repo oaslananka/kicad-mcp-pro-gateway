@@ -1,145 +1,163 @@
-# Release Engineering & Code Signing Procedures
+# Release Engineering and Manual QA
 
-This document outlines the automated release pipeline, signing readiness configuration, and manual QA procedures for KiCad MCP Pro Gateway releases.
+This document describes the release artifacts that the current workflow
+actually produces and the manual checks required before a release candidate is
+promoted. The supported platform baseline is maintained only in the
+[canonical compatibility matrix](../architecture/compatibility-matrix.md).
 
-## Release Pipeline Overview
+## Automated Release Pipeline
 
-Releases are triggered automatically when a version tag matching `v*` (e.g., `v0.1.0-rc1` or `v0.1.0`) is pushed to GitHub.
-
-Workflow file: `.github/workflows/release.yml`
+A tag matching `v*` pushed to GitHub starts
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml). The
+workflow performs exactly these steps:
 
 ### Pipeline Stages
 
-1. **Build headless artifacts**: Compiles the CLI
-   (`kicad-mcp-gateway`) and daemon (`kicad-mcp-gateway-daemon`) for Linux
+1. **Build headless artifacts**: Compiles the CLI (`kicad-mcp-gateway`) and
+   daemon (`kicad-mcp-gateway-daemon`) for Linux
    `x86_64-unknown-linux-gnu`, macOS `aarch64-apple-darwin`, and Windows
-   `x86_64-pc-windows-msvc`, then packages the sibling binaries with the
-   README and license.
-2. **Build desktop packages**: Runs the Tauri packaging path for the same
-   targets. `prepare-sidecar.mjs` first proves that the daemon, desktop, and
-   Tauri versions match, then stages the target-qualified daemon as
-   `externalBin`. The matrix produces `.deb`, `.dmg`, and `.msi` packages.
-3. **Verify embedded sidecars**: `verify:sidecar` requires a non-empty,
-   executable packaged daemon in every Tauri bundle before publication.
-4. **Consolidate and checksum**: Collects archives and desktop packages, then
-   computes SHA-256 checksums for every release asset.
-5. **Publish release**: Uploads all assets and checksums to a GitHub Release
+   `x86_64-pc-windows-msvc`.
+2. **Package headless archives**: Adds the sibling binaries, `README.md`, and
+   `LICENSE`; Linux/macOS use `.tar.gz` and Windows uses `.zip`.
+3. **Build desktop packages**: Runs the Tauri packaging path for the same
+   targets. `prepare-sidecar.mjs` proves that daemon, desktop, and Tauri
+   versions match, then stages the target-qualified daemon as `externalBin`.
+   The matrix produces `.deb`, `.dmg`, and `.msi` packages.
+4. **Verify packaged sidecars**: `verify:sidecar` requires a non-empty,
+   executable daemon in each Tauri release tree before publication.
+5. **Consolidate and checksum**: Collects headless archives and desktop
+   packages, then computes SHA-256 checksums for every release asset.
+6. **Publish release**: Uploads all assets and checksums to a GitHub Release
    with generated release notes.
 
 The authoritative ownership, update, rollback, and uninstall rules are in
-[daemon-lifecycle.md](daemon-lifecycle.md). Signing/notarization hooks do not
-change the requirement that the packaged sidecar be present and version
-matched.
+[daemon-lifecycle.md](daemon-lifecycle.md). The packaged sidecar must remain
+present and version matched regardless of future signing work.
 
----
+### Not produced by the current workflow
 
-## Code Signing & Notarization Readiness
+The workflow does not currently produce AppImage or NSIS packages. It also has
+no macOS code-signing or notarization step, Windows Authenticode/Trusted
+Signing step, SBOM generation, artifact attestation, release-validation gate,
+or uninstaller. These remain future work that requires reviewed workflow
+changes; repository configuration or a checklist item is not evidence that
+they are implemented.
 
-Production releases on macOS and Windows require code signing to prevent OS gatekeeper/smartscreen warnings.
+The headless archives and desktop packages are unsigned unless a maintainer
+adds and verifies a future signing workflow. Users must verify the published
+`SHA256SUMS.txt` and must not infer platform trust from artifact production
+alone.
 
-### macOS (Apple Developer ID)
+## Manual Release-Candidate Verification
 
-For macOS releases, code signing and Apple notarization require the following GitHub Secrets:
+Before promoting a tag, verify the following on clean test machines for the
+three supported platform targets. These checks validate both headless archives
+and desktop packages, not a production hosted relay.
 
-- `APPLE_CERTIFICATE`: Base64-encoded Developer ID Application `.p12` certificate.
-- `APPLE_CERTIFICATE_PASSWORD`: Password for the `.p12` certificate.
-- `APPLE_NOTARIZATION_USERNAME`: Apple ID email address.
-- `APPLE_NOTARIZATION_PASSWORD`: App-specific password generated at appleid.apple.com.
-- `APPLE_TEAM_ID`: 10-character Apple Developer Team ID.
+1. **Artifact integrity:** download every published asset and `SHA256SUMS.txt`;
+   run `sha256sum -c SHA256SUMS.txt` (or the platform equivalent) and confirm
+   the expected archive or installer exists.
+2. **Clean install and identity:** install the platform desktop package with no
+   prior Gateway data, launch it, and confirm the application starts only its
+   packaged daemon. Also verify the Device ID is stored in the platform's
+   native secret store (Secret Service, Keychain, or DPAPI).
+3. **Core detection:** with the approved KiCad 10.0.x environment from the
+   compatibility matrix, run `kicad-mcp-gateway setup` or
+   `kicad-mcp-gateway status` and confirm the core-bridge detection result.
+4. **Workspace containment:** authorize a KiCad project directory and verify a
+   relative `../` path escape is denied.
+5. **Policy enforcement:** run a classified read-only operation (for example
+   `pcb_get_layers`) and confirm the audit event is recorded. Confirm an
+   unclassified tool is denied.
+6. **High-risk approval:** start a high-risk operation and confirm it remains
+   blocked until explicit local approval.
+7. **Session controls:** revoke an active session, restart the daemon and
+   desktop, and confirm the session cannot reactivate.
+8. **Update and cleanup:** upgrade in place and confirm data/revocation
+   continuity. Remove the package, confirm packaged binaries are removed, and
+   retain `<data_dir>` until the user performs a deliberate data wipe.
 
-When these secrets are provided, the Tauri build and macOS binary steps sign the executables with `codesign` and submit the final app bundle to `xcrun notarytool`.
+### Platform-specific package checks
 
-### Windows (Authenticode)
+| Platform | Headless archive | Desktop package | Required check |
+|---|---|---|---|
+| Ubuntu / Linux `x86_64` | `.tar.gz` | `.deb` | Verify checksums; test both archive binaries and a clean `.deb` install with Secret Service-backed identity storage. |
+| macOS Apple Silicon (`aarch64`) | `.tar.gz` | `.dmg` | Verify checksums; test both archive binaries and a clean DMG install, recording unsigned Gatekeeper behavior and Keychain-backed identity storage. |
+| Windows `x86_64` | `.zip` | `.msi` | Verify checksums; test both archive executables and a clean MSI install with DPAPI-backed identity storage. |
 
-For Windows releases, code signing requires:
+## Desktop Lifecycle Evidence
 
-- `WINDOWS_PFX_BASE64`: Base64-encoded Code Signing Certificate (`.pfx`).
-- `WINDOWS_PFX_PASSWORD`: Password for the PFX certificate.
+For each supported OS, retain clean-machine evidence for the complete
+application-managed lifecycle:
 
-Alternatively, Azure Trusted Signing can be configured using `azure/trusted-signing-action`.
-
-*Note: Unsigned release builds produced without these secrets display explicit unsigned notices and must be tested in developer mode.*
-
----
-
-## Manual QA Verification Matrix
-
-Before promoting a release candidate (`v*`) to a stable production release, run the following verification matrix on clean test machines for each supported OS:
-
-### Linux / macOS / Windows Test Flow
-
-1. **Clean Installation**: Install the platform package and confirm no previous
-   config or database exists in `<data_dir>`.
-2. **Packaged Sidecar Evidence**: Inspect the package and record the bundled
-   daemon path. Run `pnpm verify:sidecar` against the produced bundle when
-   reproducing locally; CI uploads the verified package artifact.
-3. **First Launch & Readiness**: Launch the desktop with no daemon already
-   running. Confirm it starts only the packaged sidecar and reaches Ready with
-   product `kicad-mcp-gateway`, the expected daemon version, and a non-empty
+1. **Clean installation:** install the platform package with no previous
+   config or database in `<data_dir>`.
+2. **Packaged sidecar:** inspect the package and record the bundled daemon
+   path. When reproducing locally, run `pnpm verify:sidecar` against the
+   produced Tauri release tree; CI uploads the verified package artifact.
+3. **First launch and readiness:** launch with no daemon already running and
+   confirm the desktop starts only the packaged sidecar and reaches Ready with
+   product `kicad-mcp-gateway`, the expected version, and a non-empty
    per-process instance ID.
-4. **Setup & Core Detection**: Run `kicad-mcp-gateway setup` or
-   `kicad-mcp-gateway status`. Verify KiCad MCP Pro core bridge detection.
-5. **Workspace Management**: Authorize a KiCad project directory. Attempt
-   relative path escape (`../`) to verify fail-closed path boundary
-   enforcement.
-6. **Pairing & Remote Sessions**: Initiate pairing, approve a session request,
-   and verify the session becomes Active.
-7. **Read-only Tool Execution**: Execute a classified read-only tool (for
-   example `pcb_get_layers`). Confirm success and the audit record.
-8. **High-Risk Approval**: Attempt manufacturing export and confirm it remains
+4. **Setup and core detection:** run `kicad-mcp-gateway setup` or
+   `kicad-mcp-gateway status` against the supported KiCad 10.0.x baseline and
+   verify core-bridge detection.
+5. **Workspace and policy:** authorize a KiCad project, reject `../` escapes,
+   execute a classified read-only tool, confirm its audit record, and confirm
+   an unclassified tool is denied.
+6. **High-risk approval:** attempt manufacturing export and confirm it remains
    blocked pending explicit approval.
-9. **Crash & Revocation Recovery**: Terminate the daemon, confirm desktop
+7. **Crash and revocation recovery:** terminate the daemon, confirm desktop
    recovery, revoke a session, restart again, and verify the revoked session
    cannot reactivate.
-10. **CLI Ownership Hand-off**: Run `daemon stop` while the desktop is open and
-    confirm its watchdog does not restart the daemon; run `daemon start` and
-    confirm readiness returns.
-11. **Failure Evidence**: Repeat first launch with the packaged sidecar
-    temporarily unavailable. Capture the safe UI failure banner and a redacted
-    log excerpt; verify no alternate daemon or endpoint is launched.
-12. **Update & Uninstall**: Upgrade in place and confirm data/revocation
-    continuity, then stop/uninstall and confirm binaries are removed while
-    `<data_dir>` remains until the user performs a deliberate data wipe.
+8. **CLI ownership hand-off:** run `daemon stop` while the desktop is open and
+   confirm its watchdog does not restart the daemon; run `daemon start` and
+   confirm readiness returns.
+9. **Failure evidence:** repeat first launch with the packaged sidecar
+   temporarily unavailable. Capture the safe UI failure banner and a redacted
+   log excerpt; verify no alternate daemon or endpoint is launched.
+10. **Update and uninstall:** upgrade in place and confirm data/revocation
+    continuity, then remove the package and confirm binaries are deleted while
+    `<data_dir>` remains until a deliberate user data wipe.
 
----
-
-## Release Blockers & External Verification Checklists
+## Release Blockers and External Verification Checklists
 
 ### Issue #4 — Upstream Dependency Exception (glib 0.18.5)
-- **Current State:** Tracked in apps/desktop/src-tauri/osv-scanner.toml with expiry 2026-10-31.
+- **Current State:** Tracked in `apps/desktop/src-tauri/osv-scanner.toml` with expiry 2026-10-31.
 - **Constraint:** Constrained by Tauri 2.11 GTK3 stack bindings; no direct VariantStrIter usage in Gateway code.
-- **Verification:** osv_expiry_test in Tauri crate enforces exception freshness on every build.
+- **Verification:** `osv_expiry_test` in the Tauri crate enforces exception freshness on every build.
 - **Next Step:** Re-check upstream Tauri 2.x/3.x GTK updates prior to 2026-10-31.
 
 ### Issue #24 — Real KiCad MCP Pro E2E Integration Checklist
-- [x] Mock MCP core bridge protocol client & server tests (crates/core-bridge/tests/client.rs)
-- [ ] Checked-out upstream kicad-mcp-pro server execution (http://127.0.0.1:3334/mcp)
-- [ ] E2E reconciliation pass against live tool catalog
-- [ ] Real KiCad 8.x GUI application driven via Gateway policy boundary
+- [x] Mock MCP core bridge protocol client and server tests (`crates/core-bridge/tests/client.rs`).
+- [ ] Checked-out upstream kicad-mcp-pro server execution (`http://127.0.0.1:3334/mcp`).
+- [ ] E2E reconciliation pass against the live tool catalog.
+- [ ] Real KiCad 10.0.x GUI application driven through the Gateway policy boundary.
 
-### Issue #26 — Clean-Machine Manual QA Verification Checklist
-- [x] Automated installer build workflow in CI
-- [ ] Fresh Ubuntu 24.04 LTS clean machine first-launch validation
-- [ ] Fresh macOS Apple Silicon clean machine first-launch validation
-- [ ] Fresh Windows 11 clean machine first-launch validation
-- [ ] Uninstaller and data-directory cleanup verification
+### Issue #26 — Clean-Machine Package QA Verification Checklist
+- [x] Automated CLI/daemon archive and desktop package release workflows.
+- [x] CI sidecar presence, size, and executable-bit verification for every Tauri target.
+- [ ] Fresh Ubuntu 24.04 LTS `.deb` and headless archive validation.
+- [ ] Fresh macOS Apple Silicon `.dmg` and headless archive validation.
+- [ ] Fresh Windows `.msi` and headless archive validation.
+- [ ] Manual update, uninstall, and data-directory continuity verification.
+- [ ] Automated uninstaller workflow (not implemented).
 
-### Issue #34 — Production Code Signing & Notarization Checklist
-- [x] Workflow parameters and secret integration hooks in .github/workflows/release.yml
-- [ ] Apple Developer ID .p12 certificate secret configured (APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD)
-- [ ] Apple Notarization credentials configured (APPLE_NOTARIZATION_USERNAME, APPLE_NOTARIZATION_PASSWORD, APPLE_TEAM_ID)
-- [ ] Windows Code Signing Certificate configured (WINDOWS_PFX_BASE64, WINDOWS_PFX_PASSWORD or Azure Trusted Signing)
-- [ ] Verification of signed binary signatures via codesign --verify and signtool verify
+### Issue #34 — Production Signing and Notarization Checklist
+- [ ] Add a reviewed macOS `codesign` and `notarytool` workflow.
+- [ ] Add a reviewed Windows Authenticode or Trusted Signing workflow.
+- [ ] Verify signatures in release QA once those workflows exist.
 
 ### Issue #36 — Release Candidate Readiness Checklist
-- [x] Verified release gate in .github/workflows/release.yml (validate-release)
-- [x] Multi-platform release binary & installer build jobs
-- [x] SPDX SBOM generation (generate-sbom)
-- [x] GitHub Artifact Attestations (attest-artifacts via actions/attest-build-provenance@v2)
-- [ ] Maintainer explicit release tag trigger (e.g. v0.1.0-rc.1)
+- [x] Tag-triggered release workflow in `.github/workflows/release.yml`.
+- [x] Multi-platform CLI/daemon archive and desktop package jobs.
+- [x] Packaged-sidecar verification before desktop artifact upload.
+- [x] SHA-256 checksum generation.
+- [ ] Add SBOM generation and artifact attestations if required for release.
+- [ ] Maintainer explicit release tag trigger (for example `v0.1.0-rc.1`).
 
 ### Issue #39 — Final Stable V1 Sign-off Checklist
-- [x] Security invariants verified and tested
-- [x] Fail-closed policy, workspace boundary, and session revocation tests passing
-- [ ] Resolution of all open release blockers (#4, #24, #26, #34, #36)
-- [ ] Official release tag trigger (v1.0.0) and production release publication
+- [x] Security invariants verified and tested.
+- [x] Fail-closed policy, workspace boundary, and session-revocation tests passing.
+- [ ] Resolution of all open release blockers (#4, #24, #26, #34, #36).
+- [ ] Official release tag trigger (`v1.0.0`) and production release publication.

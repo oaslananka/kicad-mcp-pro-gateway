@@ -12,7 +12,7 @@ not required for the supported desktop distribution.
 
 | Supported target | Package model | Packaged daemon location | Lifecycle owner |
 |---|---|---|---|
-| Linux `x86_64-unknown-linux-gnu` | Tauri `.deb` / AppImage | Package-owned directory beside the desktop executable; an AppImage keeps it in the read-only AppImage payload | Tauri desktop while open; packaged sibling CLI for headless start/stop |
+| Linux `x86_64-unknown-linux-gnu` | Tauri `.deb` | Package-owned `/usr/bin` directory beside `kicad-mcp-gateway-desktop` | Tauri desktop while open; packaged sibling CLI for headless start/stop |
 | macOS `aarch64-apple-darwin` | Tauri `.dmg` containing `KiCad MCP Pro Gateway.app` | `KiCad MCP Pro Gateway.app/Contents/MacOS/`, beside the desktop executable | Same as Linux |
 | Windows `x86_64-pc-windows-msvc` | Tauri `.msi` | Package install directory beside `kicad-mcp-gateway-desktop.exe` | Same as Linux |
 
