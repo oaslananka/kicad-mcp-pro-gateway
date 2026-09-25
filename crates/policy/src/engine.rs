@@ -5,9 +5,12 @@
 //! decision. It implements exactly the ordered checks in
 //! `docs/architecture/data-flow.md` steps 4-10, in the same order.
 
-use companion_core::{Capability, Clock, OperationRequest, RiskLevel, Session, SessionStatus};
+use companion_core::{
+    Capability, CapabilityProfile, Clock, OperationRequest, RiskLevel, Session, SessionStatus,
+};
 use companion_workspace::{WorkspaceAuthorization, WorkspaceBoundary};
 
+use crate::authorization_ttl::{AuthorizationTtlPolicy, EffectiveAuthorizationTtl};
 use crate::operation_effects::{NormalizedOperationEffects, OperationEffectNormalizationError};
 use crate::tool_registry::ToolCapabilityResolver;
 
@@ -48,11 +51,31 @@ pub enum PolicyDecision {
 
 pub struct PolicyEngine<R: ToolCapabilityResolver> {
     resolver: R,
+    authorization_ttl_policy: AuthorizationTtlPolicy,
 }
 
 impl<R: ToolCapabilityResolver> PolicyEngine<R> {
     pub fn new(resolver: R) -> Self {
-        Self { resolver }
+        Self::with_authorization_ttl_policy(resolver, AuthorizationTtlPolicy::default())
+    }
+
+    pub fn with_authorization_ttl_policy(
+        resolver: R,
+        authorization_ttl_policy: AuthorizationTtlPolicy,
+    ) -> Self {
+        Self {
+            resolver,
+            authorization_ttl_policy,
+        }
+    }
+
+    pub fn effective_authorization_ttl(
+        &self,
+        capability_profile: &CapabilityProfile,
+        requested_minutes: i64,
+    ) -> EffectiveAuthorizationTtl {
+        self.authorization_ttl_policy
+            .effective_ttl(capability_profile, requested_minutes)
     }
 
     /// Derives operation effects from the tool name, forwarded arguments, and

@@ -132,6 +132,7 @@ pub fn new_unpaired_session(
     clock: &dyn Clock,
 ) -> Session {
     let effective_capabilities = capability_profile.effective_capabilities();
+    let issued_at = clock.now();
     Session {
         session_id: companion_core::SessionId::new(),
         device_id,
@@ -140,9 +141,9 @@ pub fn new_unpaired_session(
         capability_profile,
         effective_capabilities,
         task_scope,
-        issued_at: clock.now(),
+        issued_at,
         approved_at: None,
-        expires_at: clock.now() + ttl,
+        expires_at: issued_at + ttl,
         risk_policy_version: 1,
         approval_policy: ApprovalPolicy::Standard,
         status: SessionStatus::Unpaired,

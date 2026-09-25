@@ -22,7 +22,10 @@ pub use approval::{ApprovalDecision, ApprovalRequest};
 pub use audit::{ApprovalDecisionKind, AuditEvent, ExecutionStatus, PolicyResultKind};
 pub use capability::{Capability, CapabilityProfile, CapabilitySet};
 pub use clock::{Clock, SystemClock};
-pub use config::{CliOverrides, CompanionConfig, ConfigError, TransportMode};
+pub use config::{
+    AuthorizationTtlConfig, AuthorizationTtlProfile, CliOverrides, CompanionConfig, ConfigError,
+    TransportMode, MAX_AUTHORIZATION_TTL_MINUTES,
+};
 pub use device::{DeviceFingerprint, DeviceIdentity, DevicePublicKey};
 pub use error::CompanionError;
 pub use ids::{

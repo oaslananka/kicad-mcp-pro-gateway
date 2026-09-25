@@ -17,7 +17,7 @@ use companion_audit::AuditRepository;
 use companion_core::{CompanionConfig, SystemClock, TransportMode};
 use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig};
 use companion_identity::{SecretStore, SqliteDeviceIdentityStore};
-use companion_policy::{PolicyEngine, TomlToolRegistry};
+use companion_policy::{AuthorizationTtlPolicy, PolicyEngine, TomlToolRegistry};
 use companion_sessions::SessionRepository;
 use companion_storage::Storage;
 use companion_transport::{jittered_delay, BackoffPolicy, MockTransport, Transport};
@@ -66,7 +66,10 @@ fn build_state_from_parts(
 ) -> anyhow::Result<Arc<DaemonState>> {
     let workspace_repo = Arc::new(WorkspaceRepository::new(Arc::clone(&storage)));
     let session_repo = Arc::new(SessionRepository::new(Arc::clone(&storage)));
-    let policy_engine = Arc::new(PolicyEngine::new(TomlToolRegistry::try_embedded()?));
+    let policy_engine = Arc::new(PolicyEngine::with_authorization_ttl_policy(
+        TomlToolRegistry::try_embedded()?,
+        AuthorizationTtlPolicy::new(config.authorization_ttl),
+    ));
     let audit_repo = Arc::new(AuditRepository::new(Arc::clone(&storage)));
     let core_bridge = Arc::new(CoreBridgeClient::new(CoreBridgeConfig::new(
         config.core_bridge_endpoint.clone(),

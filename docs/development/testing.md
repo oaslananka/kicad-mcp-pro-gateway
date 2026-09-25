@@ -41,6 +41,9 @@ advanced explicitly (`clock.advance(Duration)`); no test should depend on
 - device identity lifecycle (create, load, never-plaintext secret)
 - session state transitions, including every explicit non-transition in
   [session-lifecycle.md](../architecture/session-lifecycle.md)
+- profile/risk authorization TTL ceilings, integer boundaries, persistence of
+  the effective expiry, and fail-closed malformed policy configuration (see
+  [authorization-ttl.md](../security/authorization-ttl.md))
 - expiration under advanced fake clock
 - revocation is terminal and survives reconnect
 - capability intersection / profile expansion

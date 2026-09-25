@@ -253,6 +253,7 @@ async fn approve_pause_resume_revoke_session_round_trip() {
 
     let list_output = run_cli(&data_dir, &["session", "list"]);
     assert!(!list_output.contains(session_id_text.as_str()));
+    assert!(list_output.contains("effective expiry"));
 
     let response = send_request(&data_dir, IpcRequest::ListSessions)
         .await
