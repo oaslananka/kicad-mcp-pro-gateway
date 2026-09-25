@@ -143,6 +143,16 @@ export default function SessionsScreen() {
               <span className="label">Task</span>
               <span>{sessionDialog.task_scope}</span>
             </div>
+            {sessionDialog.workspaces && sessionDialog.workspaces.length > 0 && (
+              <div className="row">
+                <span className="label">Workspace(s)</span>
+                <span className="mono" style={{ overflowWrap: "break-word" }}>
+                  {sessionDialog.workspaces
+                    .map((w) => `${w.display_name} (${w.workspace_id})`)
+                    .join(", ")}
+                </span>
+              </div>
+            )}
             <div className="row">
               <span className="label">Effective expiry</span>
               <span className="mono">{sessionDialog.expires_at}</span>
@@ -182,6 +192,14 @@ export default function SessionsScreen() {
             <div className="row">
               <span className="label">Risk</span>
               <span className={riskBadgeClass(opDialog.risk)}>{opDialog.risk}</span>
+            </div>
+            <div className="row">
+              <span className="label">Workspace</span>
+              <span className="mono" style={{ overflowWrap: "break-word" }}>
+                {opDialog.workspace
+                  ? `${opDialog.workspace.display_name} (${opDialog.workspace.workspace_id})`
+                  : opDialog.workspace_id}
+              </span>
             </div>
             <div style={{ marginTop: 16 }}>
               <button

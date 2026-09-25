@@ -599,6 +599,7 @@ pub fn invalidate_pending_for_session(state: &Arc<DaemonState>, session_id: Sess
 pub struct PendingSummary {
     pub operation_id: OperationId,
     pub session_id: SessionId,
+    pub workspace_id: WorkspaceId,
     pub tool_name: String,
     pub risk: RiskLevel,
 }
@@ -612,6 +613,7 @@ pub fn list_pending_operations(state: &Arc<DaemonState>) -> Vec<PendingSummary> 
         .map(|p| PendingSummary {
             operation_id: p.request.operation_id,
             session_id: p.request.session_id,
+            workspace_id: p.request.workspace_id,
             tool_name: p.request.tool_name.clone(),
             risk: p.risk,
         })

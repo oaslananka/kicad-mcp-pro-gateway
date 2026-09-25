@@ -157,6 +157,12 @@ pub struct PairingBegunView {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkspaceInfo {
+    pub workspace_id: WorkspaceId,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionView {
     pub session_id: SessionId,
     pub remote_principal: String,
@@ -166,6 +172,8 @@ pub struct SessionView {
     /// Policy-bounded effective expiry shown to the approver. This is the
     /// timestamp persisted with the session, not the remote requested TTL.
     pub expires_at: String,
+    pub workspace_ids: Vec<WorkspaceId>,
+    pub workspaces: Vec<WorkspaceInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -186,6 +194,8 @@ pub struct AuditSummaryView {
 pub struct PendingApprovalView {
     pub operation_id: OperationId,
     pub session_id: SessionId,
+    pub workspace_id: WorkspaceId,
+    pub workspace: Option<WorkspaceInfo>,
     pub tool_name: String,
     pub risk: String,
 }

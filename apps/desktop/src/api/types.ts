@@ -43,6 +43,13 @@ export interface SessionView {
   capability_profile: string;
   task_scope: string;
   expires_at: string;
+  workspace_ids: string[];
+  workspaces: WorkspaceInfo[];
+}
+
+export interface WorkspaceInfo {
+  workspace_id: string;
+  display_name: string;
 }
 
 export interface WorkspaceView {
@@ -60,6 +67,8 @@ export interface AuditSummaryView {
 export interface PendingApprovalView {
   operation_id: string;
   session_id: string;
+  workspace_id: string;
+  workspace: WorkspaceInfo | null;
   tool_name: string;
   risk: string;
 }
