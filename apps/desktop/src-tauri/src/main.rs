@@ -4,59 +4,22 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::path::PathBuf;
-use std::time::Duration;
+mod daemon_lifecycle;
+mod ipc_client;
 
 use companion_core::{OperationId, SessionId, WorkspaceId};
 use companion_protocol::{
-    read_message, write_message, AuditSummaryView, DaemonStatusView, IpcRequest, IpcResponse,
-    PairingBegunView, PairingStatusView, PendingApprovalView, SessionView, WorkspaceView,
+    AuditSummaryView, DaemonStatusView, IpcRequest, IpcResponse, PairingBegunView,
+    PairingStatusView, PendingApprovalView, SessionView, WorkspaceView,
 };
-use interprocess::local_socket::tokio::prelude::*;
-use interprocess::local_socket::{GenericNamespaced, ToNsName};
+use tauri::{Manager, State};
 
-fn data_dir() -> PathBuf {
-    // Mirrors the same precedence the CLI/daemon use, so the desktop app
-    // always talks to the same daemon instance those would.
-    companion_core::config::load(companion_core::config::CliOverrides::default())
-        .map(|c| c.data_dir)
-        .unwrap_or_else(|_| std::env::temp_dir().join("kicad-mcp-gateway"))
-}
+use daemon_lifecycle::{DaemonLauncher, DaemonLifecycleView};
 
-async fn try_connect(
-    name: &interprocess::local_socket::Name<'_>,
-) -> Result<interprocess::local_socket::tokio::Stream, std::io::Error> {
-    interprocess::local_socket::tokio::Stream::connect(name.clone()).await
-}
-
-async fn send(request: IpcRequest) -> Result<IpcResponse, String> {
-    let dir = data_dir();
-    let name = companion_protocol::socket_name(&dir)
-        .to_ns_name::<GenericNamespaced>()
-        .map_err(|e| e.to_string())?;
-
-    let mut stream = match try_connect(&name).await {
-        Ok(s) => s,
-        Err(_) => {
-            // Attempt short retry polling if daemon was just launched
-            let mut connected = None;
-            for _ in 0..5 {
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                if let Ok(s) = try_connect(&name).await {
-                    connected = Some(s);
-                    break;
-                }
-            }
-            connected.ok_or_else(|| {
-                "cannot reach the Gateway daemon: connection refused. Is the kicad-mcp-gateway-daemon process running?".to_string()
-            })?
-        }
-    };
-
-    write_message(&mut stream, &request)
-        .await
-        .map_err(|e| e.to_string())?;
-    read_message(&mut stream).await.map_err(|e| e.to_string())
+async fn send(launcher: &DaemonLauncher, request: IpcRequest) -> Result<IpcResponse, String> {
+    let data_dir = launcher.ensure_ready().await?;
+    let response = ipc_client::send_request(&data_dir, request).await?;
+    ok_or_err(response)
 }
 
 fn ok_or_err(response: IpcResponse) -> Result<IpcResponse, String> {
@@ -67,113 +30,184 @@ fn ok_or_err(response: IpcResponse) -> Result<IpcResponse, String> {
 }
 
 #[tauri::command]
-async fn status() -> Result<DaemonStatusView, String> {
-    match ok_or_err(send(IpcRequest::Status).await?)? {
+async fn daemon_lifecycle(
+    launcher: State<'_, DaemonLauncher>,
+) -> Result<DaemonLifecycleView, String> {
+    let _ = launcher.ensure_ready().await;
+    Ok(launcher.lifecycle_view())
+}
+
+#[tauri::command]
+async fn status(launcher: State<'_, DaemonLauncher>) -> Result<DaemonStatusView, String> {
+    match send(launcher.inner(), IpcRequest::Status).await? {
         IpcResponse::Status(view) => Ok(view),
-        other => Err(format!("unexpected response: {other:?}")),
+        _ => Err("daemon returned an unexpected status response variant".to_string()),
     }
 }
 
 #[tauri::command]
-async fn pairing_status() -> Result<PairingStatusView, String> {
-    match ok_or_err(send(IpcRequest::PairingStatus).await?)? {
+async fn pairing_status(launcher: State<'_, DaemonLauncher>) -> Result<PairingStatusView, String> {
+    match send(launcher.inner(), IpcRequest::PairingStatus).await? {
         IpcResponse::PairingStatus(view) => Ok(view),
-        other => Err(format!("unexpected response: {other:?}")),
+        _ => Err("daemon returned an unexpected pairing-status response variant".to_string()),
     }
 }
 
 #[tauri::command]
-async fn begin_pairing() -> Result<PairingBegunView, String> {
-    match ok_or_err(send(IpcRequest::BeginPairing).await?)? {
+async fn begin_pairing(launcher: State<'_, DaemonLauncher>) -> Result<PairingBegunView, String> {
+    match send(launcher.inner(), IpcRequest::BeginPairing).await? {
         IpcResponse::PairingBegun(view) => Ok(view),
-        other => Err(format!("unexpected response: {other:?}")),
+        _ => Err("daemon returned an unexpected pairing response variant".to_string()),
     }
 }
 
 #[tauri::command]
-async fn list_sessions() -> Result<Vec<SessionView>, String> {
-    match ok_or_err(send(IpcRequest::ListSessions).await?)? {
+async fn list_sessions(launcher: State<'_, DaemonLauncher>) -> Result<Vec<SessionView>, String> {
+    match send(launcher.inner(), IpcRequest::ListSessions).await? {
         IpcResponse::Sessions(views) => Ok(views),
-        other => Err(format!("unexpected response: {other:?}")),
+        _ => Err("daemon returned an unexpected sessions response variant".to_string()),
     }
 }
 
 #[tauri::command]
-async fn approve_session(session_id: SessionId) -> Result<(), String> {
-    ok_or_err(send(IpcRequest::ApproveSession { session_id }).await?).map(|_| ())
+async fn approve_session(
+    launcher: State<'_, DaemonLauncher>,
+    session_id: SessionId,
+) -> Result<(), String> {
+    send(launcher.inner(), IpcRequest::ApproveSession { session_id })
+        .await
+        .map(|_| ())
 }
 
 #[tauri::command]
-async fn deny_session(session_id: SessionId, reason: String) -> Result<(), String> {
-    ok_or_err(send(IpcRequest::DenySession { session_id, reason }).await?).map(|_| ())
+async fn deny_session(
+    launcher: State<'_, DaemonLauncher>,
+    session_id: SessionId,
+    reason: String,
+) -> Result<(), String> {
+    send(
+        launcher.inner(),
+        IpcRequest::DenySession { session_id, reason },
+    )
+    .await
+    .map(|_| ())
 }
 
 #[tauri::command]
-async fn pause_session(session_id: SessionId) -> Result<(), String> {
-    ok_or_err(send(IpcRequest::PauseSession { session_id }).await?).map(|_| ())
+async fn pause_session(
+    launcher: State<'_, DaemonLauncher>,
+    session_id: SessionId,
+) -> Result<(), String> {
+    send(launcher.inner(), IpcRequest::PauseSession { session_id })
+        .await
+        .map(|_| ())
 }
 
 #[tauri::command]
-async fn resume_session(session_id: SessionId) -> Result<(), String> {
-    ok_or_err(send(IpcRequest::ResumeSession { session_id }).await?).map(|_| ())
+async fn resume_session(
+    launcher: State<'_, DaemonLauncher>,
+    session_id: SessionId,
+) -> Result<(), String> {
+    send(launcher.inner(), IpcRequest::ResumeSession { session_id })
+        .await
+        .map(|_| ())
 }
 
 #[tauri::command]
-async fn revoke_session(session_id: SessionId) -> Result<(), String> {
-    ok_or_err(send(IpcRequest::RevokeSession { session_id }).await?).map(|_| ())
+async fn revoke_session(
+    launcher: State<'_, DaemonLauncher>,
+    session_id: SessionId,
+) -> Result<(), String> {
+    send(launcher.inner(), IpcRequest::RevokeSession { session_id })
+        .await
+        .map(|_| ())
 }
 
 #[tauri::command]
-async fn list_workspaces() -> Result<Vec<WorkspaceView>, String> {
-    match ok_or_err(send(IpcRequest::ListWorkspaces).await?)? {
+async fn list_workspaces(
+    launcher: State<'_, DaemonLauncher>,
+) -> Result<Vec<WorkspaceView>, String> {
+    match send(launcher.inner(), IpcRequest::ListWorkspaces).await? {
         IpcResponse::Workspaces(views) => Ok(views),
-        other => Err(format!("unexpected response: {other:?}")),
+        _ => Err("daemon returned an unexpected workspaces response variant".to_string()),
     }
 }
 
 #[tauri::command]
-async fn authorize_workspace(path: String, display_name: String) -> Result<WorkspaceView, String> {
-    match ok_or_err(send(IpcRequest::AuthorizeWorkspace { path, display_name }).await?)? {
+async fn authorize_workspace(
+    launcher: State<'_, DaemonLauncher>,
+    path: String,
+    display_name: String,
+) -> Result<WorkspaceView, String> {
+    match send(
+        launcher.inner(),
+        IpcRequest::AuthorizeWorkspace { path, display_name },
+    )
+    .await?
+    {
         IpcResponse::WorkspaceAuthorized(view) => Ok(view),
-        other => Err(format!("unexpected response: {other:?}")),
+        _ => Err("daemon returned an unexpected workspace response variant".to_string()),
     }
 }
 
 #[tauri::command]
-async fn remove_workspace(workspace_id: WorkspaceId) -> Result<(), String> {
-    ok_or_err(send(IpcRequest::RemoveWorkspace { workspace_id }).await?).map(|_| ())
+async fn remove_workspace(
+    launcher: State<'_, DaemonLauncher>,
+    workspace_id: WorkspaceId,
+) -> Result<(), String> {
+    send(
+        launcher.inner(),
+        IpcRequest::RemoveWorkspace { workspace_id },
+    )
+    .await
+    .map(|_| ())
 }
 
 #[tauri::command]
-async fn audit_summary() -> Result<AuditSummaryView, String> {
-    match ok_or_err(send(IpcRequest::AuditSummary).await?)? {
+async fn audit_summary(launcher: State<'_, DaemonLauncher>) -> Result<AuditSummaryView, String> {
+    match send(launcher.inner(), IpcRequest::AuditSummary).await? {
         IpcResponse::AuditSummary(view) => Ok(view),
-        other => Err(format!("unexpected response: {other:?}")),
+        _ => Err("daemon returned an unexpected audit response variant".to_string()),
     }
 }
 
 #[tauri::command]
-async fn list_pending_approvals() -> Result<Vec<PendingApprovalView>, String> {
-    match ok_or_err(send(IpcRequest::ListPendingApprovals).await?)? {
+async fn list_pending_approvals(
+    launcher: State<'_, DaemonLauncher>,
+) -> Result<Vec<PendingApprovalView>, String> {
+    match send(launcher.inner(), IpcRequest::ListPendingApprovals).await? {
         IpcResponse::PendingApprovals(views) => Ok(views),
-        other => Err(format!("unexpected response: {other:?}")),
+        _ => Err("daemon returned an unexpected approvals response variant".to_string()),
     }
 }
 
 #[tauri::command]
-async fn approve_operation(operation_id: OperationId) -> Result<(), String> {
-    ok_or_err(send(IpcRequest::ApproveOperation { operation_id }).await?).map(|_| ())
+async fn approve_operation(
+    launcher: State<'_, DaemonLauncher>,
+    operation_id: OperationId,
+) -> Result<(), String> {
+    send(
+        launcher.inner(),
+        IpcRequest::ApproveOperation { operation_id },
+    )
+    .await
+    .map(|_| ())
 }
 
 #[tauri::command]
-async fn deny_operation(operation_id: OperationId, reason: String) -> Result<(), String> {
-    ok_or_err(
-        send(IpcRequest::DenyOperation {
+async fn deny_operation(
+    launcher: State<'_, DaemonLauncher>,
+    operation_id: OperationId,
+    reason: String,
+) -> Result<(), String> {
+    send(
+        launcher.inner(),
+        IpcRequest::DenyOperation {
             operation_id,
             reason,
-        })
-        .await?,
+        },
     )
+    .await
     .map(|_| ())
 }
 
@@ -199,7 +233,15 @@ fn get_config() -> Result<ConfigView, String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            let launcher = DaemonLauncher::new(app.handle().clone());
+            app.manage(launcher.clone());
+            daemon_lifecycle::spawn_watchdog(launcher);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
+            daemon_lifecycle,
             status,
             pairing_status,
             begin_pairing,

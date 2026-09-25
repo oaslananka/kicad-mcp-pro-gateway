@@ -2,6 +2,7 @@ import { api } from "../api/client";
 import { usePolling } from "../hooks/usePolling";
 
 export default function StatusScreen() {
+  const { data: lifecycle } = usePolling(() => api.daemonLifecycle(), 1000);
   const { data: status, error } = usePolling(() => api.status(), 3000);
   const { data: sessions } = usePolling(() => api.listSessions(), 3000);
 
@@ -9,12 +10,28 @@ export default function StatusScreen() {
     <div>
       <h2>KiCad MCP Pro Gateway</h2>
 
+      {lifecycle?.state === "failed" && (
+        <div className="error-banner">Gateway daemon failed to start: {lifecycle.message}</div>
+      )}
+      {lifecycle?.state === "stopped" && (
+        <div className="error-banner">Gateway daemon stopped: {lifecycle.message}</div>
+      )}
       {error && <div className="error-banner">Daemon not reachable: {error}</div>}
 
       <div className="card">
         <div className="row">
           <span className="label">Connection</span>
-          <span>{error ? "Disconnected" : "Connected"}</span>
+          <span>
+            {lifecycle?.state === "starting"
+              ? "Starting"
+              : lifecycle?.state === "stopped"
+                ? "Stopped"
+                : error || lifecycle?.state === "failed"
+                  ? "Disconnected"
+                  : lifecycle?.state === "ready"
+                    ? "Connected"
+                    : "Connecting"}
+          </span>
         </div>
         <div className="row">
           <span className="label">Device</span>

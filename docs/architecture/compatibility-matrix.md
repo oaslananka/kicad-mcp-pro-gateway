@@ -21,16 +21,20 @@ those upstream statuses into additional Gateway support claims.
 
 | OS | Architecture | Gateway Status | Automated Validation | Release Artifacts Produced Today |
 |---|---|---|---|---|
-| **Linux** | `x86_64` (GNU) | **SUPPORTED** | Native CI build, format, Clippy, and tests on `ubuntu-latest` | `.tar.gz` CLI/daemon archive; no installer |
+| **Linux** | `x86_64` (GNU) | **SUPPORTED** | Native workspace tests on `ubuntu-latest`; desktop package build and sidecar verification on `ubuntu-22.04` | `.tar.gz` CLI/daemon archive and `.deb` desktop package |
 | **Linux** | `aarch64` / ARM64 | **PLANNED** | None | None |
-| **macOS** | `aarch64` (Apple Silicon) | **SUPPORTED** | Native CI build, format, Clippy, and tests on `macos-latest`; release target is `aarch64-apple-darwin` | `.tar.gz` CLI/daemon archive; no installer |
+| **macOS** | `aarch64` (Apple Silicon) | **SUPPORTED** | Native workspace tests on `macos-latest`; `aarch64-apple-darwin` desktop package build and sidecar verification on `macos-14` | `.tar.gz` CLI/daemon archive and `.dmg` desktop package |
 | **macOS** | `x86_64` (Intel) | **UNSUPPORTED** | No release target or supported runner combination | None |
-| **Windows** | `x86_64` (MSVC) | **SUPPORTED** | Native CI build, format, Clippy, and tests on `windows-latest`; release target is `x86_64-pc-windows-msvc` | `.zip` CLI/daemon archive; no installer |
+| **Windows** | `x86_64` (MSVC) | **SUPPORTED** | Native workspace tests on `windows-latest`; `x86_64-pc-windows-msvc` desktop package build and sidecar verification on `windows-2022` | `.zip` CLI/daemon archive and `.msi` desktop package |
 | **Windows** | `arm64` (ARM64) | **PLANNED** | None | None |
 
-CI validation here means the Rust workspace tests, not a live KiCad or
-kicad-mcp-pro session. No installer, desktop bundle, signing, or notarization
-job is present in the release workflow.
+The supported desktop rows use the application-managed sidecar lifecycle;
+Gateway V1 does not install an OS service. Native IPC/restart tests and
+packaged `.deb` / `.dmg` / `.msi` sidecar verification are defined in the
+[daemon lifecycle evidence matrix](../development/daemon-lifecycle.md#automated-and-clean-machine-evidence).
+Automated validation covers the Rust workspace and Tauri packaging path, not a
+live KiCad or kicad-mcp-pro session. Signing and notarization remain separate
+release gates.
 
 ## Core Protocol Lanes & Component Dependencies
 
@@ -96,5 +100,5 @@ KICAD_MCP_LIVE_ENDPOINT=http://127.0.0.1:3334/mcp \
 2. **Linux & Windows ARM64:** **PLANNED**, not supported: cross-compilation and
    native hardware QA remain open.
 3. **No Unvalidated Support:** A target is `SUPPORTED` only for the native CI
-   scope stated above. Live KiCad/MCP validation, installers, and signing are
-   separate release gates.
+   scope stated above. Live KiCad/MCP validation, signing, notarization, and
+   clean-machine installer qualification remain separate release gates.
