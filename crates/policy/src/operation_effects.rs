@@ -388,8 +388,14 @@ impl ToolEffectContract {
 fn normalize_argument_path(raw: &str, workspace_root: &Path) -> Result<PathBuf, ()> {
     validate_path_text(raw)?;
     let portable = raw.replace('\\', "/");
-    if has_windows_drive_prefix(&portable) {
-        return Err(());
+
+    // On non-Windows platforms, reject Windows drive prefixes (e.g., C:/) as foreign syntax.
+    // On Windows, allow native drive-absolute paths and let WorkspaceBoundary classify in/out-of-workspace.
+    #[cfg(not(target_os = "windows"))]
+    {
+        if has_windows_drive_prefix(&portable) {
+            return Err(());
+        }
     }
 
     let path = PathBuf::from(portable);
