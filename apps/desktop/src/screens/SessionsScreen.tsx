@@ -143,10 +143,14 @@ export default function SessionsScreen() {
               <span className="label">Task</span>
               <span>{sessionDialog.task_scope}</span>
             </div>
-            {sessionDialog.workspace_ids && sessionDialog.workspace_ids.length > 0 && (
+            {sessionDialog.workspaces && sessionDialog.workspaces.length > 0 && (
               <div className="row">
                 <span className="label">Workspace(s)</span>
-                <span>{sessionDialog.workspace_ids.join(", ")}</span>
+                <span className="mono" style={{ overflowWrap: "break-word" }}>
+                  {sessionDialog.workspaces
+                    .map((w) => `${w.display_name} (${w.workspace_id})`)
+                    .join(", ")}
+                </span>
               </div>
             )}
             <div className="row">
@@ -191,7 +195,9 @@ export default function SessionsScreen() {
             </div>
             <div className="row">
               <span className="label">Workspace</span>
-              <span className="mono">{opDialog.workspace_id}</span>
+              <span className="mono" style={{ overflowWrap: "break-word" }}>
+                {opDialog.workspace_id}
+              </span>
             </div>
             <div style={{ marginTop: 16 }}>
               <button

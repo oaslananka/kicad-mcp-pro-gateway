@@ -166,7 +166,14 @@ pub struct SessionView {
     /// Policy-bounded effective expiry shown to the approver. This is the
     /// timestamp persisted with the session, not the remote requested TTL.
     pub expires_at: String,
-    pub workspace_ids: Vec<String>,
+    pub workspace_ids: Vec<WorkspaceId>,
+    pub workspaces: Vec<WorkspaceInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkspaceInfo {
+    pub workspace_id: WorkspaceId,
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

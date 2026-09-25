@@ -2,6 +2,7 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import SessionsScreen from "../SessionsScreen";
 import { api } from "../../api/client";
+import type { SessionView, PendingApprovalView } from "../../api/types";
 
 vi.mock("../../api/client", () => ({
   api: {
@@ -16,6 +17,32 @@ vi.mock("../../api/client", () => ({
     denyOperation: vi.fn(),
   },
 }));
+
+// Factory functions for test mocks
+function createMockSession(overrides: Partial<SessionView> = {}): SessionView {
+  return {
+    session_id: "ses_100",
+    remote_principal: "agent@cloud",
+    status: "Active",
+    capability_profile: "Design",
+    task_scope: "PCB Routing",
+    expires_at: "2026-12-31T23:59:59Z",
+    workspace_ids: ["ws_001"],
+    workspaces: [{ workspace_id: "ws_001", display_name: "Test Workspace" }],
+    ...overrides,
+  };
+}
+
+function createMockPendingApproval(overrides: Partial<PendingApprovalView> = {}): PendingApprovalView {
+  return {
+    operation_id: "op_200",
+    session_id: "ses_100",
+    workspace_id: "ws_001",
+    tool_name: "pcb_export_gerber",
+    risk: "High",
+    ...overrides,
+  };
+}
 
 describe("SessionsScreen", () => {
   beforeEach(() => {
@@ -34,26 +61,8 @@ describe("SessionsScreen", () => {
   });
 
   it("renders active sessions and pending approvals", async () => {
-    vi.mocked(api.listSessions).mockResolvedValue([
-      {
-        session_id: "ses_100",
-        remote_principal: "agent@cloud",
-        status: "Active",
-        capability_profile: "Design",
-        task_scope: "PCB Routing",
-        expires_at: "2026-12-31T23:59:59Z",
-        workspace_ids: ["ws_001", "ws_002"],
-      },
-    ]);
-    vi.mocked(api.listPendingApprovals).mockResolvedValue([
-      {
-        operation_id: "op_200",
-        session_id: "ses_100",
-        workspace_id: "ws_001",
-        tool_name: "pcb_export_gerber",
-        risk: "High",
-      },
-    ]);
+    vi.mocked(api.listSessions).mockResolvedValue([createMockSession()]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([createMockPendingApproval()]);
 
     render(<SessionsScreen />);
 
@@ -68,15 +77,13 @@ describe("SessionsScreen", () => {
 
   it("renders session with PendingApproval status and Review button", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_pending",
         remote_principal: "user@remote",
         status: "PendingApproval",
-        capability_profile: "Design",
         task_scope: "General editing",
         expires_at: "2026-10-01T00:00:00Z",
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
 
@@ -91,15 +98,13 @@ describe("SessionsScreen", () => {
 
   it("renders session with Suspended status and Resume/Revoke buttons", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_suspended",
         remote_principal: "user@remote",
         status: "Suspended",
-        capability_profile: "Design",
         task_scope: "General editing",
         expires_at: "2026-10-01T00:00:00Z",
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
 
@@ -129,15 +134,13 @@ describe("SessionsScreen", () => {
 
   it("opens session approval dialog when Review is clicked on PendingApproval session", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_100",
         remote_principal: "agent@cloud",
         status: "PendingApproval",
-        capability_profile: "Design",
         task_scope: "PCB Routing",
         expires_at: "2026-12-31T23:59:59Z",
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
 
@@ -165,15 +168,7 @@ describe("SessionsScreen", () => {
 
   it("opens operation approval dialog when Review is clicked on pending operation", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([]);
-    vi.mocked(api.listPendingApprovals).mockResolvedValue([
-      {
-        operation_id: "op_200",
-        session_id: "ses_100",
-        workspace_id: "ws_001",
-        tool_name: "pcb_export_gerber",
-        risk: "High",
-      },
-    ]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([createMockPendingApproval()]);
 
     render(<SessionsScreen />);
 
@@ -198,15 +193,13 @@ describe("SessionsScreen", () => {
 
   it("calls approveSession when Approve is clicked in session dialog", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_100",
         remote_principal: "agent@cloud",
         status: "PendingApproval",
-        capability_profile: "Design",
         task_scope: "PCB Routing",
         expires_at: "2026-12-31T23:59:59Z",
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
     vi.mocked(api.approveSession).mockResolvedValue(undefined);
@@ -232,15 +225,13 @@ describe("SessionsScreen", () => {
 
   it("calls denySession with reason when Deny is clicked in session dialog", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_100",
         remote_principal: "agent@cloud",
         status: "PendingApproval",
-        capability_profile: "Design",
         task_scope: "PCB Routing",
         expires_at: "2026-12-31T23:59:59Z",
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
     vi.mocked(api.denySession).mockResolvedValue(undefined);
@@ -266,15 +257,7 @@ describe("SessionsScreen", () => {
 
   it("calls approveOperation when Allow Once is clicked in operation dialog", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([]);
-    vi.mocked(api.listPendingApprovals).mockResolvedValue([
-      {
-        operation_id: "op_200",
-        session_id: "ses_100",
-        workspace_id: "ws_001",
-        tool_name: "pcb_export_gerber",
-        risk: "High",
-      },
-    ]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([createMockPendingApproval()]);
     vi.mocked(api.approveOperation).mockResolvedValue(undefined);
 
     render(<SessionsScreen />);
@@ -298,15 +281,7 @@ describe("SessionsScreen", () => {
 
   it("calls denyOperation with reason when Deny is clicked in operation dialog", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([]);
-    vi.mocked(api.listPendingApprovals).mockResolvedValue([
-      {
-        operation_id: "op_200",
-        session_id: "ses_100",
-        workspace_id: "ws_001",
-        tool_name: "pcb_export_gerber",
-        risk: "High",
-      },
-    ]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([createMockPendingApproval()]);
     vi.mocked(api.denyOperation).mockResolvedValue(undefined);
 
     render(<SessionsScreen />);
@@ -330,15 +305,13 @@ describe("SessionsScreen", () => {
 
   it("calls pauseSession when Pause is clicked on Active session", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_100",
         remote_principal: "agent@cloud",
         status: "Active",
-        capability_profile: "Design",
         task_scope: "PCB Routing",
         expires_at: "2026-12-31T23:59:59Z",
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
     vi.mocked(api.pauseSession).mockResolvedValue(undefined);
@@ -358,15 +331,13 @@ describe("SessionsScreen", () => {
 
   it("calls revokeSession when Revoke is clicked on Active session", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_100",
         remote_principal: "agent@cloud",
         status: "Active",
-        capability_profile: "Design",
         task_scope: "PCB Routing",
         expires_at: "2026-12-31T23:59:59Z",
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
     vi.mocked(api.revokeSession).mockResolvedValue(undefined);
@@ -386,15 +357,13 @@ describe("SessionsScreen", () => {
 
   it("calls resumeSession when Resume is clicked on Suspended session", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_100",
         remote_principal: "agent@cloud",
         status: "Suspended",
-        capability_profile: "Design",
         task_scope: "PCB Routing",
         expires_at: "2026-12-31T23:59:59Z",
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
     vi.mocked(api.resumeSession).mockResolvedValue(undefined);
@@ -414,15 +383,13 @@ describe("SessionsScreen", () => {
 
   it("shows action error when session action fails", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_100",
         remote_principal: "agent@cloud",
         status: "Active",
-        capability_profile: "Design",
         task_scope: "PCB Routing",
         expires_at: "2026-12-31T23:59:59Z",
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
     vi.mocked(api.pauseSession).mockRejectedValue("Session not found");
@@ -442,15 +409,7 @@ describe("SessionsScreen", () => {
 
   it("shows action error when operation approval fails", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([]);
-    vi.mocked(api.listPendingApprovals).mockResolvedValue([
-      {
-        operation_id: "op_200",
-        session_id: "ses_100",
-        workspace_id: "ws_001",
-        tool_name: "pcb_export_gerber",
-        risk: "High",
-      },
-    ]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([createMockPendingApproval()]);
     vi.mocked(api.approveOperation).mockRejectedValue("Operation expired");
 
     render(<SessionsScreen />);
@@ -474,15 +433,13 @@ describe("SessionsScreen", () => {
 
   it("closes session dialog when clicking backdrop", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_100",
         remote_principal: "agent@cloud",
         status: "PendingApproval",
-        capability_profile: "Design",
         task_scope: "PCB Routing",
         expires_at: "2026-12-31T23:59:59Z",
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
 
@@ -509,15 +466,7 @@ describe("SessionsScreen", () => {
 
   it("closes operation dialog when clicking backdrop", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([]);
-    vi.mocked(api.listPendingApprovals).mockResolvedValue([
-      {
-        operation_id: "op_200",
-        session_id: "ses_100",
-        workspace_id: "ws_001",
-        tool_name: "pcb_export_gerber",
-        risk: "High",
-      },
-    ]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([createMockPendingApproval()]);
 
     render(<SessionsScreen />);
 
@@ -543,13 +492,11 @@ describe("SessionsScreen", () => {
   it("displays risk badge correctly for Critical risk", async () => {
     vi.mocked(api.listSessions).mockResolvedValue([]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([
-      {
+      createMockPendingApproval({
         operation_id: "op_critical",
-        session_id: "ses_100",
-        workspace_id: "ws_001",
         tool_name: "dangerous_tool",
         risk: "Critical",
-      },
+      }),
     ]);
 
     render(<SessionsScreen />);
@@ -561,18 +508,18 @@ describe("SessionsScreen", () => {
     const riskBadge = screen.getByText("Critical").closest("span");
     expect(riskBadge).toHaveClass("risk-high");
   });
+
   it("shows the policy-limited effective expiry in the approval dialog", async () => {
     const effectiveExpiry = "2026-09-25T12:07:00Z";
     vi.mocked(api.listSessions).mockResolvedValue([
-      {
+      createMockSession({
         session_id: "ses_300",
         remote_principal: "agent@cloud",
         status: "PendingApproval",
         capability_profile: "Manufacturing",
         task_scope: "Export fabrication files",
         expires_at: effectiveExpiry,
-        workspace_ids: ["ws_001"],
-      },
+      }),
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
 
@@ -583,5 +530,4 @@ describe("SessionsScreen", () => {
     expect(screen.getAllByText("Effective expiry").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText(effectiveExpiry).length).toBeGreaterThanOrEqual(2);
   });
-
 });

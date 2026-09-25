@@ -11,11 +11,11 @@ use companion_core::{OperationId, Session, SessionId, SessionStatus, WorkspaceId
 use companion_core_bridge::CoreBridgeClient;
 use companion_protocol::{
     AuditSummaryView, DaemonIdentityView, DaemonStatusView, IpcRequest, IpcResponse,
-    PairingBegunView, PairingStatusView, PendingApprovalView, SessionView, WorkspaceView,
-    DAEMON_PRODUCT_ID, LOCAL_IPC_PROTOCOL_VERSION,
+    PairingBegunView, PairingStatusView, PendingApprovalView, SessionView, WorkspaceInfo,
+    WorkspaceView, DAEMON_PRODUCT_ID, LOCAL_IPC_PROTOCOL_VERSION,
 };
 use companion_sessions::{SessionEvent, SessionTransition};
-use companion_workspace::WorkspaceAuthorization;
+use companion_workspace::{WorkspaceAuthorization, WorkspaceRepository};
 
 use crate::errors::DaemonError;
 use crate::remote_processor;
@@ -72,7 +72,22 @@ fn join_error(context: &str) -> IpcResponse {
     error_response(DaemonError::Internal(format!("{context} task panicked")))
 }
 
-fn to_session_view(session: &Session) -> SessionView {
+fn to_session_view(session: &Session, workspace_repo: &WorkspaceRepository) -> SessionView {
+    let workspaces: Vec<WorkspaceInfo> = session
+        .workspace_ids
+        .iter()
+        .filter_map(|id| {
+            workspace_repo
+                .load(*id)
+                .ok()
+                .flatten()
+                .map(|ws| WorkspaceInfo {
+                    workspace_id: ws.workspace_id,
+                    display_name: ws.display_name,
+                })
+        })
+        .collect();
+
     SessionView {
         session_id: session.session_id,
         remote_principal: session.remote_principal.clone(),
@@ -83,11 +98,8 @@ fn to_session_view(session: &Session) -> SessionView {
             .expires_at
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap_or_else(|_| "invalid-timestamp".into()),
-        workspace_ids: session
-            .workspace_ids
-            .iter()
-            .map(|id| id.to_string())
-            .collect(),
+        workspace_ids: session.workspace_ids.iter().cloned().collect(),
+        workspaces,
     }
 }
 
@@ -193,12 +205,18 @@ async fn begin_pairing(state: &Arc<DaemonState>) -> IpcResponse {
 
 async fn list_sessions(state: &Arc<DaemonState>) -> IpcResponse {
     let state = Arc::clone(state);
+    let workspace_repo = Arc::clone(&state.workspace_repo);
     // All sessions regardless of status: a caller (desktop/CLI) needs to
     // see PendingApproval sessions to approve them, Suspended ones to
     // resume them, etc. — not just the currently-Active ones.
     let result = tokio::task::spawn_blocking(move || state.session_repo.list_all()).await;
     match result {
-        Ok(Ok(sessions)) => IpcResponse::Sessions(sessions.iter().map(to_session_view).collect()),
+        Ok(Ok(sessions)) => IpcResponse::Sessions(
+            sessions
+                .iter()
+                .map(|s| to_session_view(s, &workspace_repo))
+                .collect(),
+        ),
         Ok(Err(e)) => error_response(DaemonError::Session(e)),
         Err(_) => join_error("list_sessions"),
     }
