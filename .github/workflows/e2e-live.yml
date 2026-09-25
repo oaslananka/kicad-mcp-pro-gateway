@@ -75,17 +75,29 @@ jobs:
             uv \
             libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
+      - name: Validate compatibility inputs
+        shell: bash
+        run: |
+          if [[ ! "$KICAD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "KICAD_VERSION must be a three-part numeric version" >&2
+            exit 1
+          fi
+          if [[ ! "$KICAD_MCP_PRO_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "KICAD_MCP_PRO_VERSION must be a three-part numeric version" >&2
+            exit 1
+          fi
+
       - name: Install KiCad ${{ env.KICAD_VERSION }}
         run: |
           # Install KiCad from official PPA
           sudo add-apt-repository -y ppa:kicad/kicad-10.0-releases
           sudo apt-get update
-          sudo apt-get install -y kicad=${{ env.KICAD_VERSION }}* kicad-footprints=${{ env.KICAD_VERSION }}* kicad-symbols=${{ env.KICAD_VERSION }}* kicad-templates=${{ env.KICAD_VERSION }}* kicad-packages3d=${{ env.KICAD_VERSION }}*
+          sudo apt-get install -y "kicad=$KICAD_VERSION"* "kicad-footprints=$KICAD_VERSION"* "kicad-symbols=$KICAD_VERSION"* "kicad-templates=$KICAD_VERSION"* "kicad-packages3d=$KICAD_VERSION"*
           kicad-cli --version
 
       - name: Install kicad-mcp-pro ${{ env.KICAD_MCP_PRO_VERSION }}
         run: |
-          uv tool install kicad-mcp-pro==${{ env.KICAD_MCP_PRO_VERSION }}
+          uv tool install "kicad-mcp-pro==$KICAD_MCP_PRO_VERSION"
           kicad-mcp-pro --version
           kicad-mcp-pro doctor
 
@@ -123,9 +135,9 @@ jobs:
         run: |
           echo "=== Live E2E Test Evidence ===" > e2e-evidence.txt
           echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> e2e-evidence.txt
-          echo "GitHub SHA: ${{ github.sha }}" >> e2e-evidence.txt
-          echo "GitHub Ref: ${{ github.ref }}" >> e2e-evidence.txt
-          echo "Runner OS: ${{ runner.os }}" >> e2e-evidence.txt
+          echo "GitHub SHA: $GITHUB_SHA" >> e2e-evidence.txt
+          echo "GitHub Ref: $GITHUB_REF" >> e2e-evidence.txt
+          echo "Runner OS: $RUNNER_OS" >> e2e-evidence.txt
           echo "" >> e2e-evidence.txt
           echo "--- KiCad Version ---" >> e2e-evidence.txt
           kicad-cli --version >> e2e-evidence.txt 2>&1
