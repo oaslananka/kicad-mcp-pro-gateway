@@ -51,6 +51,21 @@ fn run_setup_cli(data_dir: &Path) -> String {
     String::from_utf8(output.stdout).expect("setup CLI writes UTF-8")
 }
 
+fn run_cli(data_dir: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_kicad-mcp-gateway"))
+        .arg("--data-dir")
+        .arg(data_dir)
+        .args(args)
+        .output()
+        .expect("CLI process starts");
+    assert!(
+        output.status.success(),
+        "CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("CLI writes UTF-8")
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn setup_reports_core_offline_when_daemon_cannot_reach_kicad_mcp_pro() {
     let data_dir = fresh_data_dir();
@@ -231,9 +246,14 @@ async fn approve_pause_resume_revoke_session_round_trip() {
     spawn_test_daemon(cfg);
     wait_for_daemon(&data_dir).await;
 
-    send_request(&data_dir, IpcRequest::ApproveSession { session_id })
-        .await
-        .unwrap();
+    let session_id_text = session_id.to_string();
+    let approve_output = run_cli(&data_dir, &["session", "approve", session_id_text.as_str()]);
+    assert_eq!(approve_output, "approved session\n");
+    assert!(!approve_output.contains(session_id_text.as_str()));
+
+    let list_output = run_cli(&data_dir, &["session", "list"]);
+    assert!(!list_output.contains(session_id_text.as_str()));
+
     let response = send_request(&data_dir, IpcRequest::ListSessions)
         .await
         .unwrap();
