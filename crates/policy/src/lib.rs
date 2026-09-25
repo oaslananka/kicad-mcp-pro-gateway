@@ -6,12 +6,18 @@
 
 mod authorization_ttl;
 mod engine;
+mod operation_effects;
 mod tool_catalog;
 mod tool_registry;
 
 pub use authorization_ttl::{AuthorizationTtlPolicy, EffectiveAuthorizationTtl};
 pub use engine::{ApprovalReason, DenyReason, PolicyDecision, PolicyEngine};
+pub use operation_effects::{
+    NormalizedOperationEffects, OperationEffect, OperationEffectNormalizationError,
+    PathArgumentContract, ToolEffectContract, ToolEffectContractError,
+};
 pub use tool_catalog::{ToolCatalogError, ToolCatalogSnapshot};
 pub use tool_registry::{
-    TomlToolRegistry, ToolCapabilityResolver, ToolRegistryCoverage, ToolRegistryError,
+    TomlToolRegistry, ToolCapabilityResolver, ToolContractSource, ToolRegistryCoverage,
+    ToolRegistryError, TOOL_EFFECT_CONTRACT_VERSION,
 };

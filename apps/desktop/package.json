@@ -6,6 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "sidecar:dev": "node scripts/prepare-sidecar.mjs --profile debug",
+    "sidecar:release": "node scripts/prepare-sidecar.mjs --profile release",
+    "verify:sidecar": "node scripts/verify-sidecar.mjs",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint src --ext .ts,.tsx",

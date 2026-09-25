@@ -67,6 +67,13 @@ jobs:
       - name: Check workspace at MSRV
         run: cargo check --workspace --all-targets --locked
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+
+      - name: Stage daemon resource for Tauri MSRV check
+        run: node apps/desktop/scripts/prepare-sidecar.mjs --profile debug
+
       - name: Install Linux webview dependencies (Tauri MSRV check)
         run: |
           sudo apt-get update
@@ -152,6 +159,9 @@ jobs:
       - working-directory: apps/desktop
         run: pnpm build
 
+      - working-directory: apps/desktop
+        run: pnpm sidecar:dev
+
       - name: cargo fmt --check (src-tauri)
         working-directory: apps/desktop/src-tauri
         run: cargo fmt --all -- --check
@@ -159,3 +169,77 @@ jobs:
       - name: cargo clippy (src-tauri)
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --all-targets -- -D warnings
+
+  desktop-package:
+    name: desktop package / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundle: deb
+          - os: macos-14
+            target: aarch64-apple-darwin
+            bundle: dmg
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundle: msi
+    env:
+      TAURI_BUILD_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master @ 2026-09-17
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri package with packaged daemon
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          BUNDLE: ${{ matrix.bundle }}
+        run: pnpm tauri build --target "$TARGET" --bundles "$BUNDLE"
+
+      - name: Verify packaged daemon sidecar
+        working-directory: apps/desktop
+        run: pnpm verify:sidecar
+
+      - name: Upload unsigned desktop package evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-${{ matrix.target }}
+          path: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/${{ matrix.bundle }}

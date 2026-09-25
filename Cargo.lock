@@ -479,7 +479,9 @@ version = "0.1.0"
 dependencies = [
  "companion-core",
  "companion-workspace",
+ "proptest",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 1.0.69",
  "time",
@@ -1426,6 +1428,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "ulid",
 ]
 
 [[package]]

@@ -1,10 +1,24 @@
-# Maps kicad-mcp-pro MCP tool names to a required capability and a risk
-# classification. Any tool name not listed here is denied by
-# TomlToolRegistry::resolve — there is no fallback allow.
+# Maps kicad-mcp-pro MCP tool names to a required capability, risk
+# classification, and (only when reviewed) a fail-closed operation-effect
+# contract. Any tool name not listed here is denied. A listed tool without an
+# `effects` contract is also denied by PolicyEngine until reviewed.
 #
-# Authorization allowlist only. Upstream discovery never grants access.
-# Drift is tracked separately in upstream_tool_snapshot.toml and checked by
-# crates/policy/tests/tool_registry.rs.
+# This file is trusted policy source, never caller input. Its source identity
+# must match upstream_tool_snapshot.toml exactly; stale or incomplete source
+# prevents daemon startup. Upstream discovery never grants access.
+#
+# Reviewed V1 argument contracts (upstream commit below):
+# - sch_get_symbols: src/kicad_mcp/tools/schematic_inspection.py
+# - pcb_auto_place_by_schematic: src/kicad_mcp/tools/pcb.py
+# - kicad_create_new_project: src/kicad_mcp/tools/project_creation.py
+# - pcb_delete_items: src/kicad_mcp/tools/pcb.py
+# - lib_create_custom_symbol: src/kicad_mcp/tools/library_local_authoring.py
+# - export_gerber: src/kicad_mcp/tools/export_gerber.py
+
+contract_version = 1
+source_repository = "oaslananka/kicad-mcp-pro"
+source_ref = "main"
+source_sha = "f641a92596ab7adc1e134287578b1ae5ff9580ad"
 
 [[tool]]
 name = "add_footprint_inner_layer_graphic"
@@ -180,6 +194,13 @@ risk = "high"
 name = "export_gerber"
 capability = "manufacturing.export"
 risk = "high"
+arguments = ["output_subdir", "layers", "variant_name"]
+effects = ["read", "write"]
+[[tool.path_arguments]]
+argument = "output_subdir"
+effects = ["create", "write"]
+required = false
+default = "gerber"
 
 [[tool]]
 name = "export_glb"
@@ -360,6 +381,17 @@ risk = "low"
 name = "kicad_create_new_project"
 capability = "project.write"
 risk = "normal"
+arguments = ["path", "name", "confirm_overwrite"]
+effects = []
+[[tool.path_arguments]]
+argument = "path"
+effects = ["read", "write", "create"]
+required = true
+[[tool.path_arguments]]
+argument = "name"
+base_argument = "path"
+effects = ["read", "write", "create"]
+required = true
 
 [[tool]]
 name = "kicad_get_project_info"
@@ -440,6 +472,8 @@ risk = "low"
 name = "lib_create_custom_symbol"
 capability = "project.write"
 risk = "normal"
+arguments = ["name", "pins"]
+effects = ["read", "write", "create"]
 
 [[tool]]
 name = "lib_find_alternative_parts"
@@ -665,6 +699,17 @@ risk = "normal"
 name = "pcb_auto_place_by_schematic"
 capability = "pcb.write"
 risk = "high"
+arguments = [
+    "strategy",
+    "origin_x_mm",
+    "origin_y_mm",
+    "scale_x",
+    "scale_y",
+    "grid_mm",
+    "allow_open_board",
+    "sync_missing",
+]
+effects = ["read", "write", "create"]
 
 [[tool]]
 name = "pcb_auto_place_force_directed"
@@ -715,6 +760,8 @@ risk = "low"
 name = "pcb_delete_items"
 capability = "pcb.write"
 risk = "normal"
+arguments = ["item_ids"]
+effects = ["read", "delete"]
 
 [[tool]]
 name = "pcb_delete_object"
@@ -1400,6 +1447,12 @@ risk = "low"
 name = "sch_get_symbols"
 capability = "schematic.read"
 risk = "low"
+arguments = ["sheet", "sheet_file"]
+effects = ["read"]
+[[tool.path_arguments]]
+argument = "sheet_file"
+effects = ["read"]
+required = false
 
 [[tool]]
 name = "sch_get_template_info"

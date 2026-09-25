@@ -200,6 +200,9 @@ impl CompanionError for ConfigError {
 const DEFAULT_LOG_LEVEL: &str = "info";
 const DEFAULT_CORE_BRIDGE_ENDPOINT: &str = "http://127.0.0.1:3334/mcp";
 const DEFAULT_TRANSPORT_MODE: TransportMode = TransportMode::Disabled;
+/// Durable hand-off marker used when a user explicitly stops a daemon that
+/// may be supervised by an open desktop process.
+pub const DAEMON_STOP_MARKER_FILE: &str = "daemon.stopped";
 const ENV_DATA_DIR: &str = "GATEWAY_DATA_DIR";
 const ENV_LOG_LEVEL: &str = "GATEWAY_LOG_LEVEL";
 const ENV_CORE_BRIDGE_ENDPOINT: &str = "GATEWAY_CORE_BRIDGE_ENDPOINT";

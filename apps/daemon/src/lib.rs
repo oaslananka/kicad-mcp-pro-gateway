@@ -67,7 +67,7 @@ fn build_state_from_parts(
     let workspace_repo = Arc::new(WorkspaceRepository::new(Arc::clone(&storage)));
     let session_repo = Arc::new(SessionRepository::new(Arc::clone(&storage)));
     let policy_engine = Arc::new(PolicyEngine::with_authorization_ttl_policy(
-        TomlToolRegistry::embedded(),
+        TomlToolRegistry::try_embedded()?,
         AuthorizationTtlPolicy::new(config.authorization_ttl),
     ));
     let audit_repo = Arc::new(AuditRepository::new(Arc::clone(&storage)));
@@ -78,6 +78,7 @@ fn build_state_from_parts(
     core_health_probe_config.timeout = CORE_HEALTH_PROBE_TIMEOUT;
 
     Ok(Arc::new(DaemonState {
+        instance_id: ulid::Ulid::new().to_string(),
         storage,
         identity_store,
         workspace_repo,
@@ -171,7 +172,11 @@ async fn run_transport_lifecycle(
 /// surfaces as an error from [`build_state`] before anything else starts.
 pub async fn run(config: CompanionConfig) -> anyhow::Result<()> {
     let state = build_state(&config)?;
-    tracing::info!(data_dir = %config.data_dir.display(), "daemon starting");
+    tracing::info!(
+        instance_id = %state.instance_id,
+        data_dir = %config.data_dir.display(),
+        "daemon starting"
+    );
 
     let transport = transport_for_mode(config.transport_mode);
     match config.transport_mode {
