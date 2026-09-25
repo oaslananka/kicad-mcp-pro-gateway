@@ -1,0 +1,336 @@
+{
+  "board": {
+    "design_settings": {
+      "defaults": {
+        "board_outline_line_width": 0.15,
+        "copper_line_width": 0.2,
+        "copper_text_thickness": 0.3,
+        "copper_text_size": 1.5,
+        "copper_text_italics": false,
+        "copper_text_upright": true,
+        "edge_cut_line_width": 0.15,
+        "silk_screen_line_width": 0.15,
+        "silk_screen_text_thickness": 0.3,
+        "silk_screen_text_size": 1,
+        "silk_screen_text_italics": false,
+        "silk_screen_text_upright": true,
+        "zone_45_only": false,
+        "min_clearance": 0.2,
+        "min_track_width": 0.2,
+        "min_via_diameter": 0.4,
+        "min_via_drill": 0.3,
+        "min_microvia_diameter": 0.2,
+        "min_microvia_drill": 0.1,
+        "min_hole_clearance": 0.25,
+        "min_hole_to_hole": 0.25,
+        "track_width": [0.2, 0.25, 0.3, 0.4, 0.5],
+        "via_diameter": [0.6, 0.8, 1.0],
+        "via_drill": [0.4, 0.5, 0.6],
+        "differential_pair_gap": 0.25,
+        "differential_pair_width": 0.2,
+        "silk_screen_margin": 0.2,
+        "silk_screen_to_object": 0.15
+      },
+      "diff_pair_dimensions": [],
+      "drc_exclusions": [],
+      "net_classes": [
+        {
+          "name": "Default",
+          "bus_width": 12,
+          "clearance": 0.2,
+          "diff_pair_gap": 0.25,
+          "diff_pair_width": 0.2,
+          "track_width": 0.2,
+          "via_diameter": 0.6,
+          "via_drill": 0.4
+        }
+      ],
+      "pad_to_mask_clearance": 0.051,
+      "allow_soldermask_bridges_in_footprints": false,
+      "solder_mask_min_width": 0.25
+    },
+    "layer_presets": [],
+    "net_colors": null,
+    "rules": {
+      "check_zone_fills": true,
+      "diff_pair_requirements": {
+        "S": {
+          "gap": 0.2,
+          "uncoupled_length": 5,
+          "track_width": 0.2
+        }
+      },
+      "length_matching_requirements": [],
+      "min_annular_ring": 0.05,
+      "min_hole_clearance": 0.25,
+      "min_hole_to_hole": 0.25,
+      "min_track_width": 0.2,
+      "min_via_diameter": 0.4,
+      "min_via_drill": 0.3,
+      "min_microvia_diameter": 0.2,
+      "min_microvia_drill": 0.1,
+      "min_copper_edge_clearance": 0.2,
+      "check_soldermask_bridges": true,
+      "check_zone_fills_before_pcb_export": true,
+      "check_unconnected_items": true,
+      "check_courtyards": true,
+      "check_items_in_courtyard": true,
+      "courtyard_clearance": 0.25,
+      "check_zone_fills_before_drc": true,
+      "max_error": 50,
+      "min_edge_clearance": 0.2,
+      "check_silk_screen_clearance": true,
+      "check_soldermask_clearance": true,
+      "check_thermal_reliefs": true,
+      "check_padstack": true,
+      "check_fiducials": true,
+      "check_teardrops": false
+    },
+    "setup": {
+      "pad_to_mask_clearance": 0.051,
+      "allow_soldermask_bridges_in_footprints": false,
+      "solder_mask_min_width": 0.25
+    },
+    "stackup": [
+      {
+        "name": "F.Cu",
+        "type": "copper",
+        "thickness": 0.035,
+        "epsilon_r": 4.2,
+        "loss_tangent": 0.02
+      },
+      {
+        "name": "B.Cu",
+        "type": "copper",
+        "thickness": 0.035,
+        "epsilon_r": 4.2,
+        "loss_tangent": 0.02
+      }
+    ],
+    "zones": []
+  },
+  "cvpcb": {
+    "equivalence_files": []
+  },
+  "erc": {
+    "erc_exclusions": [],
+    "check_sheet_number": true,
+    "check_sheet_name": true,
+    "check_sheet_file": true,
+    "check_pin_conflicts": true,
+    "check_label_conflicts": true,
+    "check_power_conflicts": true,
+    "check_no_connect_conflicts": true,
+    "check_unconnected": true,
+    "check_wire_conflicts": true,
+    "check_junction_conflicts": true,
+    "check_bus_conflicts": true,
+    "check_bus_entry_conflicts": true,
+    "check_component_value": true,
+    "check_component_reference": true,
+    "check_component_footprint": true,
+    "check_component_datasheet": false,
+    "check_sheet_pin_conflicts": true,
+    "check_hierarchical_label_conflicts": true,
+    "check_global_label_conflicts": true,
+    "check_power_symbol_conflicts": true,
+    "check_drc_conflicts": false
+  },
+  "kicad_pcb": "test-project.kicad_pcb",
+  "kicad_sch": "test-project.kicad_sch",
+  "libraries": {
+    "pinned_footprint_libs": [],
+    "pinned_symbol_libs": []
+  },
+  "meta": {
+    "version": 1,
+    "filename": "test-project.kicad_pro"
+  },
+  "net_settings": {
+    "classes": [
+      {
+        "name": "Default",
+        "bus_width": 12,
+        "clearance": 0.2,
+        "diff_pair_gap": 0.25,
+        "diff_pair_width": 0.2,
+        "track_width": 0.2,
+        "via_diameter": 0.6,
+        "via_drill": 0.4
+      }
+    ],
+    "net_colors": null,
+    "rules": {
+      "check_zone_fills": true,
+      "diff_pair_requirements": {
+        "S": {
+          "gap": 0.2,
+          "uncoupled_length": 5,
+          "track_width": 0.2
+        }
+      },
+      "length_matching_requirements": [],
+      "min_annular_ring": 0.05,
+      "min_hole_clearance": 0.25,
+      "min_hole_to_hole": 0.25,
+      "min_track_width": 0.2,
+      "min_via_diameter": 0.4,
+      "min_via_drill": 0.3,
+      "min_microvia_diameter": 0.2,
+      "min_microvia_drill": 0.1,
+      "min_copper_edge_clearance": 0.2,
+      "check_soldermask_bridges": true,
+      "check_zone_fills_before_pcb_export": true,
+      "check_unconnected_items": true,
+      "check_courtyards": true,
+      "check_items_in_courtyard": true,
+      "courtyard_clearance": 0.25,
+      "check_zone_fills_before_drc": true,
+      "max_error": 50,
+      "min_edge_clearance": 0.2,
+      "check_silk_screen_clearance": true,
+      "check_soldermask_clearance": true,
+      "check_thermal_reliefs": true,
+      "check_padstack": true,
+      "check_fiducials": true,
+      "check_teardrops": false
+    }
+  },
+  "pcbnew": {
+    "page_layout_descr_file": "",
+    "last_paths": [],
+    "last_netlist_read": "",
+    "layer_selection": 0,
+    "net_color_mode": 0,
+    "opacity_objects": 255,
+    "show_texts": true,
+    "show_footprints": true,
+    "show_footprint_refs": true,
+    "show_footprint_values": true,
+    "show_invisible": false,
+    "show_nets": true,
+    "show_vias": true,
+    "show_tracks": true,
+    "show_zones": true,
+    "show_pads": true,
+    "show_mod_edge": true,
+    "show_margin": true,
+    "show_courtyard": true,
+    "show_design_rules": false,
+    "show_unconnected": true,
+    "show_contour": true,
+    "show_grid": true,
+    "grid_origin_x": 0,
+    "grid_origin_y": 0,
+    "grid_size_x": 1.27,
+    "grid_size_y": 1.27,
+    "cursor_shape": 0,
+    "grid_type": 1,
+    "net_color_mode": 0,
+    "high_contrast_mode": 0
+  },
+  "project_meta": {
+    "title_block": {
+      "title": "Test Project",
+      "company": "",
+      "rev": "1.0",
+      "date": "2026-01-01",
+      "source": "test-project.kicad_sch",
+      "comment": "1",
+      "author": "CI Test",
+      "page": "1/1"
+    }
+  },
+  "schematic": {
+    "annotation": {
+      "auto_annotate": true,
+      "schematic_only": false
+    },
+    "drawings": {
+      "default_text_size": 1.27,
+      "drawing_sheet_border": 10,
+      "field_name_size": 1.27,
+      "field_value_size": 1.27,
+      "label_size": 1.27,
+      "sheet_label_font_size": 1.27,
+      "hierarchical_label_font_size": 1.27,
+      "global_label_font_size": 1.27,
+      "text_line_width": 0.15,
+      "wire_line_width": 0.2,
+      "bus_line_width": 0.2,
+      "junction_size": 0.5,
+      "junction_line_width": 0.2,
+      "pin_symbol_size": 1.27,
+      "property_line_width": 0.15
+    },
+    "erc": {
+      "check_sheet_number": true,
+      "check_sheet_name": true,
+      "check_sheet_file": true,
+      "check_pin_conflicts": true,
+      "check_label_conflicts": true,
+      "check_power_conflicts": true,
+      "check_no_connect_conflicts": true,
+      "check_unconnected": true,
+      "check_wire_conflicts": true,
+      "check_junction_conflicts": true,
+      "check_bus_conflicts": true,
+      "check_bus_entry_conflicts": true,
+      "check_component_value": true,
+      "check_component_reference": true,
+      "check_component_footprint": true,
+      "check_component_datasheet": false,
+      "check_sheet_pin_conflicts": true,
+      "check_hierarchical_label_conflicts": true,
+      "check_global_label_conflicts": true,
+      "check_power_symbol_conflicts": true,
+      "check_drc_conflicts": false
+    },
+    "kicad_sch": "test-project.kicad_sch",
+    "legacy_lib_dir": "",
+    "legacy_lib_list": [],
+    "libraries": {
+      "pinned_symbol_libs": [],
+      "local_symbol_libs": []
+    },
+    "page_settings": [
+      {
+        "width": 297,
+        "height": 210,
+        "orientation": "landscape"
+      }
+    ],
+    "schematic_setup": {
+      "annotation": {
+        "auto_annotate": true,
+        "schematic_only": false
+      },
+      "drawings": {
+        "default_text_size": 1.27,
+        "drawing_sheet_border": 10,
+        "field_name_size": 1.27,
+        "field_value_size": 1.27,
+        "label_size": 1.27,
+        "sheet_label_font_size": 1.27,
+        "hierarchical_label_font_size": 1.27,
+        "global_label_font_size": 1.27,
+        "text_line_width": 0.15,
+        "wire_line_width": 0.2,
+        "bus_line_width": 0.2,
+        "junction_size": 0.5,
+        "junction_line_width": 0.2,
+        "pin_symbol_size": 1.27,
+        "property_line_width": 0.15
+      }
+    }
+  },
+  "sheets": [
+    {
+      "file": "test-project.kicad_sch",
+      "name": "test-project",
+      "uuid": "12345678-1234-1234-1234-123456789abc"
+    }
+  ],
+  "symbol_lib_table": [],
+  "fp_lib_table": []
+}
