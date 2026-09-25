@@ -44,6 +44,12 @@ export interface SessionView {
   task_scope: string;
   expires_at: string;
   workspace_ids: string[];
+  workspaces: WorkspaceInfo[];
+}
+
+export interface WorkspaceInfo {
+  workspace_id: string;
+  display_name: string;
 }
 
 export interface WorkspaceView {
