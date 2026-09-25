@@ -19,22 +19,26 @@ those upstream statuses into additional Gateway support claims.
 
 ## Platform & Architecture Support
 
-| OS | Architecture | Gateway Status | Automated Validation | Release Artifacts Produced Today |
+| OS | Architecture | Gateway Status | Automated Validation | Declared Release-Candidate Artifact |
 |---|---|---|---|---|
-| **Linux** | `x86_64` (GNU) | **SUPPORTED** | Native workspace tests on `ubuntu-latest`; desktop package build and sidecar verification on `ubuntu-22.04` | `.tar.gz` CLI/daemon archive and `.deb` desktop package |
+| **Linux** | `x86_64` (GNU) | **SUPPORTED** | Native workspace tests on `ubuntu-latest`; desktop package build and sidecar verification on `ubuntu-22.04` | `.tar.gz` CLI/daemon archive and `.deb` desktop package; identity is bound by checksum and provenance attestation rather than a portable code signature |
 | **Linux** | `aarch64` / ARM64 | **PLANNED** | None | None |
-| **macOS** | `aarch64` (Apple Silicon) | **SUPPORTED** | Native workspace tests on `macos-latest`; `aarch64-apple-darwin` desktop package build and sidecar verification on `macos-14` | `.tar.gz` CLI/daemon archive and `.dmg` desktop package |
+| **macOS** | `aarch64` (Apple Silicon) | **SUPPORTED** | Native workspace tests on `macos-latest`; `aarch64-apple-darwin` desktop package build and sidecar verification on `macos-14` | `.tar.gz` CLI/daemon archive and Developer ID signed/notarized `.dmg` required by the release-candidate workflow |
 | **macOS** | `x86_64` (Intel) | **UNSUPPORTED** | No release target or supported runner combination | None |
-| **Windows** | `x86_64` (MSVC) | **SUPPORTED** | Native workspace tests on `windows-latest`; `x86_64-pc-windows-msvc` desktop package build and sidecar verification on `windows-2022` | `.zip` CLI/daemon archive and `.msi` desktop package |
+| **Windows** | `x86_64` (MSVC) | **SUPPORTED** | Native workspace tests on `windows-latest`; `x86_64-pc-windows-msvc` desktop package build and sidecar verification on `windows-2022` | `.zip` CLI/daemon archive and timestamped Authenticode-signed `.msi` required by the release-candidate workflow |
 | **Windows** | `arm64` (ARM64) | **PLANNED** | None | None |
 
 The supported desktop rows use the application-managed sidecar lifecycle;
 Gateway V1 does not install an OS service. Native IPC/restart tests and
 packaged `.deb` / `.dmg` / `.msi` sidecar verification are defined in the
 [daemon lifecycle evidence matrix](../development/daemon-lifecycle.md#automated-and-clean-machine-evidence).
-Automated validation covers the Rust workspace and Tauri packaging path, not a
-live KiCad or kicad-mcp-pro session. Signing and notarization remain separate
-release gates.
+The ordinary CI package jobs intentionally build unsigned compile-test
+artifacts. A version tag instead runs the fail-closed release-candidate workflow,
+which requires and verifies macOS Developer ID/notarization and Windows
+Authenticode before creating a draft prerelease. Signing a CI package is not
+production evidence, and automated validation still does not cover a live KiCad
+or kicad-mcp-pro session. Exact-artifact clean-machine qualification remains a
+separate release gate; see [release.md](../development/release.md).
 
 ## Core Protocol Lanes & Component Dependencies
 

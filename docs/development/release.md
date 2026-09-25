@@ -1,162 +1,249 @@
-# Release Engineering and Manual QA
+# Release Candidate Engineering and Manual QA
 
-This document describes the release artifacts that the current workflow
-actually produces and the manual checks required before a release candidate is
-promoted. The supported platform baseline is maintained only in the
+This document describes the release-candidate workflow that actually exists in
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml) and the
+manual evidence required before any candidate can be promoted. The supported
+platform baseline is maintained only in the
 [canonical compatibility matrix](../architecture/compatibility-matrix.md).
 
-## Automated Release Pipeline
+A tag matching `v*` starts the workflow. The workflow is fail-closed: missing
+signing credentials, a tag/version mismatch, a package without its packaged
+sidecar, a failed platform signature check, a malformed SBOM, or a missing
+attestation prevents creation of the draft release. It creates a **draft and
+prerelease only**. Compilation, CI success, or artifact upload is not a support
+or promotion decision.
 
-A tag matching `v*` pushed to GitHub starts
-[`.github/workflows/release.yml`](../../.github/workflows/release.yml). The
-workflow performs exactly these steps:
+## Automated Release-Candidate Pipeline
 
-### Pipeline Stages
+### 1. Version, CI, and build gates
 
-1. **Build headless artifacts**: Compiles the CLI (`kicad-mcp-gateway`) and
-   daemon (`kicad-mcp-gateway-daemon`) for Linux
-   `x86_64-unknown-linux-gnu`, macOS `aarch64-apple-darwin`, and Windows
-   `x86_64-pc-windows-msvc`.
-2. **Package headless archives**: Adds the sibling binaries, `README.md`, and
-   `LICENSE`; Linux/macOS use `.tar.gz` and Windows uses `.zip`.
-3. **Build desktop packages**: Runs the Tauri packaging path for the same
-   targets. `prepare-sidecar.mjs` proves that daemon, desktop, and Tauri
-   versions match, then stages the target-qualified daemon as `externalBin`.
-   The matrix produces `.deb`, `.dmg`, and `.msi` packages.
-4. **Verify packaged sidecars**: `verify:sidecar` requires a non-empty,
-   executable daemon in each Tauri release tree before publication.
-5. **Consolidate and checksum**: Collects headless archives and desktop
-   packages, then computes SHA-256 checksums for every release asset.
-6. **Publish release**: Uploads all assets and checksums to a GitHub Release
-   with generated release notes.
+Before any signing credential is made available, the workflow requires
+successful `push` runs for the exact tagged commit from `ci.yml`,
+`e2e-live.yml`, and `osv-full.yml`. Every matrix job then requires the tag to be
+exactly `v<workspace version>`. The desktop job also requires the daemon,
+desktop Cargo package, and `tauri.conf.json` versions to match. Builds use locked
+Rust dependencies and the frozen pnpm lockfile.
 
-The authoritative ownership, update, rollback, and uninstall rules are in
-[daemon-lifecycle.md](daemon-lifecycle.md). The packaged sidecar must remain
-present and version matched regardless of future signing work.
+### 2. Headless artifacts
 
-### Not produced by the current workflow
+The workflow packages the CLI and daemon for:
 
-The workflow does not currently produce AppImage or NSIS packages. It also has
-no macOS code-signing or notarization step, Windows Authenticode/Trusted
-Signing step, SBOM generation, artifact attestation, release-validation gate,
-or uninstaller. These remain future work that requires reviewed workflow
-changes; repository configuration or a checklist item is not evidence that
-they are implemented.
+- Linux `x86_64-unknown-linux-gnu` in `.tar.gz`;
+- macOS Apple Silicon `aarch64-apple-darwin` in `.tar.gz`; and
+- Windows x86-64 MSVC in `.zip`.
 
-The headless archives and desktop packages are unsigned unless a maintainer
-adds and verifies a future signing workflow. Users must verify the published
-`SHA256SUMS.txt` and must not infer platform trust from artifact production
-alone.
+These archives are covered by the release checksum manifest and provenance
+attestation. They are not represented as signed installers.
 
-## Manual Release-Candidate Verification
+### 3. Signed desktop artifacts
 
-Before promoting a tag, verify the following on clean test machines for the
-three supported platform targets. These checks validate both headless archives
-and desktop packages, not a production hosted relay.
+The desktop matrix produces the canonical installer format for every supported
+row in the compatibility matrix:
 
-1. **Artifact integrity:** download every published asset and `SHA256SUMS.txt`;
-   run `sha256sum -c SHA256SUMS.txt` (or the platform equivalent) and confirm
-   the expected archive or installer exists.
-2. **Clean install and identity:** install the platform desktop package with no
-   prior Gateway data, launch it, and confirm the application starts only its
-   packaged daemon. Also verify the Device ID is stored in the platform's
-   native secret store (Secret Service, Keychain, or DPAPI).
-3. **Core detection:** with the approved KiCad 10.0.x environment from the
-   compatibility matrix, run `kicad-mcp-gateway setup` or
-   `kicad-mcp-gateway status` and confirm the core-bridge detection result.
-4. **Workspace containment:** authorize a KiCad project directory and verify a
-   relative `../` path escape is denied.
-5. **Policy enforcement:** run a classified read-only operation (for example
-   `pcb_get_layers`) and confirm the audit event is recorded. Confirm an
-   unclassified tool is denied.
-6. **High-risk approval:** start a high-risk operation and confirm it remains
-   blocked until explicit local approval.
-7. **Session controls:** revoke an active session, restart the daemon and
-   desktop, and confirm the session cannot reactivate.
-8. **Update and cleanup:** upgrade in place and confirm data/revocation
-   continuity. Remove the package, confirm packaged binaries are removed, and
-   retain `<data_dir>` until the user performs a deliberate data wipe.
+| Platform | Installer | Required release trust check |
+|---|---|---|
+| Ubuntu / Linux `x86_64` | `.deb` | Exact package extraction, checksum, and provenance attestation |
+| macOS Apple Silicon | `.dmg` | Developer ID signature, notarized/stapled app, and Gatekeeper assessment |
+| Windows 11 / x86-64 | `.msi` | Timestamped Authenticode signature and `signtool verify /pa` |
 
-### Platform-specific package checks
+#### macOS signing and notarization
 
-| Platform | Headless archive | Desktop package | Required check |
-|---|---|---|---|
-| Ubuntu / Linux `x86_64` | `.tar.gz` | `.deb` | Verify checksums; test both archive binaries and a clean `.deb` install with Secret Service-backed identity storage. |
-| macOS Apple Silicon (`aarch64`) | `.tar.gz` | `.dmg` | Verify checksums; test both archive binaries and a clean DMG install, recording unsigned Gatekeeper behavior and Keychain-backed identity storage. |
-| Windows `x86_64` | `.zip` | `.msi` | Verify checksums; test both archive executables and a clean MSI install with DPAPI-backed identity storage. |
+The macOS job requires a **Developer ID Application** certificate (not a
+development or ad-hoc identity) and App Store Connect API credentials. It
+imports the certificate into an ephemeral keychain, requires exactly one valid
+Developer ID identity, builds the `aarch64-apple-darwin` DMG, and then verifies
+all of the following against the exact DMG contents:
 
-## Desktop Lifecycle Evidence
+1. the application, packaged daemon sidecar, and DMG pass strict `codesign`
+   verification;
+2. the application authority is `Developer ID Application` and has a non-empty
+   Apple Team ID;
+3. `xcrun stapler validate` accepts the notarization ticket; and
+4. `spctl --assess --type execute` accepts the application.
 
-For each supported OS, retain clean-machine evidence for the complete
-application-managed lifecycle:
+A missing certificate, wrong identity class, failed notarization, missing
+stapled ticket, or Gatekeeper rejection fails the release build.
 
-1. **Clean installation:** install the platform package with no previous
-   config or database in `<data_dir>`.
-2. **Packaged sidecar:** inspect the package and record the bundled daemon
-   path. When reproducing locally, run `pnpm verify:sidecar` against the
-   produced Tauri release tree; CI uploads the verified package artifact.
-3. **First launch and readiness:** launch with no daemon already running and
-   confirm the desktop starts only the packaged sidecar and reaches Ready with
-   product `kicad-mcp-gateway`, the expected version, and a non-empty
-   per-process instance ID.
-4. **Setup and core detection:** run `kicad-mcp-gateway setup` or
-   `kicad-mcp-gateway status` against the supported KiCad 10.0.x baseline and
-   verify core-bridge detection.
-5. **Workspace and policy:** authorize a KiCad project, reject `../` escapes,
-   execute a classified read-only tool, confirm its audit record, and confirm
-   an unclassified tool is denied.
-6. **High-risk approval:** attempt manufacturing export and confirm it remains
-   blocked pending explicit approval.
-7. **Crash and revocation recovery:** terminate the daemon, confirm desktop
-   recovery, revoke a session, restart again, and verify the revoked session
-   cannot reactivate.
-8. **CLI ownership hand-off:** run `daemon stop` while the desktop is open and
-   confirm its watchdog does not restart the daemon; run `daemon start` and
-   confirm readiness returns.
-9. **Failure evidence:** repeat first launch with the packaged sidecar
-   temporarily unavailable. Capture the safe UI failure banner and a redacted
-   log excerpt; verify no alternate daemon or endpoint is launched.
-10. **Update and uninstall:** upgrade in place and confirm data/revocation
-    continuity, then remove the package and confirm binaries are deleted while
-    `<data_dir>` remains until a deliberate user data wipe.
+#### Windows Authenticode signing
 
-## Release Blockers and External Verification Checklists
+The Windows job imports a code-signing PFX into the ephemeral user certificate
+store, requires the configured SHA-1 certificate thumbprint to match, requires a
+private key and Code Signing EKU, and generates a temporary Tauri configuration
+containing the thumbprint, SHA-256 digest algorithm, and an RFC 3161 timestamp
+URL. The private key and generated configuration are removed after the build.
 
-### Issue #4 — GTK3 / glib Compatibility Set
-- **Current State:** Tauri 2.11.x still constrains its Linux GTK3 stack to gtk-rs package versions that normally resolve glib 0.18. The reviewed compatibility set in `apps/desktop/src-tauri/vendor/compat` preserves those package versions while rebasing gtk-rs-core dependencies to glib 0.20; `Cargo.lock` contains no glib 0.18 package and the vulnerability is not suppressed.
-- **Verification:** `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --locked` and the same command under Rust 1.88 pass; `cargo tree` shows glib 0.20 only; OSV remains fail-closed for new vulnerabilities.
-- **Next Step:** Remove the compatibility set when Tauri publishes a release whose Linux stack resolves maintained gtk-rs/glib versions directly.
+The exact MSI is then administratively extracted to prove that it contains one
+desktop executable and one daemon sidecar. The job requires:
 
-### Issue #24 — Real KiCad MCP Pro E2E Integration Checklist
-- [x] Mock MCP core bridge protocol client and server tests (`crates/core-bridge/tests/client.rs`).
-- [ ] Checked-out upstream kicad-mcp-pro server execution (`http://127.0.0.1:3334/mcp`).
-- [ ] E2E reconciliation pass against the live tool catalog.
-- [ ] Real KiCad 10.0.x GUI application driven through the Gateway policy boundary.
+- `Get-AuthenticodeSignature` status `Valid`;
+- the expected signer thumbprint;
+- a trusted timestamp certificate; and
+- successful `signtool verify /pa /all` output.
 
-### Issue #26 — Clean-Machine Package QA Verification Checklist
-- [x] Automated CLI/daemon archive and desktop package release workflows.
-- [x] CI sidecar presence, size, and executable-bit verification for every Tauri target.
+Authenticode makes the artifact eligible for normal Windows trust and
+SmartScreen reputation evaluation. A newly signed file can still receive a
+SmartScreen warning until Microsoft has reputation for the publisher/file; the
+workflow does not claim that compilation or a valid signature guarantees an
+immediate warning bypass.
+
+#### Linux package identity
+
+Ubuntu `.deb` packages do not have a portable Microsoft/Apple-style code
+signature. Their release identity is instead bound by the exact SHA-256 in
+`artifact-manifest.json` / `SHA256SUMS.txt` and the signed GitHub build
+provenance attestation. The job also extracts the `.deb` and requires exactly
+one desktop executable and one packaged daemon.
+
+### 4. SBOM, manifest, checksums, and provenance
+
+After all six build artifacts pass their platform jobs, the workflow:
+
+1. generates `gateway-source.spdx.json` with pinned Syft v1.51.1 from the locked
+   source tree;
+2. validates that it is non-empty SPDX 2 JSON below the 16 MiB attestation
+   limit;
+3. writes `artifact-manifest.json` with the tag, source commit, exact payload
+   filenames, sizes, SHA-256 values, and an explicit **pending** clean-machine
+   qualification state;
+4. creates `SHA256SUMS.txt` for every payload, installer, verification record,
+   the manifest, and the SBOM; and
+5. verifies that checksum file before upload.
+
+`actions/attest-build-provenance` then creates SLSA build provenance for every
+subject in `SHA256SUMS.txt`. `actions/attest-sbom` binds the SPDX document to
+those same subjects. Both actions use GitHub OIDC and store verifiable Sigstore
+attestations for the repository. The generated JSONL bundles and an attestation
+ID/URL index are retained as workflow artifacts and draft-release assets.
+
+Users can verify a downloaded file with both integrity and provenance:
+
+```bash
+sha256sum --check SHA256SUMS.txt
+gh attestation verify <downloaded-file> \
+  --repo oaslananka/kicad-mcp-pro-gateway
+```
+
+### 5. Draft publication
+
+Only after all build, platform-verification, SBOM, checksum, and attestation
+jobs pass does the workflow use GitHub CLI to create a release. It verifies the
+existing tag and creates the release with both `draft` and `prerelease` set.
+Failure at any earlier stage leaves the failed workflow logs and artifacts as
+release evidence and creates no draft.
+
+This repository change does not publish a stable release. Public promotion is a
+separate, explicitly authorized operation after the clean-machine evidence below
+is complete.
+
+## Release Signing Configuration
+
+Signing values must be stored in the protected GitHub Actions environment named
+`release-signing`, not committed to the repository or written to logs. Configure
+required reviewers for that environment so an ordinary tag cannot silently
+consume production signing credentials.
+
+| Secret / variable | Purpose |
+|---|---|
+| `APPLE_CERTIFICATE` | Base64-encoded Developer ID Application PFX |
+| `APPLE_CERTIFICATE_PASSWORD` | PFX export password |
+| `APPLE_API_ISSUER` | App Store Connect API issuer UUID |
+| `APPLE_API_KEY` | App Store Connect API key ID |
+| `APPLE_API_PRIVATE_KEY` | Contents of the downloaded App Store Connect `.p8` key |
+| `WINDOWS_CERTIFICATE` | Base64-encoded code-signing PFX |
+| `WINDOWS_CERTIFICATE_PASSWORD` | PFX export password |
+| `WINDOWS_CERTIFICATE_THUMBPRINT` | Expected SHA-1 thumbprint of the code-signing certificate |
+| `WINDOWS_TIMESTAMP_URL` | Optional repository variable containing the approved HTTP(S) timestamp URL; defaults to DigiCert's timestamp service |
+
+Never paste a certificate, private key, PFX password, Apple app-specific
+password, API key, or Windows credential into an issue, workflow log, release
+note, or QA attachment. The workflow only records public certificate identity,
+verification status, timestamps, package hashes, and command output.
+
+## Clean-Machine Qualification
+
+GitHub-hosted builders are reproducible build and verification runners; they
+are not evidence that a user-visible installer works on a clean supported
+machine. Open one issue from
+[`.github/ISSUE_TEMPLATE/release-qa.md`](../../.github/ISSUE_TEMPLATE/release-qa.md)
+for each candidate and attach its records. Every record must identify the exact
+installer filename and SHA-256 from the draft's `artifact-manifest.json`; a
+result for different bytes is not valid evidence.
+
+The required clean environments are:
+
+- a fresh Ubuntu 24.04 LTS x86-64 machine with no prior Gateway files or
+  packages;
+- a fresh Apple Silicon macOS machine; and
+- a fresh Windows 11 x86-64 machine.
+
+For each platform, retain the following evidence against the exact candidate
+hashes:
+
+1. `SHA256SUMS.txt` and both GitHub attestations verified;
+2. the platform signature/notarization verification record downloaded from the
+   draft;
+3. clean install and packaged-sidecar path;
+4. first launch with no pre-existing daemon, reaching the intended local IPC
+   Ready state without a manual shell daemon;
+5. device identity creation/load in Secret Service, Keychain, or DPAPI, with
+   secrets and fingerprints redacted;
+6. daemon crash/restart, CLI ownership hand-off, and revoked-session
+   persistence;
+7. in-place upgrade with identity, database, workspace, approval, audit, and
+   revocation continuity;
+8. uninstall with binaries removed while stable user data remains; and
+9. a separate deliberate data wipe, including removal of the native-key-store
+   entry, with redacted before/after paths.
+
+Retain one Ready-state screenshot, one safe-failure screenshot, and one redacted
+lifecycle log per platform. Remove pairing codes, device fingerprints, tokens,
+usernames, private paths, configuration values, and process arguments before
+attaching them.
+
+Compilation, a valid package signature, or three successful installers without
+these lifecycle checks is insufficient evidence. A failed check is retained
+and blocks promotion; it is not converted into a support claim or removed from
+the release record.
+
+## Not Produced or Automated
+
+The current workflow does **not** produce AppImage or NSIS packages, run the
+required operating systems on physical clean machines, automate the complete
+GUI/update/uninstall scenario, or publish a stable release. Those are explicit
+remaining qualification/promotion activities, not implied capabilities.
+
+## Evidence Checklist
+
+### Signing and artifact identity
+
+- [x] Exact-commit CI, live KiCad/MCP E2E, and OSV success gate.
+- [x] Tag/version and daemon/desktop/Tauri version gate.
+- [x] Developer ID import, signing, notarization, stapling, strict signature,
+  and Gatekeeper verification in the macOS release job.
+- [x] Authenticode certificate validation, timestamping, package extraction,
+  and `signtool` verification in the Windows release job.
+- [x] Exact `.deb` extraction and packaged-sidecar verification.
+- [x] SPDX JSON SBOM, artifact manifest, SHA-256 manifest, build provenance,
+  and SBOM attestation.
+- [x] Draft-and-prerelease publication gate.
+- [ ] Retain successful signature/notarization output from an actual tagged
+  release candidate.
+
+### Clean-machine release qualification
+
 - [ ] Fresh Ubuntu 24.04 LTS `.deb` and headless archive validation.
 - [ ] Fresh macOS Apple Silicon `.dmg` and headless archive validation.
-- [ ] Fresh Windows `.msi` and headless archive validation.
-- [ ] Manual update, uninstall, and data-directory continuity verification.
-- [ ] Automated uninstaller workflow (not implemented).
+- [ ] Fresh Windows 11 `.msi` and headless archive validation.
+- [ ] First-launch, identity, policy, crash/restart, and revocation evidence on
+  all three platforms.
+- [ ] Upgrade, uninstall, data-retention, and deliberate data-wipe evidence on
+  all three platforms.
+- [ ] Required live KiCad 10.0.x / pinned `kicad-mcp-pro` evidence attached for
+  the exact candidate, or promotion remains blocked.
 
-### Issue #34 — Production Signing and Notarization Checklist
-- [ ] Add a reviewed macOS `codesign` and `notarytool` workflow.
-- [ ] Add a reviewed Windows Authenticode or Trusted Signing workflow.
-- [ ] Verify signatures in release QA once those workflows exist.
+### Promotion
 
-### Issue #36 — Release Candidate Readiness Checklist
-- [x] Tag-triggered release workflow in `.github/workflows/release.yml`.
-- [x] Multi-platform CLI/daemon archive and desktop package jobs.
-- [x] Packaged-sidecar verification before desktop artifact upload.
-- [x] SHA-256 checksum generation.
-- [ ] Add SBOM generation and artifact attestations if required for release.
-- [ ] Maintainer explicit release tag trigger (for example `v0.1.0-rc.1`).
-
-### Issue #39 — Final Stable V1 Sign-off Checklist
-- [x] Security invariants verified and tested.
-- [x] Fail-closed policy, workspace boundary, and session-revocation tests passing.
-- [ ] Resolution of remaining open release blockers (#24, #26, #34, #36).
-- [ ] Official release tag trigger (`v1.0.0`) and production release publication.
+- [ ] All candidate hashes match the draft manifest and qualification records.
+- [ ] All required evidence is attached, redacted, and accepted.
+- [ ] A separately authorized release owner promotes the draft; this issue
+  itself does not publish a stable release.
