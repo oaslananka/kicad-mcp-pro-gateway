@@ -163,6 +163,8 @@ pub struct SessionView {
     pub status: String,
     pub capability_profile: String,
     pub task_scope: String,
+    /// Policy-bounded effective expiry shown to the approver. This is the
+    /// timestamp persisted with the session, not the remote requested TTL.
     pub expires_at: String,
 }
 

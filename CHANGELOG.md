@@ -25,4 +25,5 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **Policy-Bounded Authorization TTLs**: Remote session lifetimes are clamped by validated local capability-profile and risk-class ceilings, including conservative one-minute Critical defaults. The effective expiry is persisted and shown explicitly in approval surfaces; malformed TTL policy configuration prevents startup rather than falling back.
 - **Fail-Closed Audit Persistence**: The daemon now durably persists every approval decision and every request envelope in the append-only audit store *before* any remote `tools/call` to `kicad-mcp-pro` or any other remote write. When the audit store cannot be written (disk full, read-only filesystem, locked or corrupt database, injected persistence failure), the operation is refused with a typed, secret-free `AuditPersistence` error and zero upstream calls — eliminating the "executed but unaudited" state for reads, writes, and high-risk execution alike. Read-vs-write policy, denial non-requeue semantics, and failure-injection coverage are documented in `docs/security/audit-fail-closed.md`.

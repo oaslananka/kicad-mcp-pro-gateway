@@ -543,4 +543,26 @@ describe("SessionsScreen", () => {
     const riskBadge = screen.getByText("Critical").closest("span");
     expect(riskBadge).toHaveClass("risk-high");
   });
+  it("shows the policy-limited effective expiry in the approval dialog", async () => {
+    const effectiveExpiry = "2026-09-25T12:07:00Z";
+    vi.mocked(api.listSessions).mockResolvedValue([
+      {
+        session_id: "ses_300",
+        remote_principal: "agent@cloud",
+        status: "PendingApproval",
+        capability_profile: "Manufacturing",
+        task_scope: "Export fabrication files",
+        expires_at: effectiveExpiry,
+      },
+    ]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
+
+    render(<SessionsScreen />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+
+    expect(screen.getAllByText("Effective expiry").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(effectiveExpiry).length).toBeGreaterThanOrEqual(2);
+  });
+
 });

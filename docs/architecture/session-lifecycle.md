@@ -65,4 +65,8 @@ The state machine only answers "is this session usable right now." It does
 not answer "is this specific operation allowed" — that is the
 [policy engine](../../crates/policy)'s job, which additionally checks
 workspace authorization, capability mapping, and risk/approval requirements
-for every individual `OperationRequest`.
+for every individual `OperationRequest`. Before a session is created, the same
+policy layer also bounds its requested lifetime by the local profile/risk TTL
+ceilings documented in [Authorization TTL policy](../security/authorization-ttl.md).
+The policy-bounded `expires_at` is what the approver sees and what is durably
+persisted.
