@@ -838,8 +838,9 @@ mod audit_fail_closed_tests {
     use super::*;
 
     /// Remote write at normal risk: policy `Allow`, so it exercises the
-    /// "must be durably auditable before it runs" path directly.
-    const REMOTE_WRITE_TOOL: &str = "add_footprint_inner_layer_graphic";
+    /// "must be durably auditable before it runs" path directly. Use a
+    /// reviewed effect contract; unmodelled tools are intentionally denied.
+    const REMOTE_WRITE_TOOL: &str = "lib_create_custom_symbol";
     /// Read-only tool at low risk: policy `Allow`, exercises the documented
     /// read fail-closed rule.
     const REMOTE_READ_TOOL: &str = "sch_get_symbols";
@@ -899,8 +900,16 @@ mod audit_fail_closed_tests {
         /// A request whose arguments carry a marker that must never be echoed
         /// back in a refusal response.
         fn operation(&self, tool_name: &str) -> OperationRequest {
+            let argument_name = match tool_name {
+                REMOTE_WRITE_TOOL => "name",
+                HIGH_RISK_TOOL => "strategy",
+                _ => "sheet",
+            };
             let mut arguments = serde_json::Map::new();
-            arguments.insert("api_token".into(), json!("super-secret-argument-value"));
+            arguments.insert(argument_name.into(), json!("super-secret-argument-value"));
+            if tool_name == REMOTE_WRITE_TOOL {
+                arguments.insert("pins".into(), json!([]));
+            }
             OperationRequest {
                 operation_id: OperationId::new(),
                 session_id: self.session.session_id,

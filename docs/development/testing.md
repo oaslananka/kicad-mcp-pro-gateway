@@ -45,6 +45,11 @@ advanced explicitly (`clock.advance(Duration)`); no test should depend on
 - revocation is terminal and survives reconnect
 - capability intersection / profile expansion
 - unknown capability denial, unknown tool denial
+- trusted operation-effect normalization for read/write/create/delete contracts
+- unknown or missing effect-contract denial before capability/risk evaluation
+- workspace containment for every argument-derived path, including traversal,
+  symlink, mixed-separator, single-path, and multi-path regressions
+- proof that `target_path` cannot override or omit argument-derived effects
 - risk classification per operation kind
 - approval requirement enforcement (including "allow once")
 - workspace path escape prevention: `..`, symlink escape, Windows drive
@@ -73,6 +78,8 @@ advanced explicitly (`clock.advance(Duration)`); no test should depend on
 - full session flow: request → approve → active → operation → audit → revoke
 - expiration flow: active → clock advance → operation denied
 - workspace escape flow: valid workspace vs malicious target outside it
+- caller/argument mismatch flow: safe caller `target_path` vs escaping argument
+  path is denied and never reaches `tools/call`
 - high-risk flow: valid session + permitted capability + high-risk operation
   → additional approval required → allow-once → operation runs
 - revocation flow: active → revoke → reconnect transport → operation still
@@ -102,11 +109,15 @@ are excluded from the default CI run and gated behind a separate opt-in job.
 
 ## Tool-registry reconciliation
 
-`crates/policy/assets/tool_registry.toml` is the authorization allowlist.
-Discovery never adds permissions. The separate
-`upstream_tool_snapshot.toml` records the public upstream surface at an exact
-kicad-mcp-pro commit so CI can detect stale registry entries while leaving
-new/unclassified tools fail-closed.
+`crates/policy/assets/tool_registry.toml` is the authorization allowlist and
+the reviewed source of operation-effect contracts. Discovery never adds
+permissions. The separate `upstream_tool_snapshot.toml` records the public
+upstream surface at an exact kicad-mcp-pro commit. Daemon startup rejects a
+registry whose repository/ref/SHA metadata differs from that snapshot or whose
+allowlist contains a stale tool. Newly unclassified tools remain unknown and
+denied. A known tool also remains denied when its effect contract is absent.
+See [`docs/security/tool-effect-contracts.md`](../security/tool-effect-contracts.md)
+for the reviewed V1 argument surface and refresh procedure.
 
 Refresh the snapshot from a checked-out upstream commit:
 
