@@ -1,4 +1,4 @@
-name: Release Engineering
+name: Release Candidate Engineering
 
 on:
   push:
@@ -7,10 +7,50 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: release-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  verify-source:
+    name: verify / source commit gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Require successful CI, live E2E, and OSV runs
+        shell: bash
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for workflow in ci.yml e2e-live.yml osv-full.yml; do
+            run_id="$(gh run list \
+              --repo "$GH_REPO" \
+              --commit "$SOURCE_SHA" \
+              --workflow "$workflow" \
+              --event push \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId // empty')"
+            if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
+              printf 'required successful push workflow not found for %s: %s\n' "$SOURCE_SHA" "$workflow" >&2
+              exit 1
+            fi
+            printf '%s source gate passed in run %s\n' "$workflow" "$run_id"
+          done
+
   build-binaries:
     name: build / ${{ matrix.target }}
+    needs: verify-source
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     permissions:
       contents: read
     strategy:
@@ -38,10 +78,22 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
 
+      - name: Verify tag matches product version
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          workspace_version="$(awk -F '"' '/^version = / { print $2; exit }' Cargo.toml)"
+          if [[ "${TAG_NAME}" != "v${workspace_version}" ]]; then
+            echo "release tag ${TAG_NAME} does not match workspace version ${workspace_version}" >&2
+            exit 1
+          fi
+
       - name: Build release CLI & Daemon binaries
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo build --release --target "$TARGET" -p kicad-mcp-gateway-cli -p kicad-mcp-gateway-daemon
+        run: cargo build --release --locked --target "$TARGET" -p kicad-mcp-gateway-cli -p kicad-mcp-gateway-daemon
 
       - name: Package binaries
         shell: bash
@@ -51,29 +103,34 @@ jobs:
           SUFFIX: ${{ matrix.binary_suffix }}
           OS_NAME: ${{ runner.os }}
         run: |
+          set -euo pipefail
           STAGE_DIR="kicad-mcp-gateway-${REF_NAME}-${TARGET}"
           mkdir -p "$STAGE_DIR"
           cp "target/${TARGET}/release/kicad-mcp-gateway${SUFFIX}" "$STAGE_DIR/"
           cp "target/${TARGET}/release/kicad-mcp-gateway-daemon${SUFFIX}" "$STAGE_DIR/"
           cp README.md LICENSE "$STAGE_DIR/"
-          if [ "$OS_NAME" = "Windows" ]; then
+          if [[ "$OS_NAME" == "Windows" ]]; then
             7z a "${STAGE_DIR}.zip" "$STAGE_DIR"
             echo "ARCHIVE_PATH=${STAGE_DIR}.zip" >> "$GITHUB_ENV"
           else
-            tar -czvf "${STAGE_DIR}.tar.gz" "$STAGE_DIR"
+            tar -czf "${STAGE_DIR}.tar.gz" "$STAGE_DIR"
             echo "ARCHIVE_PATH=${STAGE_DIR}.tar.gz" >> "$GITHUB_ENV"
           fi
 
-      - name: Upload artifact
+      - name: Upload headless archive
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: binaries-${{ matrix.target }}
           path: ${{ env.ARCHIVE_PATH }}
+          if-no-files-found: error
+          retention-days: 90
 
   build-desktop:
     name: desktop / ${{ matrix.target }}
+    needs: verify-source
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 75
+    environment: release-signing
     permissions:
       contents: read
     strategy:
@@ -91,6 +148,7 @@ jobs:
             bundle: msi
     env:
       TAURI_BUILD_TARGET: ${{ matrix.target }}
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -126,55 +184,738 @@ jobs:
       - working-directory: apps/desktop
         run: pnpm install --frozen-lockfile
 
-      - name: Build signed-or-unsigned Tauri package
+      - name: Verify tag matches desktop version
+        shell: bash
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          workspace_version="$(awk -F '"' '/^version = / { print $2; exit }' Cargo.toml)"
+          desktop_version="$(awk -F '"' '/^version = / { print $2; exit }' apps/desktop/src-tauri/Cargo.toml)"
+          tauri_version="$(sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' apps/desktop/src-tauri/tauri.conf.json | head -n 1)"
+          if ! [[ "$workspace_version" == "$desktop_version" && "$workspace_version" == "$tauri_version" ]]; then
+            echo "Gateway version mismatch: workspace=${workspace_version}, desktop=${desktop_version}, tauri=${tauri_version}" >&2
+            exit 1
+          fi
+          if [[ "${TAG_NAME}" != "v${workspace_version}" ]]; then
+            echo "release tag ${TAG_NAME} does not match product version ${workspace_version}" >&2
+            exit 1
+          fi
+
+      - name: Import and verify Apple Developer ID identity
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in APPLE_API_ISSUER APPLE_API_KEY APPLE_API_PRIVATE_KEY APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'missing required release environment secrets: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+          umask 077
+          certificate_path="${RUNNER_TEMP}/gateway-developer-id.p12"
+          api_key_path="${RUNNER_TEMP}/AuthKey_${APPLE_API_KEY}.p8"
+          keychain_path="${RUNNER_TEMP}/gateway-release.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE" | openssl base64 -d -A -out "$certificate_path"
+          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$api_key_path"
+          test -s "$certificate_path"
+          test -s "$api_key_path"
+
+          keychain_password="$(openssl rand -hex 32)"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          printf 'APPLE_KEYCHAIN_PATH=%s\n' "$keychain_path" >> "$GITHUB_ENV"
+          security default-keychain -s "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -t 3600 -u "$keychain_path"
+          security import "$certificate_path" -k "$keychain_path" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path"
+
+          identities="$(security find-identity -v -p codesigning "$keychain_path" | grep 'Developer ID Application' || true)"
+          identity_count="$(printf '%s\n' "$identities" | grep -c 'Developer ID Application' || true)"
+          if [[ "$identity_count" -ne 1 ]]; then
+            printf 'expected exactly one valid Developer ID Application identity; found %s\n' "$identity_count" >&2
+            exit 1
+          fi
+          signing_identity="$(printf '%s\n' "$identities" | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+          {
+            printf 'APPLE_SIGNING_IDENTITY=%s\n' "$signing_identity"
+            printf 'APPLE_API_KEY_PATH=%s\n' "$api_key_path"
+            printf 'APPLE_API_KEY=%s\n' "$APPLE_API_KEY"
+            printf 'APPLE_API_ISSUER=%s\n' "$APPLE_API_ISSUER"
+          } >> "$GITHUB_ENV"
+
+      - name: Import and verify Windows Authenticode certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $required = @{
+            WINDOWS_CERTIFICATE = $env:WINDOWS_CERTIFICATE
+            WINDOWS_CERTIFICATE_PASSWORD = $env:WINDOWS_CERTIFICATE_PASSWORD
+            WINDOWS_CERTIFICATE_THUMBPRINT = $env:WINDOWS_CERTIFICATE_THUMBPRINT
+          }
+          $missing = @($required.GetEnumerator() | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } | ForEach-Object Key)
+          if ($missing.Count -ne 0) {
+            throw "missing required release environment secrets: $($missing -join ', ')"
+          }
+
+          $expectedThumbprint = ($env:WINDOWS_CERTIFICATE_THUMBPRINT -replace '\s', '').ToUpperInvariant()
+          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+            throw 'WINDOWS_CERTIFICATE_THUMBPRINT is not a SHA-1 certificate thumbprint'
+          }
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'gateway-authenticode.pfx'
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String(($env:WINDOWS_CERTIFICATE -replace '\s', '')))
+          $securePassword = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $imported = @(Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $securePassword)
+          if ($imported.Count -ne 1 -or [string]::IsNullOrWhiteSpace($imported[0].Thumbprint)) {
+            throw 'the Authenticode PFX did not import exactly one identifiable certificate'
+          }
+          $certificate = $imported[0]
+          $importedThumbprint = $certificate.Thumbprint.ToUpperInvariant()
+          "WINDOWS_IMPORTED_CERTIFICATE_THUMBPRINT=$importedThumbprint" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if ($importedThumbprint -ne $expectedThumbprint) {
+            throw 'the imported Authenticode certificate does not match WINDOWS_CERTIFICATE_THUMBPRINT'
+          }
+          "WINDOWS_CERTIFICATE_THUMBPRINT=$expectedThumbprint" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          if (-not $certificate.HasPrivateKey) {
+            throw 'the configured Authenticode certificate has no usable private key'
+          }
+          if ($certificate.NotBefore -gt (Get-Date) -or $certificate.NotAfter -lt (Get-Date)) {
+            throw 'the configured Authenticode certificate is not currently valid'
+          }
+          $extendedKeyUsage = $certificate.Extensions |
+            Where-Object { $_.Oid.Value -eq '2.5.29.37' } |
+            Select-Object -First 1
+          $codeSigningOids = if ($null -ne $extendedKeyUsage) {
+            @($extendedKeyUsage.EnhancedKeyUsages | ForEach-Object { $_.Value })
+          } else {
+            @()
+          }
+          if ($codeSigningOids -notcontains '1.3.6.1.5.5.7.3.3') {
+            throw 'the configured certificate is not valid for code signing'
+          }
+
+          $timestampUrl = if ([string]::IsNullOrWhiteSpace($env:WINDOWS_TIMESTAMP_URL)) {
+            'http://timestamp.digicert.com'
+          } else {
+            $env:WINDOWS_TIMESTAMP_URL
+          }
+          $parsedTimestamp = $null
+          if (-not [Uri]::TryCreate($timestampUrl, [UriKind]::Absolute, [ref]$parsedTimestamp) -or $parsedTimestamp.Scheme -notin @('http', 'https')) {
+            throw 'WINDOWS_TIMESTAMP_URL must be an absolute HTTP(S) URL'
+          }
+
+          $config = @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $expectedThumbprint
+                digestAlgorithm = 'sha256'
+                timestampUrl = $timestampUrl
+              }
+            }
+          }
+          $configPath = Join-Path $PWD 'apps\desktop\src-tauri\tauri.release.windows.json'
+          $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding utf8
+
+      - name: Build production Tauri package
         working-directory: apps/desktop
         shell: bash
         env:
-          TARGET: ${{ matrix.target }}
           BUNDLE: ${{ matrix.bundle }}
-        run: pnpm tauri build --target "$TARGET" --bundles "$BUNDLE"
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          build_args=(--target "$TARGET" --bundles "$BUNDLE")
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            build_args+=(--config src-tauri/tauri.release.windows.json)
+          fi
+          pnpm tauri build "${build_args[@]}"
+          pnpm verify:sidecar
 
-      - name: Verify packaged daemon sidecar
-        working-directory: apps/desktop
-        run: pnpm verify:sidecar
+      - name: Verify exact Ubuntu package and sidecar
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          BUNDLE: ${{ matrix.bundle }}
+          REF_NAME: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          bundle_dir="apps/desktop/src-tauri/target/${TARGET}/release/bundle/${BUNDLE}"
+          mapfile -d '' packages < <(find "$bundle_dir" -maxdepth 1 -type f -name '*.deb' -print0)
+          if [[ "${#packages[@]}" -ne 1 ]]; then
+            printf 'expected one .deb package, found %s\n' "${#packages[@]}" >&2
+            exit 1
+          fi
 
-      - name: Upload desktop package
+          mkdir -p release/evidence
+          release_package="release/kicad-mcp-gateway-desktop-${REF_NAME}-${TARGET}.deb"
+          cp "${packages[0]}" "$release_package"
+          package_hash="$(sha256sum "$release_package" | awk '{print $1}')"
+
+          extract_root="${RUNNER_TEMP}/gateway-deb"
+          rm -rf "$extract_root"
+          dpkg-deb --extract "${packages[0]}" "$extract_root"
+          mapfile -d '' desktops < <(find "$extract_root" -type f -name 'kicad-mcp-gateway-desktop' -print0)
+          mapfile -d '' daemons < <(find "$extract_root" -type f -name 'kicad-mcp-gateway-daemon' -print0)
+          if [[ "${#desktops[@]}" -ne 1 || "${#daemons[@]}" -ne 1 ]]; then
+            printf 'package must contain exactly one desktop and one daemon executable\n' >&2
+            exit 1
+          fi
+          test -x "${desktops[0]}"
+          test -x "${daemons[0]}"
+
+          {
+            printf 'target=%s\n' "$TARGET"
+            printf 'source_commit=%s\n' "$SOURCE_SHA"
+            printf 'package=%s\n' "$(basename "$release_package")"
+            printf 'sha256=%s\n' "$package_hash"
+            printf 'daemon_path=%s\n' "${daemons[0]#$extract_root}"
+            dpkg-deb --info "$release_package"
+            dpkg-deb --contents "$release_package"
+          } > "release/evidence/verification-${TARGET}.txt"
+
+      - name: Verify signed and notarized macOS package
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          BUNDLE: ${{ matrix.bundle }}
+          REF_NAME: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          bundle_dir="apps/desktop/src-tauri/target/${TARGET}/release/bundle/${BUNDLE}"
+          packages=()
+          while IFS= read -r -d '' package; do
+            packages+=("$package")
+          done < <(find "$bundle_dir" -type f -name '*.dmg' -print0)
+          if [[ "${#packages[@]}" -ne 1 ]]; then
+            printf 'expected one .dmg package, found %s\n' "${#packages[@]}" >&2
+            exit 1
+          fi
+
+          mkdir -p release/evidence
+          release_package="release/kicad-mcp-gateway-desktop-${REF_NAME}-${TARGET}.dmg"
+          cp "${packages[0]}" "$release_package"
+          package_hash="$(shasum -a 256 "$release_package" | awk '{print $1}')"
+
+          mount_point="${RUNNER_TEMP}/gateway-dmg-mount"
+          rm -rf "$mount_point"
+          mkdir -p "$mount_point"
+          mounted=false
+          cleanup() {
+            if [[ "$mounted" == "true" ]]; then
+              hdiutil detach "$mount_point" -quiet || true
+            fi
+          }
+          trap cleanup EXIT
+          hdiutil attach "$release_package" -readonly -nobrowse -mountpoint "$mount_point"
+          mounted=true
+
+          apps=()
+          while IFS= read -r -d '' app; do
+            apps+=("$app")
+          done < <(find "$mount_point" -type d -name '*.app' -print0)
+          if [[ "${#apps[@]}" -ne 1 ]]; then
+            printf 'expected one application bundle in DMG, found %s\n' "${#apps[@]}" >&2
+            exit 1
+          fi
+          app_path="${apps[0]}"
+          sidecar_path="${app_path}/Contents/MacOS/kicad-mcp-gateway-daemon"
+          test -x "$sidecar_path"
+
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          codesign --verify --strict --verbose=2 "$sidecar_path"
+          codesign --verify --strict --verbose=2 "$release_package"
+          signature_details="$(codesign --display --verbose=4 "$app_path" 2>&1)"
+          printf '%s\n' "$signature_details" | grep -Eq '^Authority=Developer ID Application:'
+          printf '%s\n' "$signature_details" | grep -Eq '^TeamIdentifier=[0-9A-F]{10}$'
+          xcrun stapler validate "$app_path"
+          spctl --assess --type execute --verbose=4 "$app_path"
+
+          {
+            printf 'target=%s\n' "$TARGET"
+            printf 'source_commit=%s\n' "$SOURCE_SHA"
+            printf 'package=%s\n' "$(basename "$release_package")"
+            printf 'sha256=%s\n' "$package_hash"
+            printf 'app=%s\n' "$app_path"
+            printf 'daemon=%s\n' "$sidecar_path"
+            printf '\n== codesign ==\n'
+            codesign --verify --deep --strict --verbose=2 "$app_path" 2>&1
+            codesign --verify --strict --verbose=2 "$sidecar_path" 2>&1
+            codesign --verify --strict --verbose=2 "$release_package" 2>&1
+            codesign --display --verbose=4 "$app_path" 2>&1
+            printf '\n== notarization ticket ==\n'
+            xcrun stapler validate "$app_path" 2>&1
+            printf '\n== Gatekeeper ==\n'
+            spctl --assess --type execute --verbose=4 "$app_path" 2>&1
+          } > "release/evidence/verification-${TARGET}.txt"
+
+      - name: Verify signed Windows package and packaged sidecar
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          BUNDLE: ${{ matrix.bundle }}
+          REF_NAME: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundleDir = Join-Path $PWD "apps\desktop\src-tauri\target\$env:TARGET\release\bundle\$env:BUNDLE"
+          $packages = @(Get-ChildItem -Path $bundleDir -File -Filter '*.msi')
+          if ($packages.Count -ne 1) {
+            throw "expected one .msi package, found $($packages.Count)"
+          }
+
+          $releaseDirectory = Join-Path $PWD 'release'
+          $evidenceDirectory = Join-Path $releaseDirectory 'evidence'
+          New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+          $releasePackage = Join-Path $releaseDirectory "kicad-mcp-gateway-desktop-${env:REF_NAME}-${env:TARGET}.msi"
+          Copy-Item -LiteralPath $packages[0].FullName -Destination $releasePackage
+
+          $extractRoot = Join-Path $env:RUNNER_TEMP 'gateway-msi'
+          $msiLog = Join-Path $env:RUNNER_TEMP 'gateway-msi-extract.log'
+          Remove-Item -LiteralPath $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
+          & msiexec.exe /a $releasePackage /qn "TARGETDIR=$extractRoot" '/L*v' $msiLog
+          if ($LASTEXITCODE -ne 0) {
+            throw "MSI administrative extraction failed with exit code $LASTEXITCODE"
+          }
+          $desktops = @(Get-ChildItem -Path $extractRoot -Recurse -File -Filter 'kicad-mcp-gateway-desktop.exe')
+          $daemons = @(Get-ChildItem -Path $extractRoot -Recurse -File -Filter 'kicad-mcp-gateway-daemon.exe')
+          if ($desktops.Count -ne 1 -or $daemons.Count -ne 1) {
+            throw 'package must contain exactly one desktop and one daemon executable'
+          }
+
+          $signature = Get-AuthenticodeSignature -LiteralPath $releasePackage
+          $expectedThumbprint = ($env:WINDOWS_CERTIFICATE_THUMBPRINT -replace '\s', '').ToUpperInvariant()
+          $actualThumbprint = if ($null -ne $signature.SignerCertificate) {
+            $signature.SignerCertificate.Thumbprint.ToUpperInvariant()
+          } else {
+            ''
+          }
+          if ($signature.Status -ne 'Valid' -or $actualThumbprint -ne $expectedThumbprint) {
+            throw "Authenticode verification failed: status=$($signature.Status), thumbprint=$actualThumbprint"
+          }
+          if ($null -eq $signature.TimeStamperCertificate) {
+            throw 'Authenticode signature has no trusted timestamp'
+          }
+
+          $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" -File |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($null -eq $signtool) {
+            throw 'signtool.exe was not found on the Windows runner'
+          }
+          $signtoolLog = Join-Path $evidenceDirectory "verification-$env:TARGET-signtool.txt"
+          & $signtool.FullName verify /pa /all /v $releasePackage 2>&1 | Tee-Object -FilePath $signtoolLog
+          if ($LASTEXITCODE -ne 0) {
+            throw "signtool verification failed with exit code $LASTEXITCODE"
+          }
+
+          $packageHash = (Get-FileHash -LiteralPath $releasePackage -Algorithm SHA256).Hash.ToLowerInvariant()
+          $evidence = [ordered]@{
+            target = $env:TARGET
+            source_commit = $env:SOURCE_SHA
+            package = Split-Path -Leaf $releasePackage
+            sha256 = $packageHash
+            authenticode_status = $signature.Status.ToString()
+            signer_thumbprint = $actualThumbprint
+            timestamp_thumbprint = $signature.TimeStamperCertificate.Thumbprint
+            packaged_desktop = $desktops[0].FullName.Substring($extractRoot.Length).TrimStart('\')
+            packaged_daemon = $daemons[0].FullName.Substring($extractRoot.Length).TrimStart('\')
+          }
+          $evidence | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidenceDirectory "verification-$env:TARGET.json") -Encoding utf8
+
+      - name: Upload desktop package and available failure evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: desktop-${{ matrix.target }}
-          path: apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/${{ matrix.bundle }}
+          path: release/
+          if-no-files-found: ignore
+          retention-days: 90
 
-  publish-release:
-    name: publish / github-release
-    needs: [build-binaries, build-desktop]
+      - name: Remove Apple signing material
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [[ -n "${APPLE_KEYCHAIN_PATH:-}" ]]; then
+            security delete-keychain "$APPLE_KEYCHAIN_PATH" || true
+          fi
+          security default-keychain -s login.keychain-db || true
+          rm -f "${RUNNER_TEMP}/gateway-developer-id.p12" "${RUNNER_TEMP}/AuthKey_"*.p8
+
+      - name: Remove Windows signing material
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_IMPORTED_CERTIFICATE_THUMBPRINT)) {
+            $thumbprint = ($env:WINDOWS_IMPORTED_CERTIFICATE_THUMBPRINT -replace '\s', '').ToUpperInvariant()
+            Remove-Item -LiteralPath "Cert:\CurrentUser\My\$thumbprint" -Force -ErrorAction SilentlyContinue
+          }
+          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'gateway-authenticode.pfx') -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath (Join-Path $PWD 'apps\desktop\src-tauri\tauri.release.windows.json') -Force -ErrorAction SilentlyContinue
+
+  prepare-release:
+    name: prepare / candidate evidence
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build-binaries, build-desktop]
     permissions:
-      contents: write
+      contents: read
+
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Download all build artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - name: Prepare release metadata directory
+        run: mkdir -p release-metadata
+
+      - name: Generate source SPDX JSON SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: .
+          format: spdx-json
+          syft-version: v1.51.1
+          output-file: release-metadata/gateway-source.spdx.json
+          dependency-snapshot: false
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Validate SBOM and download build artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          sbom_path = Path("release-metadata/gateway-source.spdx.json")
+          if not sbom_path.is_file() or sbom_path.stat().st_size == 0:
+              raise SystemExit("SBOM was not generated")
+          if sbom_path.stat().st_size >= 16 * 1024 * 1024:
+              raise SystemExit("SBOM exceeds the 16 MiB attestation limit")
+          document = json.loads(sbom_path.read_text(encoding="utf-8"))
+          if not str(document.get("spdxVersion", "")).startswith("SPDX-2."):
+              raise SystemExit("generated document is not SPDX 2 JSON")
+          if not document.get("packages"):
+              raise SystemExit("generated SBOM contains no packages")
+          PY
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: release-assets
 
-      - name: Consolidate assets & compute checksums
-        run: |
-          mkdir -p dist
-          find release-assets -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.deb" -o -name "*.dmg" -o -name "*.msi" \) -exec cp {} dist/ \;
-          cd dist
-          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \
-            | sort -z \
-            | xargs -0 sha256sum > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-
-      - name: Create GitHub Release using CLI
+      - name: Consolidate exact release asset set
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ github.sha }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG_NAME" dist/* \
-            --title "KiCad MCP Pro Gateway $TAG_NAME" \
+          set -euo pipefail
+          mkdir -p dist
+          expected=(
+            "kicad-mcp-gateway-${TAG_NAME}-x86_64-unknown-linux-gnu.tar.gz"
+            "kicad-mcp-gateway-${TAG_NAME}-aarch64-apple-darwin.tar.gz"
+            "kicad-mcp-gateway-${TAG_NAME}-x86_64-pc-windows-msvc.zip"
+            "kicad-mcp-gateway-desktop-${TAG_NAME}-x86_64-unknown-linux-gnu.deb"
+            "kicad-mcp-gateway-desktop-${TAG_NAME}-aarch64-apple-darwin.dmg"
+            "kicad-mcp-gateway-desktop-${TAG_NAME}-x86_64-pc-windows-msvc.msi"
+          )
+          for name in "${expected[@]}"; do
+            mapfile -d '' matches < <(find release-assets -type f -name "$name" -print0)
+            if [[ "${#matches[@]}" -ne 1 ]]; then
+              printf 'expected exactly one release asset named %s; found %s\n' "$name" "${#matches[@]}" >&2
+              exit 1
+            fi
+            cp "${matches[0]}" "dist/${name}"
+          done
+
+          while IFS= read -r -d '' evidence; do
+            name="$(basename "$evidence")"
+            if [[ -e "dist/${name}" ]]; then
+              printf 'duplicate release evidence filename: %s\n' "$name" >&2
+              exit 1
+            fi
+            cp "$evidence" "dist/${name}"
+          done < <(find release-assets -type f -name 'verification-*' -print0)
+
+          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-pc-windows-msvc; do
+            case "$target" in
+              x86_64-unknown-linux-gnu) extension=deb ;;
+              aarch64-apple-darwin) extension=dmg ;;
+              x86_64-pc-windows-msvc) extension=msi ;;
+            esac
+            desktop_package="dist/kicad-mcp-gateway-desktop-${TAG_NAME}-${target}.${extension}"
+            package_hash="$(sha256sum "$desktop_package" | awk '{print $1}')"
+            matched_evidence=false
+            for evidence in dist/verification-"${target}"*; do
+              if [[ -f "$evidence" ]] && grep -Fq "$package_hash" "$evidence"; then
+                matched_evidence=true
+                break
+              fi
+            done
+            if [[ "$matched_evidence" != "true" ]]; then
+              printf 'verification evidence for %s does not contain the exact desktop package hash\n' "$target" >&2
+              exit 1
+            fi
+          done
+
+          cp release-metadata/gateway-source.spdx.json dist/
+          SOURCE_SHA="$SOURCE_SHA" TAG_NAME="$TAG_NAME" python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          dist = Path("dist")
+          tag = os.environ["TAG_NAME"]
+          targets = (
+              "x86_64-unknown-linux-gnu",
+              "aarch64-apple-darwin",
+              "x86_64-pc-windows-msvc",
+          )
+          artifacts = []
+          for target in targets:
+              candidates = [
+                  dist / f"kicad-mcp-gateway-{tag}-{target}.tar.gz",
+                  dist / f"kicad-mcp-gateway-{tag}-{target}.zip",
+                  dist / f"kicad-mcp-gateway-desktop-{tag}-{target}.deb",
+                  dist / f"kicad-mcp-gateway-desktop-{tag}-{target}.dmg",
+                  dist / f"kicad-mcp-gateway-desktop-{tag}-{target}.msi",
+              ]
+              matches = [path for path in candidates if path.is_file()]
+              if len(matches) != 2:
+                  raise SystemExit(f"expected one headless and one desktop artifact for {target}")
+              for path in matches:
+                  artifacts.append(
+                      {
+                          "name": path.name,
+                          "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                          "size": path.stat().st_size,
+                          "target": target,
+                      }
+                  )
+
+          manifest = {
+              "schema_version": 1,
+              "tag": tag,
+              "source_commit": os.environ["SOURCE_SHA"],
+              "generated_at": datetime.now(timezone.utc).isoformat(),
+              "draft_only": True,
+              "artifacts": sorted(artifacts, key=lambda item: item["name"]),
+              "qualification": {
+                  "required_before_promotion": True,
+                  "status": "pending",
+                  "required_targets": list(targets),
+              },
+          }
+          (dist / "artifact-manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          (
+            cd dist
+            find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -printf '%f\0' \
+              | sort -z \
+              | xargs -0 sha256sum > SHA256SUMS.txt
+            sha256sum --check SHA256SUMS.txt
+          )
+
+      - name: Upload immutable release candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-candidate-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
+
+  attest-release:
+    name: attest / candidate assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: prepare-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-candidate-${{ github.run_id }}
+          path: candidate/dist
+
+      - name: Attest build provenance
+        id: provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-checksums: candidate/dist/SHA256SUMS.txt
+
+      - name: Attest source SBOM
+        id: sbom
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-checksums: candidate/dist/SHA256SUMS.txt
+          sbom-path: candidate/dist/gateway-source.spdx.json
+
+      - name: Retain attestation bundles and identifiers
+        shell: bash
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          PROVENANCE_ID: ${{ steps.provenance.outputs.attestation-id }}
+          PROVENANCE_URL: ${{ steps.provenance.outputs.attestation-url }}
+          SBOM_BUNDLE: ${{ steps.sbom.outputs.bundle-path }}
+          SBOM_ID: ${{ steps.sbom.outputs.attestation-id }}
+          SBOM_URL: ${{ steps.sbom.outputs.attestation-url }}
+        run: |
+          set -euo pipefail
+          test -s "$PROVENANCE_BUNDLE"
+          test -s "$SBOM_BUNDLE"
+          for value in "$PROVENANCE_ID" "$PROVENANCE_URL" "$SBOM_ID" "$SBOM_URL"; do
+            if [[ -z "$value" ]]; then
+              echo "attestation action did not return an identifier and URL" >&2
+              exit 1
+            fi
+          done
+          mkdir -p attestations
+          cp "$PROVENANCE_BUNDLE" attestations/build-provenance.jsonl
+          cp "$SBOM_BUNDLE" attestations/sbom.jsonl
+          PROVENANCE_ID="$PROVENANCE_ID" \
+          PROVENANCE_URL="$PROVENANCE_URL" \
+          SBOM_ID="$SBOM_ID" \
+          SBOM_URL="$SBOM_URL" \
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          index = {
+              "build_provenance": {
+                  "id": os.environ["PROVENANCE_ID"],
+                  "url": os.environ["PROVENANCE_URL"],
+              },
+              "sbom": {
+                  "id": os.environ["SBOM_ID"],
+                  "url": os.environ["SBOM_URL"],
+              },
+          }
+          Path("attestations/attestation-index.json").write_text(
+              json.dumps(index, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload retained attestations
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-attestations-${{ github.run_id }}
+          path: attestations/
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-draft:
+    name: publish / draft candidate only
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [prepare-release, attest-release]
+    environment: release-signing
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-candidate-${{ github.run_id }}
+          path: candidate/dist
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-attestations-${{ github.run_id }}
+          path: attestations
+
+      - name: Reverify candidate before draft publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd candidate/dist
+            sha256sum --check SHA256SUMS.txt
+          )
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          dist = Path("candidate/dist")
+          manifest = json.loads((dist / "artifact-manifest.json").read_text(encoding="utf-8"))
+          if manifest.get("draft_only") is not True:
+              raise SystemExit("candidate is not marked draft-only")
+          qualification = manifest.get("qualification", {})
+          if qualification.get("status") != "pending" or qualification.get("required_before_promotion") is not True:
+              raise SystemExit("candidate must retain pending clean-machine qualification")
+          artifacts = manifest.get("artifacts", [])
+          if len(artifacts) != 6 or len({artifact["name"] for artifact in artifacts}) != 6:
+              raise SystemExit("candidate manifest must identify exactly six unique shipped build artifacts")
+          for artifact in artifacts:
+              name = artifact["name"]
+              if Path(name).name != name:
+                  raise SystemExit(f"candidate artifact name is not a flat filename: {name}")
+              path = dist / name
+              if not path.is_file() or path.stat().st_size != artifact["size"]:
+                  raise SystemExit(f"candidate artifact identity mismatch: {artifact['name']}")
+              if hashlib.sha256(path.read_bytes()).hexdigest() != artifact["sha256"]:
+                  raise SystemExit(f"candidate artifact digest mismatch: {artifact['name']}")
+          PY
+          test -s attestations/build-provenance.jsonl
+          test -s attestations/sbom.jsonl
+          test -s attestations/attestation-index.json
+
+      - name: Create prerelease draft without publishing
+        shell: bash
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG_NAME" candidate/dist/* attestations/* \
+            --verify-tag \
+            --draft \
+            --prerelease \
+            --latest=false \
+            --fail-on-no-commits \
+            --title "KiCad MCP Pro Gateway ${TAG_NAME} (draft candidate)" \
+            --notes "Automated signing, artifact verification, SBOM, and attestations completed. Clean-machine qualification for the exact hashes is still required before any public promotion." \
             --generate-notes
+          release_state="$(gh release view "$TAG_NAME" --json isDraft,isPrerelease --jq '.isDraft and .isPrerelease')"
+          if [[ "$release_state" != "true" ]]; then
+            echo "refusing to continue: release is not both draft and prerelease" >&2
+            exit 1
+          fi
