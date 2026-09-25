@@ -5,30 +5,45 @@ This guide provides actionable steps for diagnosing and resolving runtime issues
 ## 1. Daemon Startup & Process Lifecycle
 
 ### Symptoms
-- Desktop app reports "Daemon Unavailable" or "Connection Refused".
-- CLI commands return socket connection errors.
+- Desktop app reports a packaged-daemon/startup failure.
+- CLI commands return a readiness, version, or local endpoint error.
 
 ### Diagnostics
-1. **Check if daemon process is running:**
+1. **Check the validated lifecycle state:**
+   ```bash
+   kicad-mcp-gateway daemon status
+   ```
+   A missing endpoint, wrong product/protocol, stale packaged version, and
+   duplicate data-directory owner are distinct results.
+2. **Check the process without treating a filename match as readiness:**
    ```bash
    pgrep -af kicad-mcp-gateway-daemon
    ```
-2. **Inspect daemon log output:**
-   - Linux / macOS: `~/.local/share/kicad-mcp-gateway/logs/` or stdout.
-   - Windows: `%LOCALAPPDATA%\kicad-mcp-gateway\logs\`
-3. **Verify single-instance lock file:**
-   - Check if stale lockfile exists at `<data_dir>/gateway.lock`.
+3. **Capture sanitized daemon stderr:** the daemon does not create a log
+   directory. Run the packaged CLI/daemon from a terminal with `RUST_LOG=info`
+   and redact config values, tokens, device fingerprints, and usernames.
+4. **Check the single-instance owner:** `gateway.lock` is an advisory OS lock,
+   not a PID file. Its presence alone does not mean a daemon is running; use
+   `daemon status` or the process list.
+5. **Check explicit CLI stop state:** `<data_dir>/daemon.stopped` pauses an
+   open desktop watchdog. Run `kicad-mcp-gateway daemon start` or reopen the
+   desktop to hand supervision back.
+
+See [daemon-lifecycle.md](daemon-lifecycle.md) for the full ownership and
+update contract.
 
 ## 2. IPC Sockets & Connectivity
 
 ### Symptoms
-- `IPC socket error` or `Broken pipe` during command execution.
+- `IPC socket error`, `Broken pipe`, or an identity-handshake failure.
 
 ### Diagnostics
-- **Linux / macOS (Domain Sockets):**
-  Verify domain socket permissions at `/tmp/kicad-mcp-gateway-<hash>.sock` or user runtime dir.
-- **Windows (Named Pipes):**
-  Verify named pipe `\\.\pipe\kicad-mcp-gateway-<hash>` is accessible without administrator elevation.
+- **Linux / macOS (domain sockets):** the endpoint is derived from the selected
+  Gateway data directory; do not connect to a guessed `/tmp` path.
+- **Windows (named pipes):** the endpoint is derived from the same data
+  directory and is not configured through `GATEWAY_IPC_ENDPOINT`.
+- Gateway has no TCP fallback. A wrong product/protocol/version fails closed;
+  it never causes another executable or endpoint to be launched.
 
 ## 3. Keychain & Secure Storage
 
@@ -63,6 +78,16 @@ This guide provides actionable steps for diagnosing and resolving runtime issues
 
 ## 6. Uninstall & Data Retention Policy
 
-- **Application Binaries:** Removed by OS package manager / installer.
-- **Local Application Data:** Preserved by default at `<data_dir>` (database, audit logs, device identity) to prevent accidental data loss across upgrades.
-- **Complete Wipe:** Manually delete `<data_dir>` (`~/.local/share/kicad-mcp-gateway` or `%LOCALAPPDATA%\kicad-mcp-gateway`).
+1. Run `kicad-mcp-gateway daemon stop` before removing the application.
+2. **Application binaries:** the OS package uninstaller removes the desktop and
+   packaged sidecar. A CLI archive is removed by deleting its extracted
+   directory.
+3. **Local application data:** preserved by default at `<data_dir>` (config,
+   database, audit/checkpoint state, lifecycle marker). The device private key
+   remains separately in the OS key store.
+4. **Complete wipe:** delete `<data_dir>` and the native-key-store entry
+   `dev.oaslananka.kicad-mcp-pro-gateway.device-key`. Removing binaries alone
+   is not a data wipe.
+
+Default paths and rollback/update details are documented in
+[daemon-lifecycle.md](daemon-lifecycle.md).

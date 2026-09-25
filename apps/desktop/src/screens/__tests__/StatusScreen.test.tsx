@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 
 vi.mock("../../api/client", () => ({
   api: {
+    daemonLifecycle: vi.fn(),
     status: vi.fn(),
     listSessions: vi.fn(),
   },
@@ -12,6 +13,16 @@ vi.mock("../../api/client", () => ({
 
 describe("StatusScreen", () => {
   it("renders status details when daemon is connected", async () => {
+    vi.mocked(api.daemonLifecycle).mockResolvedValue({
+      state: "ready",
+      message: null,
+      identity: {
+        product_id: "kicad-mcp-gateway",
+        protocol_version: 1,
+        daemon_version: "0.1.0",
+        instance_id: "instance-1",
+      },
+    });
     vi.mocked(api.status).mockResolvedValue({
       device_fingerprint: "dev_1234567890abcdef",
       paired: true,
@@ -43,6 +54,11 @@ describe("StatusScreen", () => {
   });
 
   it("renders disconnected state when daemon is unreachable", async () => {
+    vi.mocked(api.daemonLifecycle).mockResolvedValue({
+      state: "failed",
+      message: "packaged daemon is missing",
+      identity: null,
+    });
     vi.mocked(api.status).mockRejectedValue("Connection refused");
     vi.mocked(api.listSessions).mockRejectedValue("Connection refused");
 
@@ -52,6 +68,25 @@ describe("StatusScreen", () => {
       expect(screen.getByText(/Daemon not reachable/i)).toBeInTheDocument();
     });
 
+    expect(screen.getByText(/packaged daemon is missing/i)).toBeInTheDocument();
     expect(screen.getByText("Disconnected")).toBeInTheDocument();
+  });
+
+  it("distinguishes an explicit CLI stop from a startup failure", async () => {
+    vi.mocked(api.daemonLifecycle).mockResolvedValue({
+      state: "stopped",
+      message: "stopped explicitly from the CLI",
+      identity: null,
+    });
+    vi.mocked(api.status).mockRejectedValue("daemon stopped");
+    vi.mocked(api.listSessions).mockRejectedValue("daemon stopped");
+
+    render(<StatusScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/stopped explicitly from the CLI/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText("Stopped")).toBeInTheDocument();
+    expect(screen.queryByText(/failed to start/i)).not.toBeInTheDocument();
   });
 });

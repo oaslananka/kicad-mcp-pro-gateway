@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ConfigView,
   AuditSummaryView,
+  DaemonLifecycleView,
   DaemonStatusView,
   PairingBegunView,
   PairingStatusView,
@@ -14,6 +15,7 @@ import type {
 // a thin forwarder to the daemon's local IPC API. There is no logic here
 // beyond that — see docs/architecture/component-boundaries.md.
 export const api = {
+  daemonLifecycle: () => invoke<DaemonLifecycleView>("daemon_lifecycle"),
   status: () => invoke<DaemonStatusView>("status"),
   pairingStatus: () => invoke<PairingStatusView>("pairing_status"),
   beginPairing: () => invoke<PairingBegunView>("begin_pairing"),

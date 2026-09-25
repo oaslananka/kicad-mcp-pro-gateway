@@ -20,7 +20,14 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
+pnpm sidecar:dev
+cargo test --manifest-path src-tauri/Cargo.toml --all-targets --locked
 ```
+
+`sidecar:dev` is required before direct Tauri Cargo commands because
+`tauri-build` verifies that the configured `externalBin` resource for the host
+target exists. Tauri CLI build/dev commands run the equivalent staging step via
+`beforeBuildCommand` / `beforeDevCommand`.
 
 ## Deterministic time
 
@@ -89,9 +96,12 @@ kicad-mcp-pro server, not a manual/GUI-only check.
 
 See `.github/workflows/ci.yml`. The repository declares Rust 1.88 as its MSRV;
 CI runs `cargo check --workspace --all-targets --locked` and the desktop Tauri
-crate with Rust 1.88.0 in addition to the stable-toolchain matrix. `cargo
-clippy --workspace --all-targets -- -D warnings` must be clean; no
-`unwrap()`/`expect()` is permitted in
+crate with Rust 1.88.0 in addition to the stable-toolchain matrix. The native
+Rust matrix runs the daemon lifecycle/IPC test on Linux, macOS, and Windows.
+A separate desktop matrix builds `.deb`, `.dmg`, and `.msi` packages, verifies
+that each contains its target-qualified daemon sidecar, and uploads the
+unsigned package as evidence. `cargo clippy --workspace --all-targets -- -D
+warnings` must be clean; no `unwrap()`/`expect()` is permitted in
 request/security-handling paths without a comment justifying the
 impossibility statically (and even then it is discouraged — prefer a typed
 error). Live-KiCad tests (which require a real KiCad/kicad-mcp-pro install)
