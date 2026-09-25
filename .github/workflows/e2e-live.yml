@@ -1,0 +1,182 @@
+# Live E2E Tests for KiCad MCP Pro Gateway
+#
+# This workflow runs end-to-end tests against a real kicad-mcp-pro server
+# with a real KiCad installation. It is a release-gating job that validates
+# the declared compatibility baseline.
+#
+# Triggered on: push to main, pull requests to main, and manual dispatch
+# Required for: Release qualification (see .github/workflows/release.yml)
+
+name: Live E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      kicad_version:
+        description: "KiCad version to test (e.g., 10.0.6)"
+        required: false
+        default: "10.0.6"
+      kicad_mcp_pro_version:
+        description: "kicad-mcp-pro version to test (e.g., 3.35.0)"
+        required: false
+        default: "3.35.0"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: e2e-live-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned compatibility baseline from docs/architecture/compatibility-matrix.md
+  KICAD_VERSION: ${{ github.event.inputs.kicad_version || '10.0.6' }}
+  KICAD_MCP_PRO_VERSION: ${{ github.event.inputs.kicad_mcp_pro_version || '3.35.0' }}
+  KICAD_MCP_PRO_COMMIT: f641a92596ab7adc1e134287578b1ae5ff9580ad
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  e2e-live:
+    name: Live E2E / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            kicad_install: "kicad"
+            kicad_version_pkg: "10.0.6"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3 python3-pip python3-venv \
+            uv \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install KiCad ${{ env.KICAD_VERSION }}
+        run: |
+          # Install KiCad from official PPA
+          sudo add-apt-repository -y ppa:kicad/kicad-10.0-releases
+          sudo apt-get update
+          sudo apt-get install -y kicad=${{ env.KICAD_VERSION }}* kicad-footprints=${{ env.KICAD_VERSION }}* kicad-symbols=${{ env.KICAD_VERSION }}* kicad-templates=${{ env.KICAD_VERSION }}* kicad-packages3d=${{ env.KICAD_VERSION }}*
+          kicad-cli --version
+
+      - name: Install kicad-mcp-pro ${{ env.KICAD_MCP_PRO_VERSION }}
+        run: |
+          uv tool install kicad-mcp-pro==${{ env.KICAD_MCP_PRO_VERSION }}
+          kicad-mcp-pro --version
+          kicad-mcp-pro doctor
+
+      - name: Prepare test fixture
+        run: |
+          FIXTURE_DIR="${{ github.workspace }}/tests/fixtures/kicad-test-project"
+          echo "FIXTURE_DIR=$FIXTURE_DIR" >> $GITHUB_ENV
+          echo "Test fixture contents:"
+          ls -la "$FIXTURE_DIR"
+
+      - name: Start kicad-mcp-pro server
+        run: |
+          # Start kicad-mcp-pro in streamable-http mode on loopback
+          KICAD_MCP_PROJECT_DIR="$FIXTURE_DIR" \
+          KICAD_MCP_PROFILE=default \
+          KICAD_MCP_OPERATING_MODE=readwrite \
+          uv run kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334 &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          
+          # Wait for server to be ready
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:3334/mcp > /dev/null 2>&1; then
+              echo "kicad-mcp-pro server is ready"
+              break
+            fi
+            sleep 1
+          done
+          
+          # Verify server is responding
+          curl -s http://127.0.1.1:3334/mcp || true
+          sleep 2
+
+      - name: Record environment evidence
+        run: |
+          echo "=== Live E2E Test Evidence ===" > e2e-evidence.txt
+          echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> e2e-evidence.txt
+          echo "GitHub SHA: ${{ github.sha }}" >> e2e-evidence.txt
+          echo "GitHub Ref: ${{ github.ref }}" >> e2e-evidence.txt
+          echo "Runner OS: ${{ runner.os }}" >> e2e-evidence.txt
+          echo "" >> e2e-evidence.txt
+          echo "--- KiCad Version ---" >> e2e-evidence.txt
+          kicad-cli --version >> e2e-evidence.txt 2>&1
+          echo "" >> e2e-evidence.txt
+          echo "--- kicad-mcp-pro Version ---" >> e2e-evidence.txt
+          kicad-mcp-pro --version >> e2e-evidence.txt 2>&1
+          echo "" >> e2e-evidence.txt
+          echo "--- kicad-mcp-pro Commit ---" >> e2e-evidence.txt
+          echo "Pinned commit: ${{ env.KICAD_MCP_PRO_COMMIT }}" >> e2e-evidence.txt
+          echo "" >> e2e-evidence.txt
+          echo "--- Test Fixture ---" >> e2e-evidence.txt
+          echo "Fixture: tests/fixtures/kicad-test-project" >> e2e-evidence.txt
+          ls -la "$FIXTURE_DIR" >> e2e-evidence.txt
+          echo "" >> e2e-evidence.txt
+          echo "--- Server Health Check ---" >> e2e-evidence.txt
+          curl -s http://127.0.0.1:3334/mcp -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"gateway-e2e","version":"0.1.0"}}}' >> e2e-evidence.txt 2>&1
+          echo "" >> e2e-evidence.txt
+
+      - name: Run live E2E tests
+        env:
+          GATEWAY_CORE_BRIDGE_ENDPOINT: http://127.0.0.1:3334/mcp
+          GATEWAY_TRANSPORT_MODE: disabled
+          GATEWAY_LOG_LEVEL: debug
+        run: |
+          # Run the live E2E test suite
+          cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --nocapture 2>&1 | tee test-output.txt
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
+          cat test-output.txt >> e2e-evidence.txt
+          exit $TEST_EXIT_CODE
+
+      - name: Stop kicad-mcp-pro server
+        if: always()
+        run: |
+          if [ -n "$SERVER_PID" ]; then
+            kill $SERVER_PID 2>/dev/null || true
+            wait $SERVER_PID 2>/dev/null || true
+          fi
+
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: e2e-live-evidence-${{ matrix.os }}
+          path: |
+            e2e-evidence.txt
+            test-output.txt
+          retention-days: 30
+
+      - name: Fail if tests failed
+        if: env.TEST_EXIT_CODE != '0'
+        run: |
+          echo "Live E2E tests failed"
+          exit 1
