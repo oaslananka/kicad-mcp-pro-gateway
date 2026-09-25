@@ -42,12 +42,14 @@ describe("SessionsScreen", () => {
         capability_profile: "Design",
         task_scope: "PCB Routing",
         expires_at: "2026-12-31T23:59:59Z",
+        workspace_ids: ["ws_001", "ws_002"],
       },
     ]);
     vi.mocked(api.listPendingApprovals).mockResolvedValue([
       {
         operation_id: "op_200",
         session_id: "ses_100",
+        workspace_id: "ws_001",
         tool_name: "pcb_export_gerber",
         risk: "High",
       },

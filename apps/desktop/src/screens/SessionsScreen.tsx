@@ -143,6 +143,12 @@ export default function SessionsScreen() {
               <span className="label">Task</span>
               <span>{sessionDialog.task_scope}</span>
             </div>
+            {sessionDialog.workspace_ids && sessionDialog.workspace_ids.length > 0 && (
+              <div className="row">
+                <span className="label">Workspace(s)</span>
+                <span>{sessionDialog.workspace_ids.join(", ")}</span>
+              </div>
+            )}
             <div className="row">
               <span className="label">Effective expiry</span>
               <span className="mono">{sessionDialog.expires_at}</span>
@@ -182,6 +188,10 @@ export default function SessionsScreen() {
             <div className="row">
               <span className="label">Risk</span>
               <span className={riskBadgeClass(opDialog.risk)}>{opDialog.risk}</span>
+            </div>
+            <div className="row">
+              <span className="label">Workspace</span>
+              <span className="mono">{opDialog.workspace_id}</span>
             </div>
             <div style={{ marginTop: 16 }}>
               <button

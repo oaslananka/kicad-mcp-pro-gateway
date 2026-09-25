@@ -83,6 +83,11 @@ fn to_session_view(session: &Session) -> SessionView {
             .expires_at
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap_or_else(|_| "invalid-timestamp".into()),
+        workspace_ids: session
+            .workspace_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect(),
     }
 }
 
@@ -290,6 +295,7 @@ async fn list_pending_approvals(state: &Arc<DaemonState>) -> IpcResponse {
             .map(|s| PendingApprovalView {
                 operation_id: s.operation_id,
                 session_id: s.session_id,
+                workspace_id: s.workspace_id,
                 tool_name: s.tool_name,
                 risk: format!("{:?}", s.risk),
             })
