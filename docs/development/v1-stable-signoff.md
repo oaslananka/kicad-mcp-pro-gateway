@@ -22,7 +22,7 @@ This document records the final V1 stable-release sign-off for KiCad MCP Pro Gat
 | Trust Boundary / Authorization TTL | #36 / PR #36 | ✅ **CLOSED** | Policy-bounded TTLs with conservative 1-min Critical defaults; malformed config prevents startup |
 | Fail-Closed Audit Persistence | #36 / PR #36 | ✅ **CLOSED** | Durable append-only audit store; `AuditPersistence` error on write failure; zero upstream calls when audit unavailable |
 | Release Candidate Pipeline | #41 / PR #41 | ✅ **CLOSED** | Fail-closed tag-triggered pipeline with SBOM, provenance, SBOM attestations, draft-prerelease-only publication |
-| Signed Desktop Installers | #40 / PR #40 | ✅ **CLOSED** | `.deb` (Linux), `.dmg` (macOS Developer ID + notarization), `.msi` (Windows Authenticode + timestamp) |
+| Signed Desktop Installers | #40 / PR #40 | ✅ **CLOSED** | `.deb` (Linux, validated via provenance), `.dmg` (macOS Developer ID + notarization), `.msi` (Windows Authenticode + timestamp) |
 | Live E2E Release Gate | #38 / PR #38 | ✅ **CLOSED** | Automated live E2E workflow against pinned `kicad-mcp-pro@3.35.0` + KiCad 10.0.6 on Ubuntu |
 | Desktop Security-Critical UX | #39 / PR #39 | ✅ **CLOSED** | Comprehensive UI tests for offline/failure states; Vitest + React Testing Library in CI |
 | Update/Upgrade/Rollback Strategy | #42 / PR #42 | ✅ **CLOSED** | Documented in `docs/upgrade-v1.md`; tested in CI matrix |
@@ -179,7 +179,7 @@ This document records the final V1 stable-release sign-off for KiCad MCP Pro Gat
 | `docs/development/release.md` | ✅ **CONSISTENT** | Accurately describes implemented `release.yml` workflow |
 | `docs/architecture/compatibility-matrix.md` | ✅ **CONSISTENT** | Matches CI matrix and release workflow targets |
 | `docs/upgrade-v1.md` | ✅ **CONSISTENT** | Documents tested upgrade/rollback strategy |
-| `SECURITY.md` | ✅ **CONSISTENT** | Reflects pre-alpha status; points to threat model & trust boundaries |
+| `SECURITY.md` | ✅ **CONSISTENT** | Reflects stable release status; points to threat model & trust boundaries |
 | `docs/security/threat-model.md` | ✅ **CONSISTENT** | Current threat model |
 | `docs/security/trust-boundaries.md` | ✅ **CONSISTENT** | Current trust boundaries |
 
@@ -248,5 +248,5 @@ Once the above are complete, the final stable release (`v1.0.0`) can be promoted
 2. **Tag RC:** Push tag `v1.0.0-rc1` to trigger release workflow with signing credentials
 3. **Clean-machine QA:** Open three `release-qa.md` issues (one per platform) and attach evidence
 4. **Cross-platform live E2E:** Execute live probe on macOS/Windows per `compatibility-matrix.md`
-5. **Promote to stable:** Human release owner promotes draft to stable after all evidence accepted
-6. **Final version bump:** Update to `version = "1.0.0"` and tag `v1.0.0` for stable release
+5. **Final version bump:** Update to `version = "1.0.0"` and tag `v1.0.0` for stable release
+6. **Promote to stable:** Human release owner promotes the v1.0.0 release to stable after all evidence accepted
