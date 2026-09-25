@@ -4,7 +4,7 @@ This directory documents the wire protocols Gateway speaks. All protocols
 here are **open and documented** per project principle 12 — nothing about
 pairing, session negotiation, or the operation envelope is a secret format.
 
-## Two distinct protocols — do not confuse them
+## Three distinct protocols — do not confuse them
 
 1. **Local core-bridge protocol**: standard MCP over Streamable HTTP, exactly
    as implemented by kicad-mcp-pro (`initialize`, `tools/list`, `tools/call`,
@@ -12,7 +12,14 @@ pairing, session negotiation, or the operation envelope is a secret format.
    writing, optional `MCP-Session-Id`). Gateway is a client of this
    protocol; it does not extend or modify it. See
    [`crates/core-bridge`](../../crates/core-bridge).
-2. **Gateway transport protocol**: the envelope Gateway uses to talk to
+2. **Local desktop/CLI IPC protocol**: length-bounded JSON messages over a
+   Unix-domain socket or Windows named pipe. There is no TCP fallback. The
+   first request on every privileged connection is the zero-side-effect
+   `Identity` handshake, which validates the Gateway product ID, local IPC
+   contract version, packaged daemon version, and per-process instance ID
+   before another request is forwarded. See
+   [`daemon-lifecycle.md`](../development/daemon-lifecycle.md).
+3. **Gateway transport protocol**: the envelope Gateway uses to talk to
    a relay/cloud. The normal daemon starts with outbound transport disabled;
    an in-process mock is available only when explicitly selected for local
    development/testing. A production hosted relay is out of scope for this
@@ -78,6 +85,9 @@ Every message on the Gateway transport is versioned and typed:
 
 ## Versioning
 
-Both protocols are explicitly versioned from day one. Breaking changes to
-the Gateway transport envelope bump `protocol_version`'s major component;
-receivers must reject majors they do not understand rather than guess.
+All three protocol boundaries are explicit. A breaking Gateway transport
+change bumps the envelope's major component; receivers reject majors they do
+not understand rather than guess. Local IPC has a separate integer contract
+version and requires an exact match before a client forwards any privileged
+request. Daemon package versions are checked separately so a stale Gateway
+process can be retired before its packaged replacement starts.

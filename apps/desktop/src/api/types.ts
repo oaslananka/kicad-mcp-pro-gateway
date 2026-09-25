@@ -3,6 +3,21 @@
 // Rust source of truth, typecheck failures on the Tauri command call sites
 // are the signal to fix them.
 
+export interface DaemonIdentityView {
+  product_id: string;
+  protocol_version: number;
+  daemon_version: string;
+  instance_id: string;
+}
+
+export type DaemonLifecycleState = "starting" | "ready" | "stopped" | "failed";
+
+export interface DaemonLifecycleView {
+  state: DaemonLifecycleState;
+  message: string | null;
+  identity: DaemonIdentityView | null;
+}
+
 export interface DaemonStatusView {
   device_fingerprint: string | null;
   paired: boolean;

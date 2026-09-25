@@ -25,7 +25,9 @@ apps/cli      --local IPC-->  apps/daemon
   and never re-implements authorization logic — it is a thin client over the
   same local IPC API the desktop app uses.
 - **`apps/daemon`** is the single authoritative local runtime. All privileged
-  decisions happen here.
+  decisions happen here. Desktop/CLI process ownership and packaged-sidecar
+  rules are defined in the
+  [production daemon lifecycle contract](../development/daemon-lifecycle.md).
 
 ### Crate responsibilities
 

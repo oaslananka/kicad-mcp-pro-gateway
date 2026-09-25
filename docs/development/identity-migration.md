@@ -45,7 +45,7 @@ Consequences:
 | Per-workspace checkpoint directory | `<workspace>/.companion-checkpoints` | `<workspace>/.gateway-checkpoints` |
 | IPC socket / named pipe | `kicad-mcp-companion-<hash>.sock`, `\\.\pipe\kicad-mcp-companion-<hash>` | `kicad-mcp-gateway-<hash>.sock`, `\\.\pipe\kicad-mcp-gateway-<hash>` |
 | Keyring service label | `dev.oaslananka.kicad-mcp-pro-companion.device-key` | `dev.oaslananka.kicad-mcp-pro-gateway.device-key` |
-| Environment variables | `COMPANION_DATA_DIR`, `COMPANION_LOG_LEVEL`, `COMPANION_CORE_BRIDGE_ENDPOINT`, `COMPANION_TRANSPORT_MODE`, `COMPANION_IPC_ENDPOINT` | `GATEWAY_DATA_DIR`, `GATEWAY_LOG_LEVEL`, `GATEWAY_CORE_BRIDGE_ENDPOINT`, `GATEWAY_TRANSPORT_MODE`, `GATEWAY_IPC_ENDPOINT` |
+| Environment variables | `COMPANION_DATA_DIR`, `COMPANION_LOG_LEVEL`, `COMPANION_CORE_BRIDGE_ENDPOINT`, `COMPANION_TRANSPORT_MODE` | `GATEWAY_DATA_DIR`, `GATEWAY_LOG_LEVEL`, `GATEWAY_CORE_BRIDGE_ENDPOINT`, `GATEWAY_TRANSPORT_MODE`; local IPC is always derived from the data directory and has no endpoint override |
 | MCP `clientInfo.name` sent to kicad-mcp-pro | `kicad-mcp-pro-companion` | `kicad-mcp-pro-gateway` |
 | Release archive / GitHub Release title | `kicad-mcp-companion-<tag>-<target>.tar.gz` | `kicad-mcp-gateway-<tag>-<target>.tar.gz` |
 
@@ -62,8 +62,9 @@ history from a checkout built before this change.
    `companion.lock` → `gateway.lock`.
 4. In each authorized workspace, rename `.companion-checkpoints` →
    `.gateway-checkpoints`.
-5. Rename exported `COMPANION_*` variables to `GATEWAY_*` (shell profile,
-   systemd unit, `.env`).
+5. Rename exported `COMPANION_*` variables to the supported `GATEWAY_*` set in
+   shell/environment configuration. V1 has no endpoint override and installs no
+   OS service unit.
 6. Expect to re-pair: the device private key lives in the OS key store under
    the old service label, so the gateway recreates device identity under the
    new label and existing remote pairings must be redone.

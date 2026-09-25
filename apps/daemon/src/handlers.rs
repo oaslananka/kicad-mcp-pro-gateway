@@ -10,8 +10,9 @@ use std::sync::Arc;
 use companion_core::{OperationId, Session, SessionId, SessionStatus, WorkspaceId};
 use companion_core_bridge::CoreBridgeClient;
 use companion_protocol::{
-    AuditSummaryView, DaemonStatusView, IpcRequest, IpcResponse, PairingBegunView,
-    PairingStatusView, PendingApprovalView, SessionView, WorkspaceView,
+    AuditSummaryView, DaemonIdentityView, DaemonStatusView, IpcRequest, IpcResponse,
+    PairingBegunView, PairingStatusView, PendingApprovalView, SessionView, WorkspaceView,
+    DAEMON_PRODUCT_ID, LOCAL_IPC_PROTOCOL_VERSION,
 };
 use companion_sessions::{SessionEvent, SessionTransition};
 use companion_workspace::WorkspaceAuthorization;
@@ -22,6 +23,7 @@ use crate::state::DaemonState;
 
 pub async fn handle_request(state: &Arc<DaemonState>, request: IpcRequest) -> IpcResponse {
     match request {
+        IpcRequest::Identity => identity(state),
         IpcRequest::Status => status(state).await,
         IpcRequest::PairingStatus => pairing_status(state).await,
         IpcRequest::BeginPairing => begin_pairing(state).await,
@@ -91,6 +93,15 @@ fn to_workspace_view(workspace: &WorkspaceAuthorization) -> WorkspaceView {
         canonical_root: workspace.canonical_root.to_string_lossy().to_string(),
         enabled: workspace.enabled,
     }
+}
+
+fn identity(state: &Arc<DaemonState>) -> IpcResponse {
+    IpcResponse::Identity(DaemonIdentityView {
+        product_id: DAEMON_PRODUCT_ID.to_string(),
+        protocol_version: LOCAL_IPC_PROTOCOL_VERSION,
+        daemon_version: env!("CARGO_PKG_VERSION").to_string(),
+        instance_id: state.instance_id.clone(),
+    })
 }
 
 async fn status(state: &Arc<DaemonState>) -> IpcResponse {

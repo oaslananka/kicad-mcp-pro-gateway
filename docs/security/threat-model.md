@@ -31,14 +31,15 @@
 | T7 | Manufacturing/export capability obtained via generic write access | Manufacturing capabilities are modeled as distinct from `*.write` capabilities; profiles never imply them by default |
 | T8 | Secret material (private keys, tokens) leaks via logs, CLI `--verbose`, IPC responses, or Debug output | `SecretStore` abstraction, no plaintext private key in SQLite ever, sensitive types avoid `Debug`/redact it, dedicated tests assert this |
 | T9 | Malformed/oversized remote input crashes or resource-exhausts the daemon | Envelope size limits, strict parsing (reject unknown message types rather than best-effort), no unbounded allocation from remote-controlled sizes |
-| T10 | Inbound public listener becomes an attack surface | No inbound internet-facing port is ever opened; local IPC binds to a named pipe / Unix domain socket, or `127.0.0.1`-only as a last resort; all cloud connectivity is outbound-initiated |
+| T10 | Inbound public listener becomes an attack surface | No inbound TCP listener is opened; local IPC binds only to a named pipe / Unix-domain socket, and all cloud connectivity is outbound-initiated |
 | T11 | UI or CLI bypasses daemon authorization | Both are thin clients over the same local IPC API; neither embeds policy logic |
-| T12 | Multiple daemon instances corrupt shared state | Single-instance guard against the state directory before any DB/identity mutation |
+| T12 | Multiple daemon instances corrupt shared state | Exclusive OS advisory lock against the state directory before any DB/identity mutation; clients require a matching product/protocol/version identity before forwarding privileged IPC |
 | T13 | High-risk operation executes without an extra approval step | Risk is modeled separately from capability; `RequireApproval` results are enforced even when the session already holds the capability |
 | T14 | Replay of a captured protocol message | Protocol envelopes carry `message_id`/`correlation_id`/`timestamp`; state-changing message handling is designed for replay detection once a real relay exists (see [protocol/README.md](../protocol/README.md)) |
 | T15 | Arbitrary shell / arbitrary filesystem access via a "convenience" tool mapping | Forbidden outright in V1; not modeled as a capability at all |
 | T16 | Relay traffic intended for another registered device is accepted locally | `session.request` and `operation.request` envelopes must carry the persistent local `device_id`; operation requests are additionally checked against `session.device_id` before policy evaluation can lead to execution |
 | T17 | An operation executes although the audit evidence for it could not be durably recorded | Fail-closed pre-execution audit gate: no `tools/call` and no approval execution without a committed record, reads and writes alike, with approval decisions persisted before execution — see [audit-fail-closed.md](audit-fail-closed.md) |
+| T18 | Desktop/CLI starts a stale or substituted local daemon | Launch paths are fixed to the Tauri `externalBin` or packaged CLI sibling; a bounded identity/version handshake runs on the same connection as every privileged request, and an incompatible endpoint never triggers a process/endpoint fallback |
 
 ## Explicitly out of scope for V1 (tracked, not solved here)
 

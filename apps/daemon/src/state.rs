@@ -66,6 +66,9 @@ pub struct PendingOperation {
 /// daemon makes goes through the fields here — the IPC server and the
 /// remote-operation processor are thin transport shells around this.
 pub struct DaemonState {
+    /// Random per-process identifier returned by the IPC identity handshake.
+    /// It contains no device or authorization material.
+    pub instance_id: String,
     pub storage: Arc<Storage>,
     pub identity_store: Arc<dyn DeviceIdentityStore + Send + Sync>,
     pub workspace_repo: Arc<WorkspaceRepository>,
