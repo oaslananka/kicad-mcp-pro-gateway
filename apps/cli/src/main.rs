@@ -435,14 +435,11 @@ async fn session(
                 if sessions.is_empty() {
                     println!("no active sessions");
                 }
+                // Session IDs are capability identifiers; keep them out of CLI output.
                 for s in sessions {
                     println!(
-                        "{}  {}  {}  {}  expires {}",
-                        s.session_id,
-                        s.remote_principal,
-                        s.status,
-                        s.capability_profile,
-                        s.expires_at
+                        "{}  {}  {}  expires {}",
+                        s.remote_principal, s.status, s.capability_profile, s.expires_at
                     );
                 }
             }
@@ -452,7 +449,7 @@ async fn session(
             ok_or_bail(
                 send_request(&cfg.data_dir, IpcRequest::ApproveSession { session_id }).await?,
             )?;
-            println!("approved session {session_id}");
+            println!("approved session");
         }
         SessionAction::Deny { session_id, reason } => {
             let session_id = parse_session_id(&session_id)?;
@@ -463,28 +460,28 @@ async fn session(
                 )
                 .await?,
             )?;
-            println!("denied session {session_id}");
+            println!("denied session");
         }
         SessionAction::Pause { session_id } => {
             let session_id = parse_session_id(&session_id)?;
             ok_or_bail(
                 send_request(&cfg.data_dir, IpcRequest::PauseSession { session_id }).await?,
             )?;
-            println!("paused session {session_id}");
+            println!("paused session");
         }
         SessionAction::Resume { session_id } => {
             let session_id = parse_session_id(&session_id)?;
             ok_or_bail(
                 send_request(&cfg.data_dir, IpcRequest::ResumeSession { session_id }).await?,
             )?;
-            println!("resumed session {session_id}");
+            println!("resumed session");
         }
         SessionAction::Revoke { session_id } => {
             let session_id = parse_session_id(&session_id)?;
             ok_or_bail(
                 send_request(&cfg.data_dir, IpcRequest::RevokeSession { session_id }).await?,
             )?;
-            println!("revoked session {session_id}");
+            println!("revoked session");
         }
     }
     Ok(())
