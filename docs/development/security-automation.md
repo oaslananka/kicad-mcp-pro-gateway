@@ -1,6 +1,6 @@
 # Repository security automation
 
-This document records the repository-level security and quality automation baseline. The GitHub-native `main` quality-gate state was last verified against the live API on 2026-09-24; the GTK3/glib compatibility set was reviewed on 2026-09-25.
+This document records the repository-level security and quality automation baseline. The GitHub-native `main` quality-gate state was last verified against the live API on 2026-09-26; the GTK3/glib compatibility set was reviewed on 2026-09-25.
 
 ## Enforced in repository workflows
 
@@ -47,7 +47,7 @@ The repository ruleset named `main quality gate` (ID `23952106`) is active and t
 - requires every change to `main` to arrive through a pull request;
 - requires zero approving reviews and no named reviewers, so a single maintainer is not forced to self-approve;
 - requires all review threads to be resolved;
-- requires the 12 contexts listed below;
+- requires the 11 contexts listed below;
 - blocks force-pushes and branch deletion; and
 - permits merge, squash, and rebase merges, but does not enable automatic merging.
 
@@ -66,17 +66,17 @@ The repository ruleset named `main quality gate` (ID `23952106`) is active and t
 | GitHub Actions | `15368` | `security / zizmor` | `.github/workflows/security.yml`, `workflow-audit` |
 | Semgrep Cloud | `4384945` | `semgrep-cloud-platform/scan` | Semgrep Cloud GitHub App |
 | GitGuardian | `46505` | `GitGuardian Security Checks` | GitGuardian GitHub App |
-| Commit status | not pinned | `Independent Review` | Required commit status; GitHub's API intentionally omits an integration ID for this context |
 
 The observed CodeQL, full-repository OSV, Socket, Mergify, and Dependabot signals are not part of this required set. CodeQL and full-repository OSV provide additional analysis, Socket supplies informational dependency findings, Mergify supplies coordination signals, and Dependabot is an update actor rather than a pull-request quality gate. Do not add a context to the ruleset until its current workflow or App source has been observed and mapped as above.
 
 ### Verification record
 
-Live API state was captured at `2026-09-24T22:42:08Z`:
+Live API state was revalidated on 2026-09-26:
 
-- The [rulesets index](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/rulesets) returned one ruleset, and [ruleset `23952106`](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/rulesets/23952106) reported `enforcement: active`, the pull-request, required-status-check, deletion, and non-fast-forward rules, and the 12 contexts above.
-- Main commit [`7c6a28b`](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/commits/7c6a28bacd41b2d1050a6942dae46b5cfb63f321/check-runs) had 12 check runs, all successful. All six required contexts that run on a push to `main` were present and successful. The other six are pull-request or external gates and therefore do not report on the main-branch push.
-- [PR #29](https://github.com/oaslananka/kicad-mcp-pro-gateway/pull/29) head [`4202108`](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/commits/4202108c7128e42dfef617fdee1023d2c265ef79/check-runs) reported all 12 current required contexts as successful and had combined status `success`; its [`Independent Review` status](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/commits/4202108c7128e42dfef617fdee1023d2c265ef79/status) also passed. It required no GitHub approving review and merged as main commit `7c6a28b`.
-- The governance verification recorded for this baseline reported that a non-bypass direct-push canary performed earlier on 2026-09-24 was rejected with `GH013` (`Changes must be made through a pull request`) and created no commit. Its message reported the then-current 13-check set; the later live API snapshot above is the source of truth for the present 12-context set.
+- The [rulesets index](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/rulesets) returns one active repository ruleset, and [ruleset `23952106`](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/rulesets/23952106) currently requires the 11 contexts listed above.
+- The legacy `Independent Review` commit-status context was removed from the active required-status-check set on 2026-09-26. It is not produced by a checked-in GitHub Actions workflow in this repository and is not part of the current merge policy.
+- Historical commits can still show previously-created `Independent Review` statuses. GitHub's Commit Statuses REST API exposes create/list/read operations for commit statuses but no delete operation, so an old status on an old SHA is historical evidence rather than an active rule.
+- The status observed on PR #43's former head `426284d5e87eed19d62dc21a829012e477726493` was created as the `oaslananka` user identity, with context `Independent Review`, state `pending`, description `Waiting for independent review`, and no target URL. After the ruleset change, later PR #43 heads no longer received that status.
+- The governance verification recorded for the earlier 2026-09-24 baseline remains useful historical evidence: a non-bypass direct-push canary was rejected with `GH013` (`Changes must be made through a pull request`) and created no commit. Counts in that historical record reflected the then-current policy and must not be treated as the current required-check inventory.
 
-Revalidate these endpoints before changing the ruleset or this inventory. The live GitHub configuration, not this dated record, remains authoritative.
+Revalidate these endpoints before changing the ruleset or this inventory. The live GitHub configuration, not any dated record, remains authoritative.
