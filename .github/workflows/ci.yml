@@ -72,7 +72,7 @@ jobs:
           node-version: 20
 
       - name: Stage daemon resource for Tauri MSRV check
-        run: node apps/desktop/scripts/prepare-sidecar.mjs --profile dev
+        run: node apps/desktop/scripts/prepare-sidecar.mjs --profile debug
 
       - name: Install Linux webview dependencies (Tauri MSRV check)
         run: |

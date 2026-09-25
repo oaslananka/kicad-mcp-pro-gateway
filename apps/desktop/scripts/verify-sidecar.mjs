@@ -2,14 +2,17 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
 const target = process.env.TAURI_BUILD_TARGET;
-const defaultBundlePath = join(
+const defaultReleasePath = join(
   "src-tauri",
   "target",
   ...(target ? [target] : []),
   "release",
-  "bundle",
 );
-const bundleDirectory = resolve(process.argv[2] ?? defaultBundlePath);
+const releaseDirectory = resolve(process.argv[2] ?? defaultReleasePath);
+const bundleDirectory = join(releaseDirectory, "bundle");
+if (!existsSync(releaseDirectory)) {
+  throw new Error(`Tauri release directory does not exist: ${releaseDirectory}`);
+}
 if (!existsSync(bundleDirectory)) {
   throw new Error(`Tauri bundle directory does not exist: ${bundleDirectory}`);
 }
@@ -29,10 +32,10 @@ function visit(directory) {
     }
   }
 }
-visit(bundleDirectory);
+visit(releaseDirectory);
 
 if (matches.length === 0) {
-  throw new Error(`no packaged Gateway daemon sidecar found under ${bundleDirectory}`);
+  throw new Error(`no packaged Gateway daemon sidecar found under ${releaseDirectory}`);
 }
 for (const path of matches) {
   const metadata = statSync(path);
