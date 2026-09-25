@@ -388,8 +388,14 @@ impl ToolEffectContract {
 fn normalize_argument_path(raw: &str, workspace_root: &Path) -> Result<PathBuf, ()> {
     validate_path_text(raw)?;
     let portable = raw.replace('\\', "/");
-    if has_windows_drive_prefix(&portable) {
-        return Err(());
+
+    // On non-Windows platforms, reject Windows drive prefixes (e.g., C:/) as foreign syntax.
+    // On Windows, allow native drive-absolute paths and let WorkspaceBoundary classify in/out-of-workspace.
+    #[cfg(not(target_os = "windows"))]
+    {
+        if has_windows_drive_prefix(&portable) {
+            return Err(());
+        }
     }
 
     let path = PathBuf::from(portable);
@@ -412,6 +418,7 @@ fn validate_path_text(path: &str) -> Result<(), ()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn has_windows_drive_prefix(path: &str) -> bool {
     let bytes = path.as_bytes();
     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
@@ -642,7 +649,6 @@ mod tests {
             "~/.ssh/authorized_keys",
             "$HOME/authorized_keys",
             "%USERPROFILE%/authorized_keys",
-            r"C:\Users\example\authorized_keys",
         ] {
             let argument = json!({ "paths": [raw] });
             let error = contract()
@@ -656,5 +662,22 @@ mod tests {
             );
             assert!(!error.to_string().contains("authorized_keys"));
         }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn rejects_foreign_windows_drive_syntax_without_echoing_the_value() {
+        let root = Path::new("/workspace/project");
+        let argument = json!({ "paths": [r"C:\Users\example\authorized_keys"] });
+        let error = contract()
+            .normalize(argument.as_object().unwrap(), root)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            OperationEffectNormalizationError::UnsupportedPathSyntax {
+                argument: "paths".into()
+            }
+        );
+        assert!(!error.to_string().contains("authorized_keys"));
     }
 }
