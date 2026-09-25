@@ -12,7 +12,9 @@ use std::str::FromStr;
 use serde::Deserialize;
 use url::Url;
 
+use crate::capability::CapabilityProfile;
 use crate::error::CompanionError;
+use crate::risk::RiskLevel;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportMode {
@@ -47,6 +49,105 @@ impl FromStr for TransportMode {
     }
 }
 
+/// Hard upper bound for a locally configured authorization TTL. One year is
+/// deliberately well below `i64` duration arithmetic limits, while making
+/// accidental unit mistakes (for example seconds expressed as minutes) fail
+/// closed during configuration loading.
+pub const MAX_AUTHORIZATION_TTL_MINUTES: i64 = 525_600;
+
+const DEFAULT_INSPECT_MAX_MINUTES: i64 = 240;
+const DEFAULT_DESIGN_MAX_MINUTES: i64 = 120;
+const DEFAULT_MANUFACTURING_MAX_MINUTES: i64 = 30;
+const DEFAULT_CUSTOM_MAX_MINUTES: i64 = 5;
+const DEFAULT_LOW_RISK_MAX_MINUTES: i64 = 120;
+const DEFAULT_NORMAL_RISK_MAX_MINUTES: i64 = 60;
+const DEFAULT_HIGH_RISK_MAX_MINUTES: i64 = 15;
+const DEFAULT_CRITICAL_RISK_MAX_MINUTES: i64 = 1;
+
+/// A profile-specific ceiling plus the locally assigned risk class for that
+/// profile. The risk class is policy-owned configuration, never remote input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuthorizationTtlProfile {
+    max_minutes: i64,
+    risk: RiskLevel,
+}
+
+impl AuthorizationTtlProfile {
+    pub fn max_minutes(&self) -> i64 {
+        self.max_minutes
+    }
+
+    pub fn risk(&self) -> RiskLevel {
+        self.risk
+    }
+}
+
+/// Validated local TTL policy. The effective ceiling is the lower of the
+/// selected profile's ceiling and the ceiling for its locally assigned risk
+/// class. Fields are private so an invalid policy cannot be constructed by a
+/// caller after configuration validation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuthorizationTtlConfig {
+    inspect: AuthorizationTtlProfile,
+    design: AuthorizationTtlProfile,
+    manufacturing: AuthorizationTtlProfile,
+    custom: AuthorizationTtlProfile,
+    low_risk_max_minutes: i64,
+    normal_risk_max_minutes: i64,
+    high_risk_max_minutes: i64,
+    critical_risk_max_minutes: i64,
+}
+
+impl AuthorizationTtlConfig {
+    pub fn profile(&self, profile: &CapabilityProfile) -> AuthorizationTtlProfile {
+        match profile {
+            CapabilityProfile::Inspect => self.inspect,
+            CapabilityProfile::Design => self.design,
+            CapabilityProfile::Manufacturing => self.manufacturing,
+            CapabilityProfile::Custom(_) => self.custom,
+        }
+    }
+
+    pub fn risk_ceiling(&self, risk: RiskLevel) -> i64 {
+        match risk {
+            RiskLevel::Low => self.low_risk_max_minutes,
+            RiskLevel::Normal => self.normal_risk_max_minutes,
+            RiskLevel::High => self.high_risk_max_minutes,
+            RiskLevel::Critical => self.critical_risk_max_minutes,
+        }
+    }
+}
+
+impl Default for AuthorizationTtlConfig {
+    fn default() -> Self {
+        Self {
+            inspect: AuthorizationTtlProfile {
+                max_minutes: DEFAULT_INSPECT_MAX_MINUTES,
+                risk: RiskLevel::Low,
+            },
+            design: AuthorizationTtlProfile {
+                max_minutes: DEFAULT_DESIGN_MAX_MINUTES,
+                risk: RiskLevel::Normal,
+            },
+            manufacturing: AuthorizationTtlProfile {
+                max_minutes: DEFAULT_MANUFACTURING_MAX_MINUTES,
+                risk: RiskLevel::High,
+            },
+            // A custom profile can contain any capability, so the local default
+            // is deliberately critical and materially shorter than the named
+            // profiles.
+            custom: AuthorizationTtlProfile {
+                max_minutes: DEFAULT_CUSTOM_MAX_MINUTES,
+                risk: RiskLevel::Critical,
+            },
+            low_risk_max_minutes: DEFAULT_LOW_RISK_MAX_MINUTES,
+            normal_risk_max_minutes: DEFAULT_NORMAL_RISK_MAX_MINUTES,
+            high_risk_max_minutes: DEFAULT_HIGH_RISK_MAX_MINUTES,
+            critical_risk_max_minutes: DEFAULT_CRITICAL_RISK_MAX_MINUTES,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct CliOverrides {
     pub data_dir: Option<PathBuf>,
@@ -61,6 +162,7 @@ pub struct CompanionConfig {
     pub log_level: String,
     pub core_bridge_endpoint: Url,
     pub transport_mode: TransportMode,
+    pub authorization_ttl: AuthorizationTtlConfig,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -69,6 +171,8 @@ pub enum ConfigError {
     InvalidEndpoint(String),
     #[error("invalid transport mode: {0}")]
     InvalidTransportMode(String),
+    #[error("invalid authorization TTL policy: {0}")]
+    InvalidAuthorizationTtlPolicy(String),
     #[error("invalid config file")]
     InvalidConfigFile,
     #[error("failed to read config file {path}: {message}")]
@@ -80,6 +184,9 @@ impl CompanionError for ConfigError {
         match self {
             ConfigError::InvalidEndpoint(_) => "CONFIG_INVALID_ENDPOINT",
             ConfigError::InvalidTransportMode(_) => "CONFIG_INVALID_TRANSPORT_MODE",
+            ConfigError::InvalidAuthorizationTtlPolicy(_) => {
+                "CONFIG_INVALID_AUTHORIZATION_TTL_POLICY"
+            }
             ConfigError::InvalidConfigFile => "CONFIG_INVALID_FILE",
             ConfigError::ConfigFileRead { .. } => "CONFIG_FILE_READ_FAILED",
         }
@@ -126,10 +233,88 @@ fn load_with_env(
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FileConfig {
     log_level: Option<String>,
     core_bridge_endpoint: Option<String>,
     transport_mode: Option<String>,
+    authorization_ttl: Option<AuthorizationTtlFileConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthorizationTtlFileConfig {
+    inspect: AuthorizationTtlProfileFileConfig,
+    design: AuthorizationTtlProfileFileConfig,
+    manufacturing: AuthorizationTtlProfileFileConfig,
+    custom: AuthorizationTtlProfileFileConfig,
+    low_risk_max_minutes: i64,
+    normal_risk_max_minutes: i64,
+    high_risk_max_minutes: i64,
+    critical_risk_max_minutes: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthorizationTtlProfileFileConfig {
+    max_minutes: i64,
+    risk: String,
+}
+
+impl TryFrom<AuthorizationTtlFileConfig> for AuthorizationTtlConfig {
+    type Error = ConfigError;
+
+    fn try_from(value: AuthorizationTtlFileConfig) -> Result<Self, Self::Error> {
+        Ok(Self {
+            inspect: value.inspect.try_into()?,
+            design: value.design.try_into()?,
+            manufacturing: value.manufacturing.try_into()?,
+            custom: value.custom.try_into()?,
+            low_risk_max_minutes: validated_ttl_ceiling(
+                value.low_risk_max_minutes,
+                "low_risk_max_minutes",
+            )?,
+            normal_risk_max_minutes: validated_ttl_ceiling(
+                value.normal_risk_max_minutes,
+                "normal_risk_max_minutes",
+            )?,
+            high_risk_max_minutes: validated_ttl_ceiling(
+                value.high_risk_max_minutes,
+                "high_risk_max_minutes",
+            )?,
+            critical_risk_max_minutes: validated_ttl_ceiling(
+                value.critical_risk_max_minutes,
+                "critical_risk_max_minutes",
+            )?,
+        })
+    }
+}
+
+impl TryFrom<AuthorizationTtlProfileFileConfig> for AuthorizationTtlProfile {
+    type Error = ConfigError;
+
+    fn try_from(value: AuthorizationTtlProfileFileConfig) -> Result<Self, Self::Error> {
+        let risk = RiskLevel::parse(&value.risk).ok_or_else(|| {
+            ConfigError::InvalidAuthorizationTtlPolicy(format!(
+                "profile risk {:?} must be low, normal, high, or critical",
+                value.risk
+            ))
+        })?;
+        Ok(Self {
+            max_minutes: validated_ttl_ceiling(value.max_minutes, "profile.max_minutes")?,
+            risk,
+        })
+    }
+}
+
+fn validated_ttl_ceiling(value: i64, field: &str) -> Result<i64, ConfigError> {
+    if (1..=MAX_AUTHORIZATION_TTL_MINUTES).contains(&value) {
+        Ok(value)
+    } else {
+        Err(ConfigError::InvalidAuthorizationTtlPolicy(format!(
+            "{field} must be between 1 and {MAX_AUTHORIZATION_TTL_MINUTES} minutes"
+        )))
+    }
 }
 
 /// Pure precedence resolution without a file layer: `overrides` > `env` > defaults.
@@ -179,11 +364,18 @@ fn load_from_sources(
         },
     };
 
+    let authorization_ttl = file
+        .authorization_ttl
+        .map(AuthorizationTtlConfig::try_from)
+        .transpose()?
+        .unwrap_or_default();
+
     Ok(CompanionConfig {
         data_dir,
         log_level,
         core_bridge_endpoint,
         transport_mode,
+        authorization_ttl,
     })
 }
 
@@ -205,6 +397,30 @@ fn default_data_dir() -> PathBuf {
 mod tests {
     use super::*;
 
+    const VALID_AUTHORIZATION_TTL_CONFIG: &str = r#"
+[authorization_ttl]
+low_risk_max_minutes = 90
+normal_risk_max_minutes = 45
+high_risk_max_minutes = 10
+critical_risk_max_minutes = 1
+
+[authorization_ttl.inspect]
+max_minutes = 241
+risk = "low"
+
+[authorization_ttl.design]
+max_minutes = 120
+risk = "normal"
+
+[authorization_ttl.manufacturing]
+max_minutes = 30
+risk = "high"
+
+[authorization_ttl.custom]
+max_minutes = 5
+risk = "critical"
+"#;
+
     #[test]
     fn defaults_apply_when_nothing_is_set() {
         let config = load_from(CliOverrides::default(), &HashMap::new()).unwrap();
@@ -214,6 +430,15 @@ mod tests {
             "http://127.0.0.1:3334/mcp"
         );
         assert_eq!(config.transport_mode, TransportMode::Disabled);
+        let inspect = config
+            .authorization_ttl
+            .profile(&CapabilityProfile::Inspect);
+        assert_eq!(inspect.max_minutes(), DEFAULT_INSPECT_MAX_MINUTES);
+        assert_eq!(inspect.risk(), RiskLevel::Low);
+        assert_eq!(
+            config.authorization_ttl.risk_ceiling(RiskLevel::Critical),
+            DEFAULT_CRITICAL_RISK_MAX_MINUTES
+        );
     }
 
     #[test]
@@ -378,12 +603,109 @@ transport_mode = "mock"
     }
 
     #[test]
+    fn authorization_ttl_file_values_override_defaults() {
+        let config = load_from_sources(
+            CliOverrides::default(),
+            &HashMap::new(),
+            Some(VALID_AUTHORIZATION_TTL_CONFIG),
+        )
+        .expect("valid authorization TTL policy");
+
+        let inspect = config
+            .authorization_ttl
+            .profile(&CapabilityProfile::Inspect);
+        assert_eq!(inspect.max_minutes(), 241);
+        assert_eq!(inspect.risk(), RiskLevel::Low);
+        assert_eq!(config.authorization_ttl.risk_ceiling(RiskLevel::Normal), 45);
+    }
+
+    #[test]
+    fn authorization_ttl_accepts_inclusive_ceiling_boundaries() {
+        for valid in [1, MAX_AUTHORIZATION_TTL_MINUTES] {
+            let file = VALID_AUTHORIZATION_TTL_CONFIG
+                .replace("max_minutes = 241", &format!("max_minutes = {valid}"));
+            let config = load_from_sources(CliOverrides::default(), &HashMap::new(), Some(&file))
+                .expect("inclusive TTL boundary is valid");
+            assert_eq!(
+                config
+                    .authorization_ttl
+                    .profile(&CapabilityProfile::Inspect)
+                    .max_minutes(),
+                valid
+            );
+        }
+    }
+
+    #[test]
+    fn partial_authorization_ttl_policy_fails_closed() {
+        let result = load_from_sources(
+            CliOverrides::default(),
+            &HashMap::new(),
+            Some("[authorization_ttl]\nlow_risk_max_minutes = 30\n"),
+        );
+
+        assert_eq!(result, Err(ConfigError::InvalidConfigFile));
+    }
+
+    #[test]
+    fn invalid_authorization_ttl_boundaries_and_risk_fail_closed() {
+        for invalid in ["0", "-1", "9223372036854775807"] {
+            let file = VALID_AUTHORIZATION_TTL_CONFIG
+                .replace("max_minutes = 241", &format!("max_minutes = {invalid}"));
+            assert!(
+                matches!(
+                    load_from_sources(CliOverrides::default(), &HashMap::new(), Some(&file)),
+                    Err(ConfigError::InvalidAuthorizationTtlPolicy(_))
+                ),
+                "ceiling {invalid} must fail closed"
+            );
+        }
+
+        let unknown_risk = VALID_AUTHORIZATION_TTL_CONFIG
+            .replace("risk = \"critical\"", "risk = \"catastrophic\"");
+        assert!(matches!(
+            load_from_sources(
+                CliOverrides::default(),
+                &HashMap::new(),
+                Some(&unknown_risk)
+            ),
+            Err(ConfigError::InvalidAuthorizationTtlPolicy(_))
+        ));
+    }
+
+    #[test]
+    fn unknown_authorization_ttl_keys_fail_instead_of_silently_defaulting() {
+        let result = load_from_sources(
+            CliOverrides::default(),
+            &HashMap::new(),
+            Some("authorization_ttl_typo = 30\n"),
+        );
+        assert_eq!(result, Err(ConfigError::InvalidConfigFile));
+
+        let unknown_nested_key = VALID_AUTHORIZATION_TTL_CONFIG.replace(
+            "critical_risk_max_minutes = 1",
+            "critical_risk_max_minutes_typo = 1",
+        );
+        assert_eq!(
+            load_from_sources(
+                CliOverrides::default(),
+                &HashMap::new(),
+                Some(&unknown_nested_key)
+            ),
+            Err(ConfigError::InvalidConfigFile)
+        );
+    }
+
+    #[test]
     fn error_codes_are_stable_and_not_retryable() {
         let endpoint = ConfigError::InvalidEndpoint("x".into());
         assert_eq!(endpoint.code(), "CONFIG_INVALID_ENDPOINT");
         assert!(!endpoint.retryable());
 
         assert_eq!(ConfigError::InvalidConfigFile.code(), "CONFIG_INVALID_FILE");
+        let ttl = ConfigError::InvalidAuthorizationTtlPolicy("zero".into());
+        assert_eq!(ttl.code(), "CONFIG_INVALID_AUTHORIZATION_TTL_POLICY");
+        assert!(!ttl.retryable());
         let read = ConfigError::ConfigFileRead {
             path: PathBuf::from("config.toml"),
             message: "denied".to_string(),

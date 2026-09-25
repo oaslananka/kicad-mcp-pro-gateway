@@ -93,7 +93,11 @@ async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
         };
         let mut workspace_ids = BTreeSet::new();
         workspace_ids.insert(workspace.workspace_id);
-        let ttl = time::Duration::minutes(payload.ttl_minutes.max(1));
+        let effective_ttl = state.policy_engine.effective_authorization_ttl(
+            &payload.capability_profile,
+            payload.ttl_minutes,
+        );
+        let ttl = time::Duration::minutes(effective_ttl.effective_minutes);
 
         let session = new_unpaired_session(
             device_id,
@@ -108,7 +112,13 @@ async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
         let session = session.transition(SessionEvent::TransportConnected, state.clock.as_ref())?;
         let session = session.transition(SessionEvent::RequestAccess, state.clock.as_ref())?;
         state.session_repo.save(&session)?;
-        tracing::info!(session_id = %session.session_id, "session now pending local approval");
+        tracing::info!(
+            session_id = %session.session_id,
+            requested_ttl_minutes = effective_ttl.requested_minutes,
+            effective_ttl_minutes = effective_ttl.effective_minutes,
+            expires_at = %session.expires_at,
+            "session now pending local approval with policy-limited lifetime"
+        );
         Ok(())
     })
     .await;
@@ -623,8 +633,42 @@ mod device_binding_tests {
 
     use super::*;
 
+    const TEST_AUTHORIZATION_TTL_CONFIG: &str = r#"
+[authorization_ttl]
+low_risk_max_minutes = 30
+normal_risk_max_minutes = 7
+high_risk_max_minutes = 3
+critical_risk_max_minutes = 1
+
+[authorization_ttl.inspect]
+max_minutes = 90
+risk = "low"
+
+[authorization_ttl.design]
+max_minutes = 47
+risk = "normal"
+
+[authorization_ttl.manufacturing]
+max_minutes = 20
+risk = "high"
+
+[authorization_ttl.custom]
+max_minutes = 5
+risk = "critical"
+"#;
+
     fn build_test_state(endpoint: String) -> Arc<DaemonState> {
+        build_test_state_with_config(endpoint, None)
+    }
+
+    fn build_test_state_with_config(
+        endpoint: String,
+        config_file: Option<&str>,
+    ) -> Arc<DaemonState> {
         let data_dir = tempfile::tempdir().unwrap().keep();
+        if let Some(contents) = config_file {
+            std::fs::write(data_dir.join("config.toml"), contents).unwrap();
+        }
         let cfg = config::load(CliOverrides {
             data_dir: Some(data_dir),
             core_bridge_endpoint: Some(endpoint),
@@ -643,14 +687,22 @@ mod device_binding_tests {
     }
 
     fn session_request(workspace_id: WorkspaceId) -> Envelope {
+        session_request_with(workspace_id, CapabilityProfile::Design, 30)
+    }
+
+    fn session_request_with(
+        workspace_id: WorkspaceId,
+        capability_profile: CapabilityProfile,
+        ttl_minutes: i64,
+    ) -> Envelope {
         Envelope::new(
             MessageType::SessionRequest,
             json!({
                 "remote_principal": "agent:test",
                 "workspace_id": workspace_id,
-                "capability_profile": "Design",
+                "capability_profile": capability_profile,
                 "task_scope": "device binding test",
-                "ttl_minutes": 30,
+                "ttl_minutes": ttl_minutes,
             }),
         )
     }
@@ -719,6 +771,58 @@ mod device_binding_tests {
         let sessions = state.session_repo.list_all().unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].device_id, identity.device_id);
+    }
+
+    #[tokio::test]
+    async fn session_request_persists_and_exposes_policy_limited_expiry() {
+        let state = build_test_state_with_config(
+            "http://127.0.0.1:9/mcp".into(),
+            Some(TEST_AUTHORIZATION_TTL_CONFIG),
+        );
+        let identity = state.identity_store.create("test-device").unwrap();
+        let workspace_id = authorize_workspace(&state);
+
+        handle_session_request(
+            &state,
+            session_request_with(workspace_id, CapabilityProfile::Design, i64::MAX)
+                .with_device_id(identity.device_id),
+        )
+        .await;
+
+        let sessions = state.session_repo.list_all().unwrap();
+        assert_eq!(sessions.len(), 1);
+        let session = &sessions[0];
+        assert_eq!(
+            session.status,
+            companion_core::SessionStatus::PendingApproval
+        );
+        assert_eq!(
+            session.expires_at - session.issued_at,
+            time::Duration::minutes(7),
+            "the durable session record must contain the policy-limited lifetime"
+        );
+
+        let persisted = state
+            .session_repo
+            .load(session.session_id)
+            .unwrap()
+            .expect("session remains auditable after persistence");
+        assert_eq!(persisted.expires_at, session.expires_at);
+
+        let response =
+            crate::handlers::handle_request(&state, companion_protocol::IpcRequest::ListSessions)
+                .await;
+        let companion_protocol::IpcResponse::Sessions(views) = response else {
+            panic!("ListSessions must return session views");
+        };
+        assert_eq!(views.len(), 1);
+        assert_eq!(
+            views[0].expires_at,
+            session
+                .expires_at
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap()
+        );
     }
 
     #[tokio::test]

@@ -309,7 +309,7 @@ async fn session(
                 // Session IDs are capability identifiers; keep them out of CLI output.
                 for s in sessions {
                     println!(
-                        "{}  {}  {}  expires {}",
+                        "{}  {}  {}  effective expiry {}",
                         s.remote_principal, s.status, s.capability_profile, s.expires_at
                     );
                 }

@@ -4,10 +4,12 @@
 //! the core of, and `docs/security/threat-model.md` for the threats it
 //! defends against.
 
+mod authorization_ttl;
 mod engine;
 mod tool_catalog;
 mod tool_registry;
 
+pub use authorization_ttl::{AuthorizationTtlPolicy, EffectiveAuthorizationTtl};
 pub use engine::{ApprovalReason, DenyReason, PolicyDecision, PolicyEngine};
 pub use tool_catalog::{ToolCatalogError, ToolCatalogSnapshot};
 pub use tool_registry::{
