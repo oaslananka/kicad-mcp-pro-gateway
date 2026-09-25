@@ -20,7 +20,7 @@ denied before `tools/call`.
 ## Reviewed V1 surface
 
 The initial reviewed contracts are pinned to kicad-mcp-pro commit
-`18c7defe9a0828f6df4dbf03d3361b7ad7f395d7`. The public names and dispositions
+`f641a92596ab7adc1e134287578b1ae5ff9580ad`. The public names and dispositions
 were reconciled against that commit's generated tool catalog; argument
 allowlists and effects were reviewed from each FastMCP adapter and the service
 it delegates to:
