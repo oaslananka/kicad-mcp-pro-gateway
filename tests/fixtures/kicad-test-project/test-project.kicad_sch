@@ -1,0 +1,28 @@
+(kicad_sch
+  (version 20240108)
+  (generator "kicad-mcp-pro-gateway test fixture")
+  (generator_version "1.0")
+  (uuid "12345678-1234-1234-1234-123456789abc")
+  (paper "A4")
+  (title_block
+    (title "Test Project")
+    (date "2026-01-01")
+    (rev "1.0")
+    (company "")
+    (comment "1")
+    (author "CI Test")
+    (page "1/1")
+  )
+  (lib_symbols)
+  (sheet_instances
+    (path "/" (page "1"))
+  )
+  (sheet
+    (uuid "12345678-1234-1234-1234-123456789abc")
+    (sheet "test-project")
+    (title "test-project")
+    (fields_autoplaced)
+    (property "Sheetname" "test-project" (at 0 0) (effects (font (size 1.27 1.27)) (justify left)))
+    (property "Sheetfile" "test-project.kicad_sch" (at 0 0) (effects (font (size 1.27 1.27)) (justify left)))
+  )
+)
