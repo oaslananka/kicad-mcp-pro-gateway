@@ -12,3 +12,4 @@ mod migrations;
 
 pub use connection::Storage;
 pub use error::StorageError;
+pub use migrations::{run_migrations, schema_version, SCHEMA_VERSION};

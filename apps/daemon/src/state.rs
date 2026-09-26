@@ -4,11 +4,11 @@ use std::sync::Arc;
 use tokio::sync::watch;
 
 use companion_audit::AuditRepository;
-use companion_core::{Capability, Clock, OperationId, OperationRequest, RiskLevel};
+use companion_core::{Capability, Clock, OperationId, OperationRequest, RiskLevel, TransportState};
 use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig};
 use companion_identity::DeviceIdentityStore;
 use companion_policy::{PolicyEngine, TomlToolRegistry};
-use companion_sessions::SessionRepository;
+use companion_sessions::{AuthorizationRepository, SessionRepository};
 use companion_storage::Storage;
 use companion_transport::Transport;
 use companion_workspace::WorkspaceRepository;
@@ -72,7 +72,13 @@ pub struct DaemonState {
     pub storage: Arc<Storage>,
     pub identity_store: Arc<dyn DeviceIdentityStore + Send + Sync>,
     pub workspace_repo: Arc<WorkspaceRepository>,
+    /// Transport-era subject records. Compatibility/correlation surface
+    /// only: they no longer carry authority — see
+    /// [`DaemonState::authorization_repo`].
     pub session_repo: Arc<SessionRepository>,
+    /// The explicit authorization authority every privileged decision is
+    /// made from. Its lifecycle is independent of transport connectivity.
+    pub authorization_repo: Arc<AuthorizationRepository>,
     pub policy_engine: Arc<PolicyEngine<TomlToolRegistry>>,
     pub audit_repo: Arc<AuditRepository>,
     pub core_bridge: Arc<CoreBridgeClient>,
@@ -85,5 +91,29 @@ pub struct DaemonState {
     /// `ApproveOperation`/`DenyOperation` send their result back over
     /// whichever transport is current at decision time.
     pub transport: std::sync::Mutex<Option<Arc<dyn Transport>>>,
+    /// Connectivity of that transport, in the shared [`TransportState`]
+    /// model. Purely a pipe fact: it is reported in API views and never
+    /// consulted when deciding whether a request is authorized.
+    pub transport_state: std::sync::Mutex<TransportState>,
     pub pending_operations: std::sync::Mutex<HashMap<OperationId, PendingOperation>>,
+}
+
+impl DaemonState {
+    /// Current transport connectivity, for API views and logging.
+    pub fn transport_state(&self) -> TransportState {
+        *self
+            .transport_state
+            .lock()
+            .expect("transport state mutex poisoned")
+    }
+
+    /// Records a transport connectivity event. Takes no grant and returns
+    /// no grant, so it cannot mint, extend, or resurrect authority.
+    pub fn record_transport_event(&self, event: companion_sessions::TransportConnectivityEvent) {
+        let mut state = self
+            .transport_state
+            .lock()
+            .expect("transport state mutex poisoned");
+        *state = companion_sessions::transport_state_after(*state, event);
+    }
 }

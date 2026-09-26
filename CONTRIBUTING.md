@@ -48,6 +48,25 @@ cargo test --workspace
 - CI must be green: `cargo fmt`, `cargo clippy -D warnings`,
   `cargo test --workspace`, and (once applicable) the frontend checks.
 
+## Static analysis dispositions
+
+- This repository has no analyzer-suppression configuration, and none may be
+  added to clear a finding. Fix the code behind a finding. When a finding is
+  demonstrably inapplicable instead, record the determination here and pin it
+  with a test, so the next reader has evidence rather than a silence.
+- Hosted static analysis runs its Transact-SQL (SQL Server) rules over every
+  `.sql` file, including the SQLite migrations in `crates/storage/migrations/`.
+  It annotates those files for a mandatory identifier-quoting session option
+  near the top of the file and for a compression clause on every `CREATE
+  TABLE`. Neither feature exists in SQLite, and each is a syntax error that
+  aborts the migration — so satisfying the annotation would make the daemon
+  fail closed at startup instead of running. These annotations are
+  dispositions, never defects: do not add the construct, and do not silence
+  the analyzer.
+  `sql_server_only_ddl_is_rejected_rather_than_added_to_a_sqlite_migration`
+  in `crates/storage/tests/migrations.rs` pins that boundary, and each
+  migration's header states its dialect.
+
 ## Reporting security issues
 
 Do not file a public issue — see [`SECURITY.md`](SECURITY.md).

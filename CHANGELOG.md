@@ -25,6 +25,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Explicit Authorization Authority**: New `AccessGrant`/`AuthorizationLease` domain model with its own lifecycle, independent of transport connectivity. Grants bind principal (explicitly `unverified` until remote identity verification exists), device, workspace set, effective capabilities, task scope, standing vs one-shot kind, issue/approval/expiry timestamps, approval policy, and revocation/suspension/consumption state. Local IPC gained `ListAccessGrants` and `ListAuthorizationLeases`; every view now reports authorization state and transport state as separate fields.
 - **Configuration File Support & Precedence**: Implemented `<data_dir>/config.toml` configuration layer with full precedence ordering (`CLI flags > Environment Variables > config.toml > Defaults`).
 - **Conservative Tool Registry Classification**: Classified conservative read-only KiCad MCP tools (PCB, schematic, validation, and server metadata) with explicit capability mappings and low risk levels while keeping discovery and destructive tools fail-closed.
 - **Desktop Settings V1 Screen**: Built functional V1 Settings UI exposing operational runtime parameters, configuration precedence rules, and privacy/security invariants.
@@ -37,11 +38,25 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Local IPC Contract Version 2**: The desktop/CLI IPC contract version is now `2`, bumped in the
+  same change that added `ListAccessGrants`/`ListAuthorizationLeases` and the separate
+  authorization/transport view fields. Version 1 is rejected by the readiness handshake, so a client
+  that cannot see authorization state separately from transport connectivity is retired instead of
+  talking to a daemon whose views it would misread; a wrong-protocol endpoint still receives no
+  lifecycle or privileged request and no alternate endpoint is tried. The version history lives on
+  `companion_protocol::LOCAL_IPC_PROTOCOL_VERSION` and is pinned by a test.
+- **Authorization Wire Spellings**: `AccessGrantView.authorization_status`,
+  `grant_kind`, and `principal_assurance` now report the model's own `snake_case` spellings
+  (`pending_approval`, `one_shot`) instead of a lowercased `Debug` rendering
+  (`pendingapproval`, `oneshot`), so the reported values are the values the schema persists. A
+  test pins every variant against its serde form, so the two cannot drift again.
 - **Companion → Gateway identity migration**: renamed the public product identity from KiCad MCP Pro Companion (`kicad-mcp-pro-companion`) to KiCad MCP Pro Gateway (`kicad-mcp-pro-gateway`) across README, SECURITY, contributing/architecture/protocol/development docs, Cargo repository & package metadata, CLI/daemon/desktop package and binary names, Tauri product title & bundle identifier, release workflow artifact and release titles, data directory, IPC socket/pipe prefix, keyring service label, environment variable prefix, and the MCP `clientInfo.name`. The pre-release compatibility decision and the full old → new mapping are recorded in `docs/development/identity-migration.md`; historical design records under `docs/superpowers/` keep their original names behind an explicit historical-record banner.
 - Updated GitHub Actions CI workflow to run frontend tests (`pnpm test`).
 - Reconciled documentation maturity and status claims to reflect pre-alpha / unreleased development state.
 
 ### Security
 
+- **Transport/Authorization Separation**: A transport connect, disconnect, reconnect, or replay can no longer mint, extend, refresh, widen, or resurrect access authority — the authorization state machine has no transport event, the connectivity fold has no grant parameter, and a duplicated remote request is deduplicated instead of stacking. Revoking or expiring a grant leaves the transport connected.
+- **Additive, Fail-Closed Authorization Migration**: New `access_grants`/`authorization_leases` tables (`SCHEMA_VERSION` 2) with a deterministic, idempotent mapping from persisted transport-era session rows. Legacy revocations and expiries migrate as revocations and expiries, pre-migration audit references stay linked, corrupt or unknown legacy rows are refused rather than interpreted, and an existing grant is never overwritten by a re-run. A database from a newer build is refused before anything is applied.
 - **Policy-Bounded Authorization TTLs**: Remote session lifetimes are clamped by validated local capability-profile and risk-class ceilings, including conservative one-minute Critical defaults. The effective expiry is persisted and shown explicitly in approval surfaces; malformed TTL policy configuration prevents startup rather than falling back.
 - **Fail-Closed Audit Persistence**: The daemon now durably persists every approval decision and every request envelope in the append-only audit store *before* any remote `tools/call` to `kicad-mcp-pro` or any other remote write. When the audit store cannot be written (disk full, read-only filesystem, locked or corrupt database, injected persistence failure), the operation is refused with a typed, secret-free `AuditPersistence` error and zero upstream calls — eliminating the "executed but unaudited" state for reads, writes, and high-risk execution alike. Read-vs-write policy, denial non-requeue semantics, and failure-injection coverage are documented in `docs/security/audit-fail-closed.md`.

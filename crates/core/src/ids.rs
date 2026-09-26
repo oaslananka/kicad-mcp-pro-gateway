@@ -91,6 +91,8 @@ typed_id!(DeviceId, "dev");
 typed_id!(AccountId, "acct");
 typed_id!(WorkspaceId, "ws");
 typed_id!(SessionId, "sess");
+typed_id!(GrantId, "grant");
+typed_id!(LeaseId, "lease");
 typed_id!(TaskId, "task");
 typed_id!(OperationId, "op");
 typed_id!(CheckpointId, "chk");
