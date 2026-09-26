@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use companion_core::{Capability, RiskLevel};
 use companion_policy::{
     OperationEffect, TomlToolRegistry, ToolCapabilityResolver, ToolCatalogSnapshot,
-    TOOL_EFFECT_CONTRACT_VERSION,
+    ToolEffectContract, TOOL_EFFECT_CONTRACT_VERSION,
 };
 use proptest::prelude::*;
 
@@ -153,6 +153,66 @@ fn classified_tool_names(
         .into_iter()
         .chain(coverage.stale)
         .collect()
+}
+
+/// The effects that change a project on disk, whether declared directly on a
+/// tool or on one of its path arguments.
+const MUTATING: [OperationEffect; 3] = [
+    OperationEffect::Write,
+    OperationEffect::Create,
+    OperationEffect::Delete,
+];
+
+/// The reviewed manifest, paired with the pinned catalog it is checked against.
+fn reviewed_manifest() -> (TomlToolRegistry, ToolCatalogSnapshot) {
+    (
+        TomlToolRegistry::try_embedded().expect("the reviewed manifest is valid"),
+        ToolCatalogSnapshot::embedded(),
+    )
+}
+
+/// Every effect a contract can apply, so the two asset reviews below ask the
+/// same question of a contract the same way.
+fn contract_effects(contract: &ToolEffectContract) -> BTreeSet<&OperationEffect> {
+    contract
+        .effects()
+        .iter()
+        .chain(
+            contract
+                .path_arguments()
+                .values()
+                .flat_map(|argument| argument.effects()),
+        )
+        .collect()
+}
+
+/// Every tool in the manifest that has a reviewed effect contract, with that
+/// contract. The emptiness guard lives here so a manifest that loses its
+/// contracts cannot make the two asset reviews pass vacuously.
+fn effect_contracts<'a>(
+    registry: &'a TomlToolRegistry,
+    snapshot: &ToolCatalogSnapshot,
+) -> Vec<(String, &'a ToolEffectContract)> {
+    let contracts = classified_tool_names(registry, snapshot)
+        .into_iter()
+        .filter_map(|name| {
+            registry
+                .effect_contract(&name)
+                .map(|contract| (name, contract))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !contracts.is_empty(),
+        "the reviewed manifest declares no effect contracts, so an asset review would pass vacuously"
+    );
+    contracts
+}
+
+/// Whether a contract can change a project on disk.
+fn mutates_project(contract: &ToolEffectContract) -> bool {
+    contract_effects(contract)
+        .iter()
+        .any(|effect| MUTATING.contains(effect))
 }
 
 fn any_text() -> impl Strategy<Value = String> {
@@ -407,36 +467,18 @@ fn risk_name(risk: RiskLevel) -> String {
 /// exhaustively rather than sampled.
 #[test]
 fn a_tool_that_can_mutate_a_project_is_never_classified_low_risk() {
-    let registry = TomlToolRegistry::try_embedded().expect("the reviewed manifest is valid");
-    let snapshot = ToolCatalogSnapshot::embedded();
-    let mutating = [
-        OperationEffect::Write,
-        OperationEffect::Create,
-        OperationEffect::Delete,
-    ];
+    let (registry, snapshot) = reviewed_manifest();
 
-    for name in classified_tool_names(&registry, &snapshot) {
-        let Some(contract) = registry.effect_contract(&name) else {
+    for (name, contract) in effect_contracts(&registry, &snapshot) {
+        if !mutates_project(contract) {
             continue;
-        };
-        let mutates = contract
-            .effects()
-            .iter()
-            .any(|effect| mutating.contains(effect))
-            || contract.path_arguments().values().any(|argument| {
-                argument
-                    .effects()
-                    .iter()
-                    .any(|effect| mutating.contains(effect))
-            });
-        if mutates {
-            let (_, risk) = registry.resolve(&name).expect("a classified tool resolves");
-            assert_ne!(
-                risk,
-                RiskLevel::Low,
-                "{name} can write, create, or delete but is classified low risk"
-            );
         }
+        let (_, risk) = registry.resolve(&name).expect("a classified tool resolves");
+        assert_ne!(
+            risk,
+            RiskLevel::Low,
+            "{name} can write, create, or delete but is classified low risk"
+        );
     }
 }
 
@@ -445,35 +487,16 @@ fn a_tool_that_can_mutate_a_project_is_never_classified_low_risk() {
 /// contract and a capability can never drift apart in opposite directions.
 #[test]
 fn a_read_only_effect_contract_never_carries_a_mutating_capability() {
-    let registry = TomlToolRegistry::try_embedded().expect("the reviewed manifest is valid");
-    let snapshot = ToolCatalogSnapshot::embedded();
-    let mutating = [
-        OperationEffect::Write,
-        OperationEffect::Create,
-        OperationEffect::Delete,
-    ];
+    let (registry, snapshot) = reviewed_manifest();
 
-    for name in classified_tool_names(&registry, &snapshot) {
-        let Some(contract) = registry.effect_contract(&name) else {
+    for (name, contract) in effect_contracts(&registry, &snapshot) {
+        if mutates_project(contract) {
             continue;
-        };
-        let effects: BTreeSet<&OperationEffect> = contract
-            .effects()
-            .iter()
-            .chain(
-                contract
-                    .path_arguments()
-                    .values()
-                    .flat_map(|argument| argument.effects()),
-            )
-            .collect();
-        let mutates = effects.iter().any(|effect| mutating.contains(effect));
-        if !mutates {
-            let (capability, _) = registry.resolve(&name).expect("a classified tool resolves");
-            assert!(
-                capability.as_str().ends_with(".read"),
-                "{name} models read-only effects but holds {capability}"
-            );
         }
+        let (capability, _) = registry.resolve(&name).expect("a classified tool resolves");
+        assert!(
+            capability.as_str().ends_with(".read"),
+            "{name} models read-only effects but holds {capability}"
+        );
     }
 }

@@ -256,6 +256,16 @@ fn literals(values: &[&'static str]) -> impl Strategy<Value = String> {
     prop::sample::select(values.to_vec()).prop_map(str::to_string)
 }
 
+/// The session-scoped verbs, derived from the tag list so the two never drift:
+/// every verb that carries a typed session id ends in `Session`.
+fn session_request_tags() -> Vec<&'static str> {
+    KNOWN_IPC_REQUEST_TAGS
+        .iter()
+        .copied()
+        .filter(|tag| tag.ends_with("Session"))
+        .collect()
+}
+
 /// The bytes of the first frame in `bytes`, excluding the delimiter.
 fn first_frame(bytes: &[u8]) -> &[u8] {
     match bytes.iter().position(|byte| *byte == b'\n') {
@@ -655,13 +665,7 @@ proptest! {
 
     #[test]
     fn only_a_session_id_decodes_as_one_and_every_accepted_spelling_normalizes(
-        request in literals(&[
-            "ApproveSession",
-            "DenySession",
-            "PauseSession",
-            "ResumeSession",
-            "RevokeSession",
-        ]),
+        request in literals(&session_request_tags()),
         id in literals(&[
             // Right shape, wrong domain: a device, workspace, operation, or
             // account id must not be accepted where a session id is required.
