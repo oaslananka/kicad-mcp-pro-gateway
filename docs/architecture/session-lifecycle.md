@@ -72,4 +72,4 @@ The policy-bounded `expires_at` is what the approver sees and what is durably
 persisted.
 
 ## References
-- [Outbound Relay Security Contract](../../security/outbound-relay-contract.md)
+- [Outbound Relay Security Contract](../security/outbound-relay-contract.md)

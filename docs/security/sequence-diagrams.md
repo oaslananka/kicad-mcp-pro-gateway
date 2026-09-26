@@ -1,4 +1,4 @@
-# Sequence Diagrams for Outbound Relay Security Contract
+# Sequence Diagrams for Outbound Relay Security Contract (Normative Production)
 
 ## Pairing Flow
 
@@ -7,7 +7,6 @@ sequenceDiagram
     participant Gateway
     participant Relay
     participant SecureStore as Secure Storage (Local)
-    participant PolicyEngine as Policy Engine (Local)
 
     Note over Gateway,Relay: Relay identity is derived only from the validated TLS server certificate, never from a relay-asserted device_id
     Gateway->>Gateway: complete TLS handshake and validate relay server certificate (PKI)
@@ -21,8 +20,7 @@ sequenceDiagram
     alt verification success
         Relay->>Gateway: pairing.result (paired=true)
         Gateway->>SecureStore: store pinned relay TLS identity as paired relay identity
-        Note over Gateway,SecureStore: Source binding only. Grants no authorization, and an envelope device_id is only ever compared against the local DeviceIdentity
-        Gateway->>PolicyEngine: create pending session
+        Note over Gateway,SecureStore: Source binding only. Pairing creates no remote-principal session or authorization; envelope device_id is only compared against local DeviceIdentity
     else verification failure
         Relay->>Gateway: pairing.result (paired=false, reason)
     end
@@ -43,9 +41,10 @@ sequenceDiagram
     participant User as Local User (UI/CLI)
     participant SessionStore as Session Store (Local)
 
-    Relay->>Gateway: session.request (session_id, requested_workspaces, requested_capabilities)
-    Gateway->>PolicyEngine: check session.request validity (envelope device_id == local DeviceIdentity, source == pinned relay TLS identity)
-    Gateway->>PolicyEngine: create session record (pending approval)
+    Relay->>Gateway: session.request (..., principal_evidence)
+    Gateway->>Gateway: verify envelope device_id == local DeviceIdentity and source == pinned relay TLS identity
+    Gateway->>Gateway: verify principal evidence (issuer, subject, audience/device, freshness, replay resistance, proof)
+    Gateway->>PolicyEngine: bind VerifiedPrincipal and create pending session
     Gateway->>User: show approval request (session details)
     User->>Gateway: approve/reject session (via UI/CLI)
     alt approved
@@ -71,7 +70,7 @@ sequenceDiagram
     participant CoreBridge as Core Bridge (Local MCP)
 
     Relay->>Gateway: operation.request (session_id, correlation_id, tool_name, args)
-    Gateway->>PolicyEngine: validate session_id exists and is approved
+    Gateway->>PolicyEngine: validate session/lease is active and bound to the same VerifiedPrincipal, device, workspace, and capability scope
     Gateway->>PolicyEngine: check workspace authorization
     Gateway->>PolicyEngine: check capability authorization (tool_name)
     Gateway->>PolicyEngine: check operation args against pinned tool contract
@@ -110,7 +109,8 @@ sequenceDiagram
             Gateway->>TransportState: set state to Connecting
             Gateway->>Relay: send any queued envelopes
             Gateway->>TransportState: set state to Connected
-            Note over Gateway,TransportState: Reconnect restores the pipe only. No session or authorization state is recovered from the relay
+            Note over Gateway,TransportState: Reconnect restores the pipe only; it never recovers authority from the relay
+            Note over Gateway,TransportState: A still-valid local AuthorizationLease may continue only with the same VerifiedPrincipal/device/workspace/capability scope and no refresh or widening
         else TLS failure
             Gateway->>ReconnectLogic: increment attempt, calculate jittered delay
             Gateway->>ReconnectLogic: sleep(delay)
@@ -125,12 +125,12 @@ sequenceDiagram
 sequenceDiagram
     participant Gateway
     participant Relay
-    participant ReplayCache as Replay Cache (Required for production, mocked in tests)
+    participant ReplayCache as Durable Replay State (Required for production)
     participant PolicyEngine as Policy Engine (Local)
 
     Relay->>Gateway: operation.request (session_id, correlation_id="old", timestamp="old")
     Note over Relay: (captured from previous session)
-    Gateway->>PolicyEngine: check abs(now - timestamp) <= REPLAY_WINDOW (configurable, default 60s)
+    Gateway->>PolicyEngine: check freshness against configured REPLAY_VALIDITY_WINDOW
     alt timestamp outside validity window (stale or too far in future)
         Gateway->>PolicyEngine: reject immediately, fail closed (no processing, no forwarding)
         Gateway->>ReplayCache: do not cache the message_id (cache stays bounded to the window)
@@ -141,7 +141,7 @@ sequenceDiagram
             Gateway->>PolicyEngine: reject as replay
             Gateway->>Relay: (no response or error)
         else message_id not seen (fresh message)
-            Gateway->>ReplayCache: add message_id and evict entries outside the window
+            Gateway->>ReplayCache: durably record message_id/session binding and evict expired entries
             Gateway->>PolicyEngine: process normally
             Gateway->>Relay: operation.result
         end
@@ -152,7 +152,7 @@ Out-of-window messages are never processed. A message whose `timestamp` is
 outside the validity window is rejected on arrival before any session, policy, or
 core-bridge work, and before it enters the replay cache. Replay detection
 therefore fails closed: an attacker gains nothing by delaying a captured
-message, and evicting window-expired entries keeps the cache bounded (see
+message, durable replay state survives restart, and evicting expired entries keeps storage bounded (see
 [outbound-relay-contract.md](./outbound-relay-contract.md#replay-ordering-and-idempotency-production-requirements)).
 
 ## Message Flooding Attempt
@@ -161,7 +161,7 @@ message, and evicting window-expired entries keeps the cache bounded (see
 sequenceDiagram
     participant Gateway
     participant Relay
-    participant RateLimiter as Rate Limiter (Required for production, mocked in tests)
+    participant RateLimiter as Rate Limiter (Required for production)
     participant Transport as Transport Layer
 
     Relay->>Gateway: message 1

@@ -7,12 +7,12 @@
   {
     "file": "duplicate.json",
     "abuse_case": "AC1",
-    "description": "Duplicate operation.request with same message_id within the nonce window"
+    "description": "Duplicate operation.request with the same message_id within the replay validity window"
   },
   {
     "file": "out_of_order.json",
     "abuse_case": "AC1",
-    "description": "Two operation.request messages with timestamps out of order"
+    "description": "Two independent operation.request envelopes whose timestamps are out of transport arrival order; ordering must be handled deterministically"
   },
   {
     "file": "stale_timestamp.json",
@@ -47,7 +47,7 @@
   {
     "file": "post_reboot_session.json",
     "abuse_case": "AC7",
-    "description": "operation.request attempting to use a session from a previous Gateway boot"
+    "description": "Request presenting pre-restart session authority after Gateway restart for durable replay and local lease/principal-scope conformance"
   },
   {
     "file": "flood.json",
