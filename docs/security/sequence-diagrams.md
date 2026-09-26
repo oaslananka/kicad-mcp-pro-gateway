@@ -9,6 +9,9 @@ sequenceDiagram
     participant SecureStore as Secure Storage (Local)
     participant PolicyEngine as Policy Engine (Local)
 
+    Note over Gateway,Relay: Relay identity is derived only from the validated TLS server certificate, never from a relay-asserted device_id
+    Gateway->>Gateway: complete TLS handshake and validate relay server certificate (PKI)
+    Gateway->>Gateway: derive relay identity from validated certificate (SPKI fingerprint)
     Gateway->>Relay: pairing.begin (device_id, nonce)
     Relay->>Gateway: pairing.challenge (server_nonce)
     Gateway->>SecureStore: load device private key
@@ -17,12 +20,18 @@ sequenceDiagram
     Relay->>Relay: verify signature using device_id's public key
     alt verification success
         Relay->>Gateway: pairing.result (paired=true)
-        Gateway->>SecureStore: store relay's device_id as paired
+        Gateway->>SecureStore: store pinned relay TLS identity as paired relay identity
+        Note over Gateway,SecureStore: Source binding only. Grants no authorization, and an envelope device_id is only ever compared against the local DeviceIdentity
         Gateway->>PolicyEngine: create pending session
     else verification failure
         Relay->>Gateway: pairing.result (paired=false, reason)
     end
 ```
+
+The paired relay identity is the pinned TLS certificate identity observed on the
+handshake. It is never a `device_id` value supplied by the relay, and it carries
+no authorization privileges (see
+[outbound-relay-contract.md](./outbound-relay-contract.md#authentication-and-identity)).
 
 ## Session Request and Approval
 
@@ -35,7 +44,7 @@ sequenceDiagram
     participant SessionStore as Session Store (Local)
 
     Relay->>Gateway: session.request (session_id, requested_workspaces, requested_capabilities)
-    Gateway->>PolicyEngine: check session.request validity (device_id match, etc.)
+    Gateway->>PolicyEngine: check session.request validity (envelope device_id == local DeviceIdentity, source == pinned relay TLS identity)
     Gateway->>PolicyEngine: create session record (pending approval)
     Gateway->>User: show approval request (session details)
     User->>Gateway: approve/reject session (via UI/CLI)
@@ -96,10 +105,12 @@ sequenceDiagram
         alt TLS success
             Relay->>Gateway: TLS ServerHello, Cert, etc.
             Gateway->>Relay: TLS Finished
+            Gateway->>Gateway: validate relay certificate and re-check pinned relay TLS identity
             Gateway->>Relay: (TLS established)
             Gateway->>TransportState: set state to Connecting
             Gateway->>Relay: send any queued envelopes
             Gateway->>TransportState: set state to Connected
+            Note over Gateway,TransportState: Reconnect restores the pipe only. No session or authorization state is recovered from the relay
         else TLS failure
             Gateway->>ReconnectLogic: increment attempt, calculate jittered delay
             Gateway->>ReconnectLogic: sleep(delay)
@@ -119,16 +130,30 @@ sequenceDiagram
 
     Relay->>Gateway: operation.request (session_id, correlation_id="old", timestamp="old")
     Note over Relay: (captured from previous session)
-    Gateway->>ReplayCache: check message_id and timestamp window
-    alt replay detected (within window and seen before)
-        Gateway->>PolicyEngine: reject as replay
+    Gateway->>PolicyEngine: check abs(now - timestamp) <= REPLAY_WINDOW (configurable, default 60s)
+    alt timestamp outside validity window (stale or too far in future)
+        Gateway->>PolicyEngine: reject immediately, fail closed (no processing, no forwarding)
+        Gateway->>ReplayCache: do not cache the message_id (cache stays bounded to the window)
         Gateway->>Relay: (no response or error)
-    else not replay (outside window or new message_id)
-        Gateway->>PolicyEngine: process normally
-        Gateway->>ReplayCache: add message_id to cache
-        Gateway->>Relay: operation.result
+    else timestamp within validity window
+        Gateway->>ReplayCache: lookup message_id in window
+        alt message_id already seen in window (replay)
+            Gateway->>PolicyEngine: reject as replay
+            Gateway->>Relay: (no response or error)
+        else message_id not seen (fresh message)
+            Gateway->>ReplayCache: add message_id and evict entries outside the window
+            Gateway->>PolicyEngine: process normally
+            Gateway->>Relay: operation.result
+        end
     end
 ```
+
+Out-of-window messages are never processed. A message whose `timestamp` is
+outside the validity window is rejected on arrival before any session, policy, or
+core-bridge work, and before it enters the replay cache. Replay detection
+therefore fails closed: an attacker gains nothing by delaying a captured
+message, and evicting window-expired entries keeps the cache bounded (see
+[outbound-relay-contract.md](./outbound-relay-contract.md#replay-ordering-and-idempotency-production-requirements)).
 
 ## Message Flooding Attempt
 

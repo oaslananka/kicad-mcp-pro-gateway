@@ -15,6 +15,11 @@
     "description": "Two operation.request messages with timestamps out of order"
   },
   {
+    "file": "stale_timestamp.json",
+    "abuse_case": "AC1",
+    "description": "operation.request whose timestamp is outside the replay validity window and must be rejected without processing or caching"
+  },
+  {
     "file": "oversized.json",
     "abuse_case": "AC3",
     "description": "Envelope with payload exceeding MAX_MESSAGE_BYTES"

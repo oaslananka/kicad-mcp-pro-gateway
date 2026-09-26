@@ -41,7 +41,7 @@ The Gateway daemon initiates outbound connections to a relay (or cloud service) 
 
 1. **Device Authentication**: The Gateway MUST authenticate itself to the relay using its device identity (Ed25519 key pair) during the pairing process. The relay MUST verify the Gateway's proof of possession of the private key.
 2. **Relay Authentication**: The Gateway MUST authenticate the relay via TLS server certificate validation (standard PKI). The relay's identity is used only for message source validation and does not confer any privileges.
-3. **Session Binding**: After pairing, a session is established. The Gateway binds the session to the verified device identity of the relay only to ensure messages originate from the paired relay. The relay's identity does not confer any authorization privileges.
+3. **Session Binding**: After pairing, a session is established. The Gateway binds the session to the pinned relay TLS identity — the server certificate identity it validated during the handshake — only to ensure messages originate from that same relay. The relay identity is not a `device_id` value the relay asserts, and it does not confer any authorization privileges. A `device_id` inside an envelope is only ever compared against the local `DeviceIdentity.device_id`.
 
 ### Message Integrity and Confidentiality
 
@@ -50,7 +50,7 @@ The Gateway daemon initiates outbound connections to a relay (or cloud service) 
 
 ### Replay, Ordering, and Idempotency (Production Requirements)
 
-1. **Replay Detection**: Each message includes a unique `message_id` (ULID/UUID) and a `timestamp`. The Gateway MUST detect and reject replayed state-changing messages (e.g., `session.request`, `operation.request`) based on `message_id` and `timestamp` within a configured window. The window size is a production-configurable parameter.
+1. **Replay Detection**: Each message includes a unique `message_id` (ULID/UUID) and a `timestamp`. The Gateway MUST validate the `timestamp` against a narrow validity window around local time (configurable, default ±60s) and MUST reject, without processing, forwarding, or caching, any state-changing message (e.g., `session.request`, `operation.request`) whose `timestamp` falls outside that window — an out-of-window message is never treated as fresh. Within the window, the Gateway MUST reject any `message_id` already seen in the window (replay) and MUST evict cache entries that fall outside the window so the cache stays bounded. The window size is a production-configurable parameter.
 2. **Ordering**: The Gateway does NOT guarantee in-order delivery of messages from the relay. However, state-changing messages are processed in the order they are received after deduplication and validity checks. The `correlation_id` ties requests to responses.
 3. **Idempotency**: Operations MUST be designed to be idempotent where possible. The Gateway MUST process duplicate `operation.request` messages with the same `correlation_id` as a single operation, returning the same result.
 
@@ -115,7 +115,7 @@ The following invariants MUST hold at all times in a production deployment:
 
 1. **I1**: No operation is executed without a valid, non-expired, non-revoked session that has been approved by the local user for the requested workspace and capability.
 2. **I2**: All inbound messages are validated for size, schema, and message type before further processing.
-3. **I3**: Replay detection is enforced for all state-changing message types using `message_id` and `timestamp` (within a configured window).
+3. **I3**: Replay detection is enforced for all state-changing message types using `message_id` and `timestamp`. A state-changing message whose `timestamp` falls outside the configured validity window is rejected and is never processed or cached (fail closed), and cache entries outside the window are evicted to bound memory.
 4. **I4**: The transport connection does not imply any authorization; a connected transport alone grants zero privileges.
 5. **I5**: Session establishment requires mutual device authentication (Gateway proves identity to relay; relay's TLS certificate is validated by Gateway).
 6. **I6**: The Gateway never sends unencrypted or unauthenticated messages over the transport; TLS is mandatory for all connections.
@@ -126,7 +126,7 @@ The following invariants MUST hold at all times in a production deployment:
 The following abuse cases are considered in the design and MUST be addressed by a production implementation:
 
 - **AC1**: Relay attempts to replay an old `operation.request` message.
-  - Expected: Gateway detects replay via `message_id` and rejects the message.
+  - Expected: Gateway rejects the message. An in-window `message_id` already seen in the window is rejected as a replay; a `timestamp` outside the validity window is rejected on arrival and is not cached.
 - **AC2**: Relay floods the Gateway with messages.
   - Expected: Gateway's rate limiter drops excess messages; transport may be closed if overwhelmed.
 - **AC3**: Relay sends an oversized envelope.
@@ -165,6 +165,7 @@ The repository includes conformance fixtures under `tests/fixtures/protocol-abus
 | `replay.json` | AC1 | Captured `operation.request` message replayed after a session reboot. |
 | `duplicate.json` | AC1 | Duplicate `operation.request` with same `message_id` within the nonce window. |
 | `out_of_order.json` | AC1 | `operation.request` messages sent out of sequence (by `timestamp`). |
+| `stale_timestamp.json` | AC1 | `operation.request` whose `timestamp` is outside the validity window; must be rejected without processing or caching. |
 | `oversized.json` | AC3 | Envelope with payload exceeding `MAX_MESSAGE_BYTES`. |
 | `invalid_envelope.json` | AC3, AC4 | Malformed JSON or missing required fields. |
 | `unknown_message_type.json` | AC4 | Envelope with `message_type` not in the V1 registry. |
