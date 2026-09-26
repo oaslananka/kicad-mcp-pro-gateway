@@ -9,12 +9,13 @@ trust boundaries in
 
 ## Supported versions
 
-This project is currently in pre-alpha / pre-1.0 (`0.x`) unreleased development. All security fixes land on `main`. Once stable releases are published, security updates will target the latest active minor release.
+KiCad MCP Pro Gateway is now at **V1 Stable** release status. All security fixes land on `main`. Security updates will target the latest active minor release.
 
 | Version | Supported | Status |
 |---|---|---|
 | `main` (unreleased) | ✅ | Active Development |
-| Pre-alpha | ❌ | No published release binaries yet |
+| v1.0.0 | ✅ | Stable Release |
+| Pre-alpha | ✅ | Archived (superseded by v1.0.0) |
 
 ## Reporting a vulnerability
 
