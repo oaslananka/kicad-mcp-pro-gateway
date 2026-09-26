@@ -25,7 +25,10 @@
 
 1. **Cloud → transport**: everything received is untrusted input. It is
    validated (envelope shape, size, protocol version) before it is allowed
-   to reference any domain type.
+   to reference any domain type. These parsers, the workspace path boundary,
+   and the tool-registry manifests carry property/fuzz coverage for exactly
+   that reason — see
+   [testing.md](../development/testing.md#property-and-fuzz-testing).
 2. **transport → daemon core**: a message is only ever turned into a
    `Session`/`OperationRequest` lookup; it is never allowed to construct or
    mutate a `Session` directly. Session state changes only happen through
