@@ -8,6 +8,11 @@ pub enum StorageError {
     #[error("migration failed: {0}")]
     MigrationFailed(String),
 
+    #[error(
+        "database schema version {found} is newer than this build supports ({supported}); refusing to guess at its contents"
+    )]
+    SchemaFromNewerBuild { found: u32, supported: u32 },
+
     #[error("another Gateway instance is already running against this data directory")]
     AnotherInstanceRunning,
 
@@ -20,6 +25,7 @@ impl CompanionError for StorageError {
         match self {
             StorageError::DbUnreadable(_) => "STORAGE_DB_UNREADABLE",
             StorageError::MigrationFailed(_) => "STORAGE_MIGRATION_FAILED",
+            StorageError::SchemaFromNewerBuild { .. } => "STORAGE_SCHEMA_FROM_NEWER_BUILD",
             StorageError::AnotherInstanceRunning => "STORAGE_ANOTHER_INSTANCE_RUNNING",
             StorageError::Io(_) => "STORAGE_IO",
         }

@@ -6,7 +6,7 @@
 //! variant here is itself policy-safe (status, approve/deny, pause/
 //! resume/revoke, workspace CRUD, audit read).
 
-use companion_core::{OperationId, SessionId, WorkspaceId};
+use companion_core::{DeviceId, GrantId, LeaseId, OperationId, SessionId, WorkspaceId};
 use serde::{Deserialize, Serialize};
 
 /// Stable product identifier returned by the local IPC readiness handshake.
@@ -92,7 +92,16 @@ pub enum IpcRequest {
     Status,
     PairingStatus,
     BeginPairing,
+    /// Transport-era subject records. Retained for existing clients; the
+    /// authority itself is reported by `ListAccessGrants`.
     ListSessions,
+    /// Explicit authorization authority — the records an operation is
+    /// actually evaluated against. Distinct from transport connectivity.
+    ListAccessGrants,
+    /// Every lease ever cut from a grant, including spent ones. Audit-facing.
+    ListAuthorizationLeases {
+        grant_id: GrantId,
+    },
     ApproveSession {
         session_id: SessionId,
     },
@@ -138,7 +147,18 @@ pub struct DaemonStatusView {
     pub device_fingerprint: Option<String>,
     pub paired: bool,
     pub core_bridge_reachable: bool,
+    /// Transport-era subject records in `Active` status. Retained for
+    /// existing clients; it is not an authority count.
     pub active_session_count: usize,
+    /// Access grants that currently carry authority: `Active`, unexpired,
+    /// unrevoked, unconsumed. This is the number that says how much the
+    /// Gateway has actually authorized.
+    pub active_grant_count: usize,
+    /// Whether any access grant is waiting for a local approve/deny.
+    pub pending_approval_grant_count: usize,
+    /// Connectivity of the outbound transport. Reported here so a client
+    /// never has to infer it from authorization state.
+    pub transport_state: String,
     pub workspace_count: usize,
 }
 
@@ -166,7 +186,19 @@ pub struct WorkspaceInfo {
 pub struct SessionView {
     pub session_id: SessionId,
     pub remote_principal: String,
+    /// The transport-era status of this subject record, kept for existing
+    /// clients. It is a compatibility field, not an authorization signal —
+    /// see `authorization_status` for the authority that is actually in
+    /// force.
     pub status: String,
+    /// The authorization status of the access grant that carries authority
+    /// for this subject (`pending_approval`, `active`, `suspended`,
+    /// `expired`, `revoked`, `consumed`, or `none` when no grant exists).
+    pub authorization_status: String,
+    /// Transport connectivity, as last observed by the daemon. Never an
+    /// authorization signal in either direction: a connected pipe grants
+    /// nothing, and a disconnected one takes nothing away.
+    pub transport_state: String,
     pub capability_profile: String,
     pub task_scope: String,
     /// Policy-bounded effective expiry shown to the approver. This is the
@@ -174,6 +206,54 @@ pub struct SessionView {
     pub expires_at: String,
     pub workspace_ids: Vec<WorkspaceId>,
     pub workspaces: Vec<WorkspaceInfo>,
+}
+
+/// One explicit authorization grant. Everything a UI needs to show what the
+/// Gateway has actually authorized, and nothing about the pipe it arrived
+/// over.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AccessGrantView {
+    pub grant_id: GrantId,
+    /// The transport-era subject record this grant answers. Correlation
+    /// only — it carries no authority of its own.
+    pub subject_session_id: SessionId,
+    pub device_id: DeviceId,
+    pub remote_principal: String,
+    /// `unverified` until a real remote-identity verification exists; a UI
+    /// must not present this as a proven identity.
+    pub principal_assurance: String,
+    pub authorization_status: String,
+    /// `standing` or `one_shot`. A one-shot grant authorizes a single lease,
+    /// which is not the same thing as a per-operation "allow once".
+    pub grant_kind: String,
+    pub capability_profile: String,
+    pub task_scope: String,
+    pub issued_at: String,
+    pub approved_at: Option<String>,
+    pub expires_at: String,
+    pub revoked_at: Option<String>,
+    pub revocation_reason: Option<String>,
+    pub consumed_at: Option<String>,
+    pub workspace_ids: Vec<WorkspaceId>,
+    pub workspaces: Vec<WorkspaceInfo>,
+    /// Connectivity of the pipe, reported next to (never inside) the
+    /// authority fields above.
+    pub transport_state: String,
+}
+
+/// One authorization lease, including whether it has been spent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AuthorizationLeaseView {
+    pub lease_id: LeaseId,
+    pub grant_id: GrantId,
+    pub subject_session_id: SessionId,
+    pub device_id: DeviceId,
+    pub issued_at: String,
+    pub expires_at: String,
+    pub consumed_at: Option<String>,
+    pub consumed_by_operation: Option<OperationId>,
+    pub workspace_ids: Vec<WorkspaceId>,
+    pub capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -215,6 +295,8 @@ pub enum IpcResponse {
     PairingStatus(PairingStatusView),
     PairingBegun(PairingBegunView),
     Sessions(Vec<SessionView>),
+    AccessGrants(Vec<AccessGrantView>),
+    AuthorizationLeases(Vec<AuthorizationLeaseView>),
     Workspaces(Vec<WorkspaceView>),
     WorkspaceAuthorized(WorkspaceView),
     AuditSummary(AuditSummaryView),
@@ -321,5 +403,117 @@ mod tests {
                 actual: "9.9.9".to_string(),
             })
         );
+    }
+}
+
+#[cfg(test)]
+mod authorization_view_tests {
+    use super::*;
+
+    fn grant_view() -> AccessGrantView {
+        AccessGrantView {
+            grant_id: GrantId::new(),
+            subject_session_id: SessionId::new(),
+            device_id: DeviceId::new(),
+            remote_principal: "agent:test".into(),
+            principal_assurance: "unverified".into(),
+            authorization_status: "active".into(),
+            grant_kind: "standing".into(),
+            capability_profile: "Inspect".into(),
+            task_scope: "inspect the board".into(),
+            issued_at: "2026-09-26T00:00:00Z".into(),
+            approved_at: Some("2026-09-26T00:00:01Z".into()),
+            expires_at: "2026-09-26T01:00:00Z".into(),
+            revoked_at: None,
+            revocation_reason: None,
+            consumed_at: None,
+            workspace_ids: vec![WorkspaceId::new()],
+            workspaces: Vec::new(),
+            transport_state: "Disconnected".into(),
+        }
+    }
+
+    #[test]
+    fn an_access_grant_view_round_trips_and_keeps_authorization_separate_from_transport() {
+        let view = grant_view();
+        let json = serde_json::to_string(&IpcResponse::AccessGrants(vec![view.clone()])).unwrap();
+        let back: IpcResponse = serde_json::from_str(&json).unwrap();
+        let IpcResponse::AccessGrants(views) = back else {
+            panic!("expected AccessGrants");
+        };
+        assert_eq!(views, vec![view.clone()]);
+
+        let value: serde_json::Value = serde_json::to_value(&view).unwrap();
+        assert_eq!(value["authorization_status"], "active");
+        assert_eq!(
+            value["transport_state"], "Disconnected",
+            "connectivity is reported next to the authority, not inside it"
+        );
+        assert_eq!(value["principal_assurance"], "unverified");
+    }
+
+    #[test]
+    fn a_session_view_reports_authorization_and_transport_separately() {
+        let view = SessionView {
+            session_id: SessionId::new(),
+            remote_principal: "agent:test".into(),
+            status: "Connected".into(),
+            authorization_status: "pending_approval".into(),
+            transport_state: "Connected".into(),
+            capability_profile: "Inspect".into(),
+            task_scope: "inspect the board".into(),
+            expires_at: "2026-09-26T01:00:00Z".into(),
+            workspace_ids: Vec::new(),
+            workspaces: Vec::new(),
+        };
+        let value: serde_json::Value =
+            serde_json::to_value(IpcResponse::Sessions(vec![view.clone()])).unwrap();
+        assert_eq!(value["payload"][0]["status"], "Connected");
+        assert_eq!(
+            value["payload"][0]["authorization_status"],
+            "pending_approval"
+        );
+        assert_eq!(value["payload"][0]["transport_state"], "Connected");
+
+        let json = serde_json::to_string(&IpcResponse::Sessions(vec![view])).unwrap();
+        let back: IpcResponse = serde_json::from_str(&json).unwrap();
+        let IpcResponse::Sessions(views) = back else {
+            panic!("expected Sessions");
+        };
+        assert_eq!(views[0].authorization_status, "pending_approval");
+    }
+
+    #[test]
+    fn the_new_authorization_requests_round_trip() {
+        for request in [
+            IpcRequest::ListAccessGrants,
+            IpcRequest::ListAuthorizationLeases {
+                grant_id: GrantId::new(),
+            },
+        ] {
+            let json = serde_json::to_string(&request).unwrap();
+            let back: IpcRequest = serde_json::from_str(&json).unwrap();
+            assert_eq!(request, back);
+        }
+    }
+
+    #[test]
+    fn an_authorization_lease_view_reports_its_consumption() {
+        let view = AuthorizationLeaseView {
+            lease_id: LeaseId::new(),
+            grant_id: GrantId::new(),
+            subject_session_id: SessionId::new(),
+            device_id: DeviceId::new(),
+            issued_at: "2026-09-26T00:00:00Z".into(),
+            expires_at: "2026-09-26T00:15:00Z".into(),
+            consumed_at: Some("2026-09-26T00:01:00Z".into()),
+            consumed_by_operation: Some(OperationId::new()),
+            workspace_ids: vec![WorkspaceId::new()],
+            capabilities: vec!["schematic.read".into()],
+        };
+        let json =
+            serde_json::to_string(&IpcResponse::AuthorizationLeases(vec![view.clone()])).unwrap();
+        let back: IpcResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, IpcResponse::AuthorizationLeases(vec![view]));
     }
 }

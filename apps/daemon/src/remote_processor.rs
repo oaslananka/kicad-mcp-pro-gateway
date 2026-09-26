@@ -9,8 +9,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use companion_core::{
-    ApprovalDecisionKind, AuditEvent, CapabilityProfile, CompanionError, DeviceId, ExecutionStatus,
-    OperationId, OperationRequest, PolicyResultKind, RiskLevel, Session, SessionId, WorkspaceId,
+    AccessGrant, ApprovalDecisionKind, AuditEvent, AuthorizationPrincipal, CapabilityProfile,
+    CompanionError, DeviceId, ExecutionStatus, GrantKind, GrantRequest, OperationId,
+    OperationRequest, PolicyResultKind, RiskLevel, Session, SessionId, WorkspaceId,
 };
 use companion_policy::PolicyDecision;
 use companion_protocol::{Envelope, MessageType};
@@ -49,17 +50,7 @@ pub async fn run_remote_processor(
         tokio::select! {
             received = transport.receive() => {
                 match received {
-                    Ok(envelope) => {
-                        if envelope.check_protocol_version().is_err() {
-                            tracing::warn!("dropping envelope with incompatible protocol version");
-                            continue;
-                        }
-                        match envelope.message_type {
-                            MessageType::SessionRequest => handle_session_request(&state, envelope).await,
-                            MessageType::OperationRequest => handle_operation_request(&state, &transport, envelope).await,
-                            _ => {}
-                        }
-                    }
+                    Ok(envelope) => handle_envelope(&state, transport.as_ref(), envelope).await,
                     Err(TransportError::NoMessage) => {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -68,6 +59,30 @@ pub async fn run_remote_processor(
             }
             _ = shutdown.cancelled() => return Ok(()),
         }
+    }
+}
+
+/// The protocol adapter: everything that can arrive on the transport goes
+/// through here, and nothing here can change authorization authority. Each
+/// branch may only *record* a remote access request (as a grant awaiting
+/// local approval), consume an already-approved grant, or be refused.
+///
+/// A replayed, duplicated, or out-of-order envelope therefore lands in
+/// exactly the same place as the first one: the request is recorded at most
+/// once per live grant, and no branch can widen, extend, or revive authority.
+pub async fn handle_envelope(
+    state: &Arc<DaemonState>,
+    transport: &dyn Transport,
+    envelope: Envelope,
+) {
+    if envelope.check_protocol_version().is_err() {
+        tracing::warn!("dropping envelope with incompatible protocol version");
+        return;
+    }
+    match envelope.message_type {
+        MessageType::SessionRequest => handle_session_request(state, envelope).await,
+        MessageType::OperationRequest => handle_operation_request(state, transport, envelope).await,
+        _ => {}
     }
 }
 
@@ -99,25 +114,62 @@ async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
         );
         let ttl = time::Duration::minutes(effective_ttl.effective_minutes);
 
+        // The transport-era subject record. Retained so existing clients,
+        // audit rows, and checkpoints keep correlating on `session_id`; it
+        // carries no authority of its own.
         let session = new_unpaired_session(
             device_id,
-            payload.remote_principal,
-            workspace_ids,
-            payload.capability_profile,
-            payload.task_scope,
+            payload.remote_principal.clone(),
+            workspace_ids.clone(),
+            payload.capability_profile.clone(),
+            payload.task_scope.clone(),
             ttl,
             state.clock.as_ref(),
         );
         let session = session.transition(SessionEvent::Pair, state.clock.as_ref())?;
         let session = session.transition(SessionEvent::TransportConnected, state.clock.as_ref())?;
         let session = session.transition(SessionEvent::RequestAccess, state.clock.as_ref())?;
+
+        // The authorization record, and the only thing that can ever grant
+        // access. It is created `PendingApproval`: a request arriving over a
+        // connected pipe is not an approval, so nothing here mints authority.
+        let grant = AccessGrant::requested(
+            GrantRequest {
+                subject_session_id: session.session_id,
+                device_id,
+                principal: AuthorizationPrincipal::unverified(payload.remote_principal),
+                workspace_ids,
+                capability_profile: payload.capability_profile,
+                task_scope: payload.task_scope,
+                kind: GrantKind::Standing,
+                lifetime: ttl,
+            },
+            state.clock.as_ref().now(),
+        );
+
+        // A replayed or duplicated `session.request` must not be able to
+        // stack up extra pending authority, and must never move an existing
+        // grant's deadline or widen its scope. An identical live request for
+        // the same device/principal/workspace/scope is dropped instead.
+        if let Some(existing) = state.authorization_repo.find_live_request(&grant)? {
+            tracing::info!(
+                grant_id = %existing.grant_id,
+                subject_session_id = %existing.subject_session_id,
+                expires_at = %existing.expires_at,
+                "duplicate or replayed session request ignored; existing grant untouched"
+            );
+            return Ok(());
+        }
+
         state.session_repo.save(&session)?;
+        state.authorization_repo.save_grant(&grant)?;
         tracing::info!(
+            grant_id = %grant.grant_id,
             session_id = %session.session_id,
             requested_ttl_minutes = effective_ttl.requested_minutes,
             effective_ttl_minutes = effective_ttl.effective_minutes,
-            expires_at = %session.expires_at,
-            "session now pending local approval with policy-limited lifetime"
+            expires_at = %grant.expires_at,
+            "access grant now pending local approval with policy-limited lifetime"
         );
         Ok(())
     })
@@ -130,7 +182,7 @@ async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
 
 async fn handle_operation_request(
     state: &Arc<DaemonState>,
-    transport: &Arc<dyn Transport>,
+    transport: &dyn Transport,
     envelope: Envelope,
 ) {
     let claimed_device_id = envelope.device_id;
@@ -159,20 +211,23 @@ async fn handle_operation_request(
     })
     .await;
 
-    let Ok((decision, session)) = eval else {
+    let Ok((decision, grant, session)) = eval else {
         tracing::warn!("policy evaluation task panicked");
         return;
     };
 
-    if session
+    // The grant's device binding is the one that matters; the transport-era
+    // row is only a mirror of it.
+    let bound_device = grant
         .as_ref()
-        .is_some_and(|session| session.device_id != local_device_id)
-    {
-        tracing::warn!(session_id = %request.session_id, "operation request session device binding rejected");
+        .map(|grant| grant.device_id)
+        .or_else(|| session.as_ref().map(|session| session.device_id));
+    if bound_device != Some(local_device_id) {
+        tracing::warn!(session_id = %request.session_id, "operation request device binding rejected");
         return;
     }
 
-    let audit_event = build_audit_event(&request, session.as_ref(), &decision);
+    let audit_event = build_audit_event(&request, grant.as_ref(), session.as_ref(), &decision);
     // Fail closed: the durable pre-execution audit record is the only proof
     // that this decision was made at all. Without it the operation is refused
     // — it never reaches kicad-mcp-pro and it is never queued for approval.
@@ -238,31 +293,63 @@ fn bound_local_device_id(
     }
 }
 
+/// Resolves the authority behind an operation request, if any exists.
+///
+/// Order matters: a persisted access grant is the authority. The
+/// transport-era `sessions` row is consulted only as the compatibility
+/// adapter the schema migration uses, and even then the decision is made on
+/// a grant, never on the row. A request whose subject has neither is denied.
+fn resolve_grant(
+    state: &DaemonState,
+    request: &OperationRequest,
+) -> (Option<AccessGrant>, Option<Session>) {
+    let session = state.session_repo.load(request.session_id).ok().flatten();
+    let persisted = state
+        .authorization_repo
+        .load_grant_for_subject(request.session_id)
+        .ok()
+        .flatten();
+    if let Some(grant) = persisted {
+        return (Some(grant), session);
+    }
+    let derived = session
+        .as_ref()
+        .and_then(|row| companion_core::grant_from_legacy_session(row).ok())
+        .flatten();
+    (derived, session)
+}
+
 fn evaluate_operation_request(
     state: &DaemonState,
     request: &OperationRequest,
-) -> (PolicyDecision, Option<Session>) {
-    let session = state.session_repo.load(request.session_id).ok().flatten();
+) -> (PolicyDecision, Option<AccessGrant>, Option<Session>) {
+    let (grant, session) = resolve_grant(state, request);
     let workspace = state
         .workspace_repo
         .load(request.workspace_id)
         .ok()
         .flatten();
-    let decision = match (&session, &workspace) {
-        (Some(session), Some(workspace)) => {
+    let decision = match (&grant, &workspace) {
+        (Some(grant), Some(workspace)) => {
             state
                 .policy_engine
-                .evaluate(request, session, workspace, state.clock.as_ref())
+                .evaluate_with_grant(request, grant, workspace, state.clock.as_ref())
         }
+        // No authority, or no such workspace: both are refusals, never a
+        // reason to fall back to "the transport is connected, so allow".
         _ => PolicyDecision::Deny {
-            reason: companion_policy::DenyReason::WorkspaceNotAuthorized,
+            reason: match workspace {
+                Some(_) => companion_policy::DenyReason::AuthorizationNotEstablished,
+                None => companion_policy::DenyReason::WorkspaceNotAuthorized,
+            },
         },
     };
-    (decision, session)
+    (decision, grant, session)
 }
 
 fn build_audit_event(
     request: &OperationRequest,
+    grant: Option<&AccessGrant>,
     session: Option<&Session>,
     decision: &PolicyDecision,
 ) -> AuditEvent {
@@ -284,7 +371,12 @@ fn build_audit_event(
         timestamp: OffsetDateTime::now_utc(),
         session_id: Some(request.session_id),
         workspace_id: Some(request.workspace_id),
-        remote_principal: session.map(|s| s.remote_principal.clone()),
+        // The grant is the authority, so its principal is what the audit
+        // record names when one exists; the legacy row is the fallback for
+        // pre-migration history.
+        remote_principal: grant
+            .map(|grant| grant.principal.name.clone())
+            .or_else(|| session.map(|session| session.remote_principal.clone())),
         requested_tool: request.tool_name.clone(),
         capability,
         risk,
@@ -298,7 +390,7 @@ fn build_audit_event(
 
 async fn execute_and_respond(
     state: &Arc<DaemonState>,
-    transport: &Arc<dyn Transport>,
+    transport: &dyn Transport,
     request: OperationRequest,
 ) {
     let start = std::time::Instant::now();
@@ -474,7 +566,7 @@ pub async fn approve_pending_operation(
         .expect("transport mutex poisoned")
         .clone();
     if let Some(transport) = transport {
-        execute_and_respond(state, &transport, pending.request).await;
+        execute_and_respond(state, transport.as_ref(), pending.request).await;
     }
     Ok(())
 }
@@ -841,7 +933,7 @@ risk = "critical"
         let request = low_risk_operation(&session, workspace_id);
         handle_operation_request(
             &state,
-            &transport,
+            transport.as_ref(),
             Envelope::new(
                 MessageType::OperationRequest,
                 serde_json::to_value(&request).unwrap(),
@@ -853,7 +945,7 @@ risk = "critical"
         let request = low_risk_operation(&session, workspace_id);
         handle_operation_request(
             &state,
-            &transport,
+            transport.as_ref(),
             Envelope::new(
                 MessageType::OperationRequest,
                 serde_json::to_value(&request).unwrap(),
@@ -879,7 +971,7 @@ risk = "critical"
 
         handle_operation_request(
             &state,
-            &transport,
+            transport.as_ref(),
             Envelope::new(
                 MessageType::OperationRequest,
                 serde_json::to_value(&request).unwrap(),
@@ -1030,7 +1122,7 @@ mod audit_fail_closed_tests {
         async fn submit(&self, request: &OperationRequest) {
             handle_operation_request(
                 &self.state,
-                &self.transport,
+                self.transport.as_ref(),
                 Envelope::new(
                     MessageType::OperationRequest,
                     serde_json::to_value(request).unwrap(),

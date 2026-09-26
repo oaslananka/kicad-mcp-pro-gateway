@@ -2,7 +2,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use companion_core::{
-    ApprovalPolicy, Capability, CapabilityProfile, Clock, DeviceId, FakeClock, OperationId,
+    AccessGrant, ApprovalPolicy, AuthorizationPrincipal, AuthorizationStatus, Capability,
+    CapabilityProfile, Clock, DeviceId, FakeClock, GrantKind, GrantRequest, OperationId,
     OperationRequest, RiskLevel, Session, SessionId, SessionStatus, WorkspaceId,
 };
 use companion_policy::{
@@ -98,10 +99,13 @@ fn active_session(
     }
 }
 
-fn request(workspace_id: WorkspaceId, tool_name: &str) -> OperationRequest {
+/// A request for a specific subject. `subject` must be the session the grant
+/// under test was issued to: the engine refuses a request whose subject and
+/// grant disagree, however active the grant is.
+fn request(subject: SessionId, workspace_id: WorkspaceId, tool_name: &str) -> OperationRequest {
     OperationRequest {
         operation_id: OperationId::new(),
-        session_id: SessionId::new(),
+        session_id: subject,
         workspace_id,
         tool_name: tool_name.to_string(),
         arguments: Default::default(),
@@ -111,7 +115,9 @@ fn request(workspace_id: WorkspaceId, tool_name: &str) -> OperationRequest {
 }
 
 #[test]
-fn denies_when_session_not_active() {
+fn a_transport_era_row_that_never_carried_authority_is_denied() {
+    // `Connected` is a statement about a pipe. The compatibility adapter
+    // maps it to "no authority established", never to a usable grant.
     let dir = tempfile::tempdir().unwrap();
     let ws = workspace(dir.path());
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
@@ -120,7 +126,7 @@ fn denies_when_session_not_active() {
     let engine = PolicyEngine::new(registry());
 
     let decision = engine.evaluate(
-        &request(ws.workspace_id, "schematic.read"),
+        &request(session.session_id, ws.workspace_id, "schematic.read"),
         &session,
         &ws,
         &clock,
@@ -128,7 +134,7 @@ fn denies_when_session_not_active() {
     assert_eq!(
         decision,
         PolicyDecision::Deny {
-            reason: DenyReason::SessionNotActive
+            reason: DenyReason::AuthorizationNotEstablished
         }
     );
 }
@@ -143,7 +149,7 @@ fn denies_when_session_expired() {
     let engine = PolicyEngine::new(registry());
 
     let decision = engine.evaluate(
-        &request(ws.workspace_id, "schematic.read"),
+        &request(session.session_id, ws.workspace_id, "schematic.read"),
         &session,
         &ws,
         &clock,
@@ -166,7 +172,7 @@ fn denies_when_session_revoked() {
     let engine = PolicyEngine::new(registry());
 
     let decision = engine.evaluate(
-        &request(ws.workspace_id, "schematic.read"),
+        &request(session.session_id, ws.workspace_id, "schematic.read"),
         &session,
         &ws,
         &clock,
@@ -189,7 +195,7 @@ fn denies_when_workspace_not_in_session_workspace_ids() {
     let engine = PolicyEngine::new(registry());
 
     let decision = engine.evaluate(
-        &request(ws.workspace_id, "schematic.read"),
+        &request(session.session_id, ws.workspace_id, "schematic.read"),
         &session,
         &ws,
         &clock,
@@ -212,7 +218,7 @@ fn denies_when_path_escapes_workspace() {
     let ws = workspace(&root);
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
-    let mut req = request(ws.workspace_id, "schematic.read");
+    let mut req = request(session.session_id, ws.workspace_id, "schematic.read");
     req.arguments.insert(
         "path".into(),
         serde_json::json!(evil.join("file.kicad_sch").to_string_lossy()),
@@ -239,7 +245,7 @@ fn denies_when_any_path_in_a_multi_path_argument_escapes() {
     let ws = workspace(&root);
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
-    let mut req = request(ws.workspace_id, "schematic.read");
+    let mut req = request(session.session_id, ws.workspace_id, "schematic.read");
     req.arguments.insert(
         "paths".into(),
         serde_json::json!(["safe/one.kicad_sch", "../outside.kicad_sch"]),
@@ -263,7 +269,7 @@ fn caller_target_path_is_not_authorization_evidence() {
     let ws = workspace(&root);
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
-    let mut req = request(ws.workspace_id, "schematic.read");
+    let mut req = request(session.session_id, ws.workspace_id, "schematic.read");
     req.target_path = Some(outside);
     let engine = PolicyEngine::new(registry());
 
@@ -283,7 +289,7 @@ fn denies_arguments_absent_from_the_reviewed_input_contract() {
     let ws = workspace(dir.path());
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
-    let mut req = request(ws.workspace_id, "schematic.read");
+    let mut req = request(session.session_id, ws.workspace_id, "schematic.read");
     req.arguments
         .insert("unreviewed_path".into(), serde_json::json!("inside"));
     let engine = PolicyEngine::new(registry());
@@ -302,7 +308,7 @@ fn denies_nested_path_arrays_in_argument_contracts() {
     let ws = workspace(dir.path());
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
-    let mut req = request(ws.workspace_id, "schematic.read");
+    let mut req = request(session.session_id, ws.workspace_id, "schematic.read");
     req.arguments
         .insert("path".into(), serde_json::json!([["inside.kicad_sch"]]));
     let engine = PolicyEngine::new(registry());
@@ -323,7 +329,7 @@ fn denies_mixed_separator_traversal_from_argument_paths() {
     let ws = workspace(&root);
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
-    let mut req = request(ws.workspace_id, "schematic.read");
+    let mut req = request(session.session_id, ws.workspace_id, "schematic.read");
     req.arguments.insert(
         "path".into(),
         serde_json::json!(r"safe\..\..\outside.kicad_sch"),
@@ -344,7 +350,7 @@ fn denies_alternate_path_syntax_from_arguments() {
     let ws = workspace(dir.path());
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
-    let mut req = request(ws.workspace_id, "schematic.read");
+    let mut req = request(session.session_id, ws.workspace_id, "schematic.read");
     req.arguments
         .insert("path".into(), serde_json::json!("$HOME/outside.kicad_sch"));
     let engine = PolicyEngine::new(registry());
@@ -363,7 +369,7 @@ fn denies_foreign_absolute_path_from_argument() {
     let ws = workspace(dir.path());
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
-    let mut req = request(ws.workspace_id, "schematic.read");
+    let mut req = request(session.session_id, ws.workspace_id, "schematic.read");
     req.arguments.insert(
         "path".into(),
         serde_json::json!(r"\\server\share\outside.kicad_sch"),
@@ -388,7 +394,11 @@ fn denies_when_reviewed_contract_normalizes_to_no_effects() {
 
     assert_eq!(
         engine.evaluate(
-            &request(ws.workspace_id, "schematic.optional_path"),
+            &request(
+                session.session_id,
+                ws.workspace_id,
+                "schematic.optional_path"
+            ),
             &session,
             &ws,
             &clock,
@@ -415,7 +425,11 @@ fn denies_composed_project_path_that_escapes_through_a_symlink() {
     let ws = workspace(&root);
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Design, &clock);
-    let mut req = request(ws.workspace_id, "kicad_create_new_project");
+    let mut req = request(
+        session.session_id,
+        ws.workspace_id,
+        "kicad_create_new_project",
+    );
     req.arguments = [
         ("path".into(), serde_json::json!("nested")),
         ("name".into(), serde_json::json!("alias")),
@@ -444,7 +458,11 @@ fn denies_known_effectful_tool_until_its_effect_contract_is_reviewed() {
 
     assert_eq!(
         engine.evaluate(
-            &request(ws.workspace_id, "schematic.unmodelled_write"),
+            &request(
+                session.session_id,
+                ws.workspace_id,
+                "schematic.unmodelled_write"
+            ),
             &session,
             &ws,
             &clock,
@@ -469,7 +487,7 @@ fn denies_symlinked_argument_path_that_escapes_workspace() {
     let ws = workspace(&root);
     let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
     let session = active_session(ws.workspace_id, CapabilityProfile::Inspect, &clock);
-    let mut req = request(ws.workspace_id, "schematic.read");
+    let mut req = request(session.session_id, ws.workspace_id, "schematic.read");
     req.arguments
         .insert("path".into(), serde_json::json!("alias/file.kicad_sch"));
     let engine = PolicyEngine::new(registry());
@@ -491,7 +509,7 @@ fn denies_unknown_tool_with_no_fallback_allow() {
     let engine = PolicyEngine::new(registry());
 
     let decision = engine.evaluate(
-        &request(ws.workspace_id, "shell.exec"),
+        &request(session.session_id, ws.workspace_id, "shell.exec"),
         &session,
         &ws,
         &clock,
@@ -514,7 +532,7 @@ fn denies_when_capability_not_in_effective_capabilities() {
 
     // Inspect does not include schematic.write.
     let decision = engine.evaluate(
-        &request(ws.workspace_id, "schematic.add_symbol"),
+        &request(session.session_id, ws.workspace_id, "schematic.add_symbol"),
         &session,
         &ws,
         &clock,
@@ -536,7 +554,11 @@ fn requires_approval_for_high_risk_operation_even_with_capability_granted() {
     let engine = PolicyEngine::new(registry());
 
     let decision = engine.evaluate(
-        &request(ws.workspace_id, "manufacturing.export_gerber"),
+        &request(
+            session.session_id,
+            ws.workspace_id,
+            "manufacturing.export_gerber",
+        ),
         &session,
         &ws,
         &clock,
@@ -560,7 +582,7 @@ fn allows_low_risk_known_tool_within_authorized_workspace_with_capability() {
     let engine = PolicyEngine::new(registry());
 
     let decision = engine.evaluate(
-        &request(ws.workspace_id, "schematic.read"),
+        &request(session.session_id, ws.workspace_id, "schematic.read"),
         &session,
         &ws,
         &clock,
@@ -583,7 +605,11 @@ fn manufacturing_capability_is_never_implied_by_design_profile() {
     let engine = PolicyEngine::new(registry());
 
     let decision = engine.evaluate(
-        &request(ws.workspace_id, "manufacturing.export_gerber"),
+        &request(
+            session.session_id,
+            ws.workspace_id,
+            "manufacturing.export_gerber",
+        ),
         &session,
         &ws,
         &clock,
@@ -604,11 +630,203 @@ fn malformed_request_with_empty_tool_name_is_denied() {
     let session = active_session(ws.workspace_id, CapabilityProfile::Manufacturing, &clock);
     let engine = PolicyEngine::new(registry());
 
-    let decision = engine.evaluate(&request(ws.workspace_id, "   "), &session, &ws, &clock);
+    let decision = engine.evaluate(
+        &request(session.session_id, ws.workspace_id, "   "),
+        &session,
+        &ws,
+        &clock,
+    );
     assert_eq!(
         decision,
         PolicyDecision::Deny {
             reason: DenyReason::MalformedRequest
+        }
+    );
+}
+
+/// The authorization model is the primary path now: the engine decides on an
+/// `AccessGrant`, and the tests below cover the states a transport-era
+/// `SessionStatus` used to conflate with connectivity.
+fn active_grant(
+    subject: SessionId,
+    workspace_id: WorkspaceId,
+    profile: CapabilityProfile,
+    clock: &FakeClock,
+) -> AccessGrant {
+    let mut workspace_ids = BTreeSet::new();
+    workspace_ids.insert(workspace_id);
+    let mut grant = AccessGrant::requested(
+        GrantRequest {
+            subject_session_id: subject,
+            device_id: DeviceId::new(),
+            principal: AuthorizationPrincipal::unverified("agent:test"),
+            workspace_ids,
+            capability_profile: profile.clone(),
+            task_scope: "test task".into(),
+            kind: GrantKind::Standing,
+            lifetime: time::Duration::hours(1),
+        },
+        clock.now(),
+    );
+    grant.status = AuthorizationStatus::Active;
+    grant.approved_at = Some(clock.now());
+    grant
+}
+
+#[test]
+fn an_active_unexpired_grant_allows_a_low_risk_operation() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate_with_grant(
+            &request(subject, ws.workspace_id, "schematic.read"),
+            &grant,
+            &ws,
+            &clock,
+        ),
+        PolicyDecision::Allow {
+            capability: Capability::SCHEMATIC_READ,
+            risk: RiskLevel::Low,
+        }
+    );
+}
+
+#[test]
+fn a_grant_for_another_subject_authorizes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let grant = active_grant(
+        SessionId::new(),
+        ws.workspace_id,
+        CapabilityProfile::Inspect,
+        &clock,
+    );
+    let other_subject = SessionId::new();
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate_with_grant(
+            &request(other_subject, ws.workspace_id, "schematic.read"),
+            &grant,
+            &ws,
+            &clock,
+        ),
+        PolicyDecision::Deny {
+            reason: DenyReason::AuthorizationNotEstablished
+        }
+    );
+}
+
+#[test]
+fn an_unapproved_or_suspended_grant_is_not_active() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let approved = active_grant(subject, ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    let mut pending = approved.clone();
+    pending.status = AuthorizationStatus::PendingApproval;
+    pending.approved_at = None;
+    let mut suspended = approved.clone();
+    suspended.status = AuthorizationStatus::Suspended;
+
+    for grant in [pending, suspended] {
+        assert_eq!(
+            engine.evaluate_with_grant(
+                &request(subject, ws.workspace_id, "schematic.read"),
+                &grant,
+                &ws,
+                &clock,
+            ),
+            PolicyDecision::Deny {
+                reason: DenyReason::SessionNotActive
+            }
+        );
+    }
+}
+
+#[test]
+fn a_revoked_expired_or_consumed_grant_is_denied_distinctly() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    let mut revoked = grant.clone();
+    revoked.status = AuthorizationStatus::Revoked;
+    let mut expired = grant.clone();
+    expired.status = AuthorizationStatus::Expired;
+    let mut consumed = grant;
+    consumed.status = AuthorizationStatus::Consumed;
+
+    for (grant, reason) in [
+        (revoked, DenyReason::SessionRevoked),
+        (expired, DenyReason::SessionExpired),
+        (consumed, DenyReason::OneShotGrantConsumed),
+    ] {
+        assert_eq!(
+            engine.evaluate_with_grant(
+                &request(subject, ws.workspace_id, "schematic.read"),
+                &grant,
+                &ws,
+                &clock,
+            ),
+            PolicyDecision::Deny { reason }
+        );
+    }
+}
+
+#[test]
+fn an_active_grant_past_its_own_expiry_is_denied_as_expired() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let engine = PolicyEngine::new(registry());
+    clock.advance(time::Duration::hours(2));
+
+    assert_eq!(
+        engine.evaluate_with_grant(
+            &request(subject, ws.workspace_id, "schematic.read"),
+            &grant,
+            &ws,
+            &clock,
+        ),
+        PolicyDecision::Deny {
+            reason: DenyReason::SessionExpired
+        }
+    );
+}
+
+#[test]
+fn a_grants_capabilities_are_the_only_ones_an_operation_can_use() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Inspect, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate_with_grant(
+            &request(subject, ws.workspace_id, "schematic.add_symbol"),
+            &grant,
+            &ws,
+            &clock,
+        ),
+        PolicyDecision::Deny {
+            reason: DenyReason::CapabilityNotGranted
         }
     );
 }
