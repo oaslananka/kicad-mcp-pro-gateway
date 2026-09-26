@@ -83,6 +83,7 @@ Every message on the Gateway transport is versioned and typed:
   authorization of an *operation* — see
   [trust-boundaries.md](../security/trust-boundaries.md).
 
+- The production outbound relay security contract is defined in [`outbound-relay-contract.md`](../../security/outbound-relay-contract.md).
 ## Versioning
 
 All three protocol boundaries are explicit. A breaking Gateway transport

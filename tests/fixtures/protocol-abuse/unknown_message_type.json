@@ -1,0 +1,12 @@
+{
+  "protocol_version": "0.1.0",
+  "message_id": "01ARZ3NDEKTSV4RRFFQ69G5FC0",
+  "message_type": "unknown_type",
+  "device_id": "dev_1234567890abcdef",
+  "timestamp": "2026-09-26T15:21:52Z",
+  "correlation_id": "01ARZ3NDEKTSV4RRFFQ69G5FC1",
+  "payload": {
+    "tool": "kicad.version",
+    "args": {}
+  }
+}

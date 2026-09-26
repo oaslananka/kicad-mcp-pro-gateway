@@ -1,0 +1,52 @@
+[
+  {
+    "file": "replay.json",
+    "abuse_case": "AC1",
+    "description": "Replay of a captured operation.request message"
+  },
+  {
+    "file": "duplicate.json",
+    "abuse_case": "AC1",
+    "description": "Duplicate operation.request with same message_id within the nonce window"
+  },
+  {
+    "file": "out_of_order.json",
+    "abuse_case": "AC1",
+    "description": "Two operation.request messages with timestamps out of order"
+  },
+  {
+    "file": "oversized.json",
+    "abuse_case": "AC3",
+    "description": "Envelope with payload exceeding MAX_MESSAGE_BYTES"
+  },
+  {
+    "file": "invalid_envelope.json",
+    "abuse_case": "AC3, AC4",
+    "description": "Malformed JSON envelope"
+  },
+  {
+    "file": "unknown_message_type.json",
+    "abuse_case": "AC4",
+    "description": "Envelope with message_type not in the V1 registry"
+  },
+  {
+    "file": "mismatched_device_id.json",
+    "abuse_case": "AC5",
+    "description": "session.request with device_id not matching the Gateway's persistent identity"
+  },
+  {
+    "file": "unapproved_operation.json",
+    "abuse_case": "AC6",
+    "description": "operation.request for a session that has not been approved by the local user"
+  },
+  {
+    "file": "post_reboot_session.json",
+    "abuse_case": "AC7",
+    "description": "operation.request attempting to use a session from a previous Gateway boot"
+  },
+  {
+    "file": "flood.json",
+    "abuse_case": "AC2, AC8",
+    "description": "High-volume message stream to test rate limiting and connection handling"
+  }
+]

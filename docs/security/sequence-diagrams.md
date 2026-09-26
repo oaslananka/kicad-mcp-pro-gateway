@@ -84,8 +84,8 @@ sequenceDiagram
     participant TransportState as Transport State (Local)
 
     Gateway->>Relay: (normal operation)
-    Note over Gateway,Relay: Transport connection idle
-    Relay->>Gateway: (no heartbeat for 155s)
+    Note over Gateway,Relay: Transport connection idle (no heartbeat within configured timeout)
+    Relay->>Gateway: (no heartbeat)
     Gateway->>ReconnectLogic: detect missing heartbeat (timeout)
     Gateway->>TransportState: set state to Disconnected
     Gateway->>ReconnectLogic: initiate reconnect with backoff
@@ -114,7 +114,7 @@ sequenceDiagram
 sequenceDiagram
     participant Gateway
     participant Relay
-    participant ReplayCache as Replay Cache (Local)
+    participant ReplayCache as Replay Cache (Required for production, mocked in tests)
     participant PolicyEngine as Policy Engine (Local)
 
     Relay->>Gateway: operation.request (session_id, correlation_id="old", timestamp="old")
@@ -136,7 +136,7 @@ sequenceDiagram
 sequenceDiagram
     participant Gateway
     participant Relay
-    participant RateLimiter as Rate Limiter (Local)
+    participant RateLimiter as Rate Limiter (Required for production, mocked in tests)
     participant Transport as Transport Layer
 
     Relay->>Gateway: message 1
@@ -187,4 +187,3 @@ sequenceDiagram
         Gateway->>MessageValidator: proceed to normal processing
     end
 ```
-
