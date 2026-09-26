@@ -79,6 +79,10 @@ afterwards. Authorization state is reported to clients through
 `ListAccessGrants` / `AccessGrantView`, separately from the transport-era
 `ListSessions` view and from the reported `transport_state`; see
 [session-lifecycle.md](../architecture/session-lifecycle.md).
+`AccessGrantView.authorization_status`, `grant_kind`, and
+`principal_assurance` carry the model's own `snake_case` spellings
+(`pending_approval`, `one_shot`, `unverified`) — the same form the schema
+persists — so a client never has to normalize a debug rendering.
 
 ## Security notes
 

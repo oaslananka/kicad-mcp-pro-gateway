@@ -140,9 +140,11 @@ fn to_grant_view(
         subject_session_id: grant.subject_session_id,
         device_id: grant.device_id,
         remote_principal: grant.principal.name.clone(),
-        principal_assurance: format!("{:?}", grant.principal.assurance).to_lowercase(),
-        authorization_status: format!("{:?}", grant.status).to_lowercase(),
-        grant_kind: format!("{:?}", grant.kind).to_lowercase(),
+        // The authorization spellings come from the domain's own accessors,
+        // so a client sees exactly the `snake_case` form the model persists.
+        principal_assurance: grant.principal.assurance.as_str().to_string(),
+        authorization_status: grant.status.as_str().to_string(),
+        grant_kind: grant.kind.as_str().to_string(),
         capability_profile: format!("{:?}", grant.capability_profile),
         task_scope: grant.task_scope.clone(),
         issued_at: format_timestamp(grant.issued_at),
@@ -326,7 +328,7 @@ async fn list_sessions(state: &Arc<DaemonState>) -> IpcResponse {
                 .map(|session| {
                     let authorization_status = grants
                         .get(&session.session_id)
-                        .map(|status| format!("{status:?}").to_lowercase())
+                        .map(|status| status.as_str().to_string())
                         .unwrap_or_else(|| "none".to_string());
                     to_session_view(
                         session,

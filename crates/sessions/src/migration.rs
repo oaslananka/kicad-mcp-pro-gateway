@@ -224,10 +224,11 @@ mod tests {
         let report = migrate_legacy_sessions(&session_repo, &authorization_repo).unwrap();
         assert_eq!(report.grants_written, 1);
         assert_eq!(report.refused_session_ids.len(), 1);
+        // The id stays in the assertion, not in the failure message: a test
+        // log is still output, and a session id is a capability identifier.
         assert!(
             report.refused_session_ids[0].contains(&corrupt.session_id.to_string()),
-            "the refused row must be reported: {:?}",
-            report.refused_session_ids
+            "the refused row must be reported against its own session id"
         );
         assert_eq!(report.without_authority(), 1);
         assert_eq!(

@@ -41,6 +41,15 @@ pub enum PrincipalAssurance {
     Unverified,
 }
 
+impl PrincipalAssurance {
+    /// The wire/persisted spelling, identical to the `snake_case` serde form.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unverified => "unverified",
+        }
+    }
+}
+
 /// The remote principal a grant is issued to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthorizationPrincipal {
@@ -76,6 +85,18 @@ pub enum GrantKind {
     OneShot,
 }
 
+impl GrantKind {
+    /// The wire/persisted spelling of this kind. It must stay identical to the
+    /// `snake_case` serde form: clients and stored rows match on it, and
+    /// `format!("{self:?}").to_lowercase()` would produce `oneshot`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Standing => "standing",
+            Self::OneShot => "one_shot",
+        }
+    }
+}
+
 /// The authorization lifecycle. Every variant is reachable from a local
 /// decision or from the grant's own clock — never from a transport event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,6 +119,20 @@ pub enum AuthorizationStatus {
 }
 
 impl AuthorizationStatus {
+    /// The wire/persisted spelling of this status. It must stay identical to
+    /// the `snake_case` serde form: clients and stored rows match on it, and
+    /// `format!("{self:?}").to_lowercase()` would report `pendingapproval`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PendingApproval => "pending_approval",
+            Self::Active => "active",
+            Self::Suspended => "suspended",
+            Self::Expired => "expired",
+            Self::Revoked => "revoked",
+            Self::Consumed => "consumed",
+        }
+    }
+
     /// Terminal states are never left. Reaching one requires a brand-new
     /// grant (and therefore a brand-new local approval) for access to resume.
     pub fn is_terminal(self) -> bool {
@@ -592,6 +627,41 @@ pub fn grant_from_legacy_session(
 mod tests {
     use super::*;
     use crate::ids::SessionId;
+
+    /// The strings clients see must be the strings the model persists.
+    /// `format!("{status:?}").to_lowercase()` drifts from the serde form
+    /// (`pendingapproval` vs `pending_approval`, `oneshot` vs `one_shot`),
+    /// so every variant is checked against its own serialization here.
+    #[test]
+    fn wire_spellings_match_the_persisted_serde_form_for_every_variant() {
+        for status in [
+            AuthorizationStatus::PendingApproval,
+            AuthorizationStatus::Active,
+            AuthorizationStatus::Suspended,
+            AuthorizationStatus::Expired,
+            AuthorizationStatus::Revoked,
+            AuthorizationStatus::Consumed,
+        ] {
+            assert_eq!(
+                serde_json::to_string(&status).expect("a unit variant always serializes"),
+                format!("\"{}\"", status.as_str()),
+                "the reported status must be the persisted status"
+            );
+        }
+        for kind in [GrantKind::Standing, GrantKind::OneShot] {
+            assert_eq!(
+                serde_json::to_string(&kind).expect("a unit variant always serializes"),
+                format!("\"{}\"", kind.as_str()),
+                "the reported kind must be the persisted kind"
+            );
+        }
+        assert_eq!(
+            serde_json::to_string(&PrincipalAssurance::Unverified)
+                .expect("a unit variant always serializes"),
+            format!("\"{}\"", PrincipalAssurance::Unverified.as_str()),
+            "the reported assurance must be the persisted assurance"
+        );
+    }
 
     fn now() -> OffsetDateTime {
         OffsetDateTime::UNIX_EPOCH

@@ -28,15 +28,21 @@ impl AuthorizationRepository {
         Self { storage }
     }
 
+    /// The one place this repository acquires the storage connection, so a
+    /// poisoned mutex becomes the same typed error on every path instead of
+    /// being re-spelled in each method.
+    fn connection(&self) -> Result<std::sync::MutexGuard<'_, rusqlite::Connection>, GrantError> {
+        self.storage
+            .connection()
+            .lock()
+            .map_err(|_| GrantError::Storage("mutex poisoned".into()))
+    }
+
     /// Persists a grant. `grant_id` is the primary key, so re-saving an
     /// updated grant (a migration re-run, a revoke) updates that one row and
     /// can never fork a second copy of the same authority.
     pub fn save_grant(&self, grant: &AccessGrant) -> Result<(), GrantError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| GrantError::Storage("mutex poisoned".into()))?;
+        let conn = self.connection()?;
         conn.execute(
             "INSERT INTO access_grants (
                 grant_id, subject_session_id, device_id, remote_principal, principal_assurance,
@@ -95,11 +101,7 @@ impl AuthorizationRepository {
     }
 
     pub fn load_grant(&self, grant_id: GrantId) -> Result<Option<AccessGrant>, GrantError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| GrantError::Storage("mutex poisoned".into()))?;
+        let conn = self.connection()?;
         let query = format!("{SELECT_GRANT_COLUMNS} WHERE grant_id = ?1");
         match conn.query_row(&query, rusqlite::params![grant_id.to_string()], raw_grant) {
             Ok(raw) => parse_grant(raw).map(Some),
@@ -114,11 +116,7 @@ impl AuthorizationRepository {
         &self,
         subject_session_id: SessionId,
     ) -> Result<Option<AccessGrant>, GrantError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| GrantError::Storage("mutex poisoned".into()))?;
+        let conn = self.connection()?;
         let query = format!(
             "{SELECT_GRANT_COLUMNS} WHERE subject_session_id = ?1 ORDER BY issued_at DESC, grant_id DESC"
         );
@@ -140,11 +138,7 @@ impl AuthorizationRepository {
         &self,
         subject_session_id: SessionId,
     ) -> Result<Vec<AccessGrant>, GrantError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| GrantError::Storage("mutex poisoned".into()))?;
+        let conn = self.connection()?;
         let query = format!(
             "{SELECT_GRANT_COLUMNS} WHERE subject_session_id = ?1 AND status IN (?2, ?3, ?4) \
              ORDER BY issued_at ASC, grant_id ASC"
@@ -178,11 +172,7 @@ impl AuthorizationRepository {
         &self,
         request: &AccessGrant,
     ) -> Result<Option<AccessGrant>, GrantError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| GrantError::Storage("mutex poisoned".into()))?;
+        let conn = self.connection()?;
         let query = format!(
             "{SELECT_GRANT_COLUMNS} WHERE device_id = ?1 AND status IN (?2, ?3, ?4) \
              ORDER BY issued_at ASC, grant_id ASC"
@@ -216,11 +206,7 @@ impl AuthorizationRepository {
 
     /// Every grant regardless of status, for audit/UI views.
     pub fn list_all_grants(&self) -> Result<Vec<AccessGrant>, GrantError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| GrantError::Storage("mutex poisoned".into()))?;
+        let conn = self.connection()?;
         let mut stmt = conn
             .prepare(SELECT_GRANT_COLUMNS)
             .map_err(|e| GrantError::Storage(e.to_string()))?;
@@ -231,11 +217,7 @@ impl AuthorizationRepository {
     }
 
     pub fn save_lease(&self, lease: &AuthorizationLease) -> Result<(), GrantError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| GrantError::Storage("mutex poisoned".into()))?;
+        let conn = self.connection()?;
         conn.execute(
             "INSERT INTO authorization_leases (
                 lease_id, grant_id, subject_session_id, device_id, remote_principal,
@@ -267,11 +249,7 @@ impl AuthorizationRepository {
     }
 
     pub fn load_lease(&self, lease_id: LeaseId) -> Result<Option<AuthorizationLease>, GrantError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| GrantError::Storage("mutex poisoned".into()))?;
+        let conn = self.connection()?;
         let query = format!("{SELECT_LEASE_COLUMNS} WHERE lease_id = ?1");
         match conn.query_row(&query, rusqlite::params![lease_id.to_string()], raw_lease) {
             Ok(raw) => parse_lease(raw).map(Some),
@@ -284,11 +262,7 @@ impl AuthorizationRepository {
         &self,
         grant_id: GrantId,
     ) -> Result<Vec<AuthorizationLease>, GrantError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| GrantError::Storage("mutex poisoned".into()))?;
+        let conn = self.connection()?;
         let query = format!("{SELECT_LEASE_COLUMNS} WHERE grant_id = ?1 ORDER BY issued_at ASC");
         let mut stmt = conn
             .prepare(&query)
