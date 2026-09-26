@@ -13,6 +13,18 @@ struct FixtureIndexEntry {
     description: String,
 }
 
+const JSONL_FIXTURES: [&str; 2] = ["out_of_order.json", "flood.json"];
+
+const FIXTURES_REJECTED_BY_ENVELOPE: [&str; 2] =
+    ["invalid_envelope.json", "unknown_message_type.json"];
+
+const TYPED_ID_PREFIXES: [(&str, &str); 4] = [
+    ("operation_id", "op"),
+    ("session_id", "sess"),
+    ("workspace_id", "ws"),
+    ("device_id", "dev"),
+];
+
 fn fixture_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/protocol-abuse")
 }
@@ -61,8 +73,6 @@ fn conformance_fixture_index_matches_committed_fixture_set_exactly_once() {
 
 #[test]
 fn conformance_fixture_wire_shapes_are_stable() {
-    let jsonl = BTreeSet::from(["out_of_order.json", "flood.json"]);
-
     for entry in index_entries() {
         let raw = read_fixture(&entry.file);
 
@@ -74,7 +84,7 @@ fn conformance_fixture_wire_shapes_are_stable() {
             continue;
         }
 
-        if jsonl.contains(entry.file.as_str()) {
+        if JSONL_FIXTURES.contains(&entry.file.as_str()) {
             assert!(
                 serde_json::from_str::<Value>(&raw).is_err(),
                 "{} must remain JSONL rather than a single JSON value",
@@ -129,6 +139,88 @@ fn oversized_fixture_exceeds_protocol_codec_limit() {
         "oversized.json must exceed MAX_MESSAGE_BYTES ({MAX_MESSAGE_BYTES}), got {} bytes",
         bytes.len()
     );
+}
+
+fn envelope_documents(file: &str, raw: &str) -> Vec<Value> {
+    if JSONL_FIXTURES.contains(&file) {
+        return raw
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                serde_json::from_str::<Value>(line)
+                    .unwrap_or_else(|error| panic!("{file} must contain JSON values: {error}"))
+            })
+            .collect();
+    }
+
+    vec![serde_json::from_str::<Value>(raw)
+        .unwrap_or_else(|error| panic!("{file} must be valid JSON: {error}"))]
+}
+
+fn assert_canonical_typed_id(id: &str, prefix: &str, context: &str) {
+    let body = id
+        .strip_prefix(prefix)
+        .and_then(|rest| rest.strip_prefix('_'))
+        .unwrap_or_else(|| panic!("{context}: {id} must use the canonical {prefix}_<ULID> form"));
+
+    assert_eq!(
+        body.len(),
+        26,
+        "{context}: {id} must carry a 26-character ULID body"
+    );
+    assert!(
+        body.chars()
+            .all(|character| character.is_ascii_uppercase() || character.is_ascii_digit()),
+        "{context}: {id} must use Crockford base32 characters"
+    );
+    assert!(
+        !body.contains(['I', 'L', 'O', 'U']),
+        "{context}: {id} must not use ULID-excluded characters"
+    );
+}
+
+#[test]
+fn conformance_fixture_typed_ids_use_canonical_prefixed_ulid_forms() {
+    for entry in index_entries() {
+        if FIXTURES_REJECTED_BY_ENVELOPE.contains(&entry.file.as_str()) {
+            continue;
+        }
+
+        let raw = read_fixture(&entry.file);
+
+        for document in envelope_documents(&entry.file, &raw) {
+            let Some(payload) = document.get("payload").and_then(Value::as_object) else {
+                continue;
+            };
+
+            for (key, prefix) in TYPED_ID_PREFIXES {
+                let Some(value) = payload.get(key) else {
+                    continue;
+                };
+                let id = value
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{}.payload.{key} must be a string", entry.file));
+                assert_canonical_typed_id(id, prefix, &format!("{}.payload.{key}", entry.file));
+            }
+
+            let Some(Value::Array(workspaces)) = payload.get("requested_workspaces") else {
+                continue;
+            };
+            for workspace in workspaces {
+                let workspace = workspace.as_str().unwrap_or_else(|| {
+                    panic!(
+                        "{}.payload.requested_workspaces entries must be strings",
+                        entry.file
+                    )
+                });
+                assert_canonical_typed_id(
+                    workspace,
+                    "ws",
+                    &format!("{}.payload.requested_workspaces", entry.file),
+                );
+            }
+        }
+    }
 }
 
 // These fixtures are conformance inputs for production-only behavior such as

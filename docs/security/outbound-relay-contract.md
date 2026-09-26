@@ -154,7 +154,7 @@ To test compliance with this contract independently of a specific relay vendor, 
    - Respect connection closures and retry with backoff.
 4. **Abuse Case Fixtures**: Provide a set of test fixtures (pre-captured message sequences) representing each abuse case (AC1-AC8) and verify the Gateway's deterministic handling.
 
-The repository includes conformance fixtures under `tests/fixtures/protocol-abuse/` (see [fixture index](#fixture-index)).
+The repository includes conformance fixtures under `tests/fixtures/protocol-abuse/` (see [fixture index](#fixture-index)). Every fixture is structurally wire-valid — canonical typed identifiers (`dev_`/`ws_`/`sess_`/`op_` plus a 26-character ULID body) and canonical envelope fields — except the two scenarios whose declared purpose is to be rejected (`invalid_envelope.json`, `unknown_message_type.json`) and the size-limit scenario (`oversized.json`). `crates/protocol/tests/conformance_fixtures.rs` asserts those invariants, plus index/fixture-set lockstep, on every `cargo test --workspace`; the semantic expectations of each abuse case remain production-conformance inputs, not current implementation guarantees.
 
 ### Fixture Index
 

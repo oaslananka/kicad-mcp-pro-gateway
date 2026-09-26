@@ -7,7 +7,7 @@
   "correlation_id": "01ARZ3NDEKTSV4RRFFQ69G5FD1",
   "payload": {
     "requested_workspaces": [
-      "ws1"
+      "ws_01ARZ3NDEKTSV4RRFFQ69G5FD2"
     ],
     "requested_capabilities": [
       "kicad.version"

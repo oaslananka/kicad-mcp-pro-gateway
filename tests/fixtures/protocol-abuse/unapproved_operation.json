@@ -6,9 +6,9 @@
   "timestamp": "2026-09-26T15:21:52Z",
   "correlation_id": "01ARZ3NDEKTSV4RRFFQ69G5FE1",
   "payload": {
-    "operation_id": "01ARZ3NDEKTSV4RRFFQ69G5FE2",
-    "session_id": "01ARZ3NDEKTSV4RRFFQ69G5FE3",
-    "workspace_id": "ws_1234567890abcdef",
+    "operation_id": "op_01ARZ3NDEKTSV4RRFFQ69G5FE2",
+    "session_id": "sess_01ARZ3NDEKTSV4RRFFQ69G5FE3",
+    "workspace_id": "ws_01ARZ3NDEKTSV4RRFFQ69G5FE4",
     "tool_name": "kicad.version",
     "arguments": {}
   }
