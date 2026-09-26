@@ -66,6 +66,52 @@ fn run_cli(data_dir: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).expect("CLI writes UTF-8")
 }
 
+/// The transport-era list, asserted the same way at every step: exactly one
+/// record, the expected legacy status, and the authorization state reported
+/// beside it rather than inferred from it.
+async fn assert_single_session(data_dir: &Path, status: &str, authorization_status: &str) {
+    match send_request(data_dir, IpcRequest::ListSessions)
+        .await
+        .unwrap()
+    {
+        IpcResponse::Sessions(sessions) => {
+            assert_eq!(sessions.len(), 1);
+            assert_eq!(sessions[0].status, status);
+            assert_eq!(
+                sessions[0].authorization_status, authorization_status,
+                "the authority in force is reported next to the legacy status"
+            );
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+}
+
+/// The authorization view is the authoritative one and a separate surface
+/// from the transport-era list: one standing grant for this subject, and
+/// transport connectivity reported beside the authority, never inside it.
+async fn assert_only_active_grant(data_dir: &Path, session_id: companion_core::SessionId) {
+    match send_request(data_dir, IpcRequest::ListAccessGrants)
+        .await
+        .unwrap()
+    {
+        IpcResponse::AccessGrants(grants) => {
+            assert_eq!(grants.len(), 1);
+            assert_eq!(grants[0].subject_session_id, session_id);
+            assert_eq!(grants[0].authorization_status, "active");
+            assert_eq!(grants[0].grant_kind, "standing");
+            assert_eq!(
+                grants[0].principal_assurance, "unverified",
+                "V1 never verifies a remote principal and must not pretend to"
+            );
+            assert_eq!(
+                grants[0].transport_state, "Disconnected",
+                "transport connectivity is reported beside the authority, not inside it"
+            );
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn setup_reports_core_offline_when_daemon_cannot_reach_kicad_mcp_pro() {
     let data_dir = fresh_data_dir();
@@ -266,118 +312,24 @@ async fn approve_pause_resume_revoke_session_round_trip() {
     assert!(!list_output.contains(session_id_text.as_str()));
     assert!(list_output.contains("effective expiry"));
 
-    let response = send_request(&data_dir, IpcRequest::ListSessions)
-        .await
-        .unwrap();
-    match response {
-        IpcResponse::Sessions(sessions) => {
-            assert_eq!(sessions.len(), 1);
-            assert_eq!(sessions[0].status, "Active");
-            assert_eq!(
-                sessions[0].authorization_status, "active",
-                "the authority in force is reported next to the legacy status"
-            );
-        }
-        other => panic!("unexpected response: {other:?}"),
-    }
-
-    // The authorization view is the authoritative one, and it is a separate
-    // surface from the transport-era session list.
-    match send_request(&data_dir, IpcRequest::ListAccessGrants)
-        .await
-        .unwrap()
-    {
-        IpcResponse::AccessGrants(grants) => {
-            assert_eq!(grants.len(), 1);
-            assert_eq!(grants[0].subject_session_id, session_id);
-            assert_eq!(grants[0].authorization_status, "active");
-            assert_eq!(grants[0].grant_kind, "standing");
-            assert_eq!(
-                grants[0].principal_assurance, "unverified",
-                "V1 never verifies a remote principal and must not pretend to"
-            );
-            assert_eq!(
-                grants[0].transport_state, "Disconnected",
-                "transport connectivity is reported beside the authority, not inside it"
-            );
-        }
-        other => panic!("unexpected response: {other:?}"),
-    }
+    assert_single_session(&data_dir, "Active", "active").await;
+    assert_only_active_grant(&data_dir, session_id).await;
 
     send_request(&data_dir, IpcRequest::PauseSession { session_id })
         .await
         .unwrap();
-    let response = send_request(&data_dir, IpcRequest::ListSessions)
-        .await
-        .unwrap();
-    match response {
-        // ListSessions returns every session regardless of status (so a
-        // caller can see PendingApproval/Suspended ones to act on them);
-        // the session itself is now Suspended, not absent.
-        IpcResponse::Sessions(sessions) => {
-            assert_eq!(sessions.len(), 1);
-            assert_eq!(sessions[0].status, "Suspended");
-        }
-        other => panic!("unexpected response: {other:?}"),
-    }
+    assert_single_session(&data_dir, "Suspended", "suspended").await;
 
     send_request(&data_dir, IpcRequest::ResumeSession { session_id })
         .await
         .unwrap();
-    let response = send_request(&data_dir, IpcRequest::ListSessions)
-        .await
-        .unwrap();
-    match response {
-        IpcResponse::Sessions(sessions) => {
-            assert_eq!(sessions.len(), 1);
-            assert_eq!(sessions[0].status, "Active");
-            assert_eq!(
-                sessions[0].authorization_status, "active",
-                "the authority in force is reported next to the legacy status"
-            );
-        }
-        other => panic!("unexpected response: {other:?}"),
-    }
-
-    // The authorization view is the authoritative one, and it is a separate
-    // surface from the transport-era session list.
-    match send_request(&data_dir, IpcRequest::ListAccessGrants)
-        .await
-        .unwrap()
-    {
-        IpcResponse::AccessGrants(grants) => {
-            assert_eq!(grants.len(), 1);
-            assert_eq!(grants[0].subject_session_id, session_id);
-            assert_eq!(grants[0].authorization_status, "active");
-            assert_eq!(grants[0].grant_kind, "standing");
-            assert_eq!(
-                grants[0].principal_assurance, "unverified",
-                "V1 never verifies a remote principal and must not pretend to"
-            );
-            assert_eq!(
-                grants[0].transport_state, "Disconnected",
-                "transport connectivity is reported beside the authority, not inside it"
-            );
-        }
-        other => panic!("unexpected response: {other:?}"),
-    }
+    assert_single_session(&data_dir, "Active", "active").await;
+    assert_only_active_grant(&data_dir, session_id).await;
 
     send_request(&data_dir, IpcRequest::RevokeSession { session_id })
         .await
         .unwrap();
-    let response = send_request(&data_dir, IpcRequest::ListSessions)
-        .await
-        .unwrap();
-    match response {
-        IpcResponse::Sessions(sessions) => {
-            assert_eq!(sessions.len(), 1);
-            assert_eq!(
-                sessions[0].status, "Revoked",
-                "revoked session must still be visible, just marked Revoked"
-            );
-        }
-        other => panic!("unexpected response: {other:?}"),
-    }
+    assert_single_session(&data_dir, "Revoked", "revoked").await;
 
     // Revocation is terminal: approving again must fail, not resurrect it.
     let response = send_request(&data_dir, IpcRequest::ApproveSession { session_id })

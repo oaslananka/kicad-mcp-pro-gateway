@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use companion_core::config::{self, CliOverrides};
@@ -437,81 +437,114 @@ async fn session(
     action: SessionAction,
 ) -> anyhow::Result<()> {
     match action {
-        SessionAction::List => {
-            // The authorization view is authoritative, so it is what the
-            // list leads with; the transport-era session list stays
-            // available for correlation, reported separately below it.
-            let grants =
-                ok_or_bail(send_request(&cfg.data_dir, IpcRequest::ListAccessGrants).await?)?;
-            if let IpcResponse::AccessGrants(grants) = grants {
-                if grants.is_empty() {
-                    println!("no access grants");
-                }
-                // Grant ids are capability identifiers; keep them out of CLI output.
-                for grant in grants {
-                    println!(
-                        "{}  authorization {}  {}  {}  effective expiry {}  transport {}",
-                        grant.remote_principal,
-                        grant.authorization_status,
-                        grant.grant_kind,
-                        grant.capability_profile,
-                        grant.expires_at,
-                        grant.transport_state
-                    );
-                }
-            }
-            let response =
-                ok_or_bail(send_request(&cfg.data_dir, IpcRequest::ListSessions).await?)?;
-            if let IpcResponse::Sessions(sessions) = response {
-                if !sessions.is_empty() {
-                    println!("\nlegacy transport-era session records (no authority of their own):");
-                    for s in sessions {
-                        println!(
-                            "  {}  session {}  authorization {}  transport {}",
-                            s.remote_principal, s.status, s.authorization_status, s.transport_state
-                        );
-                    }
-                }
-            }
-        }
+        SessionAction::List => list_authorization(&cfg.data_dir).await,
         SessionAction::Approve { session_id } => {
-            let session_id = parse_session_id(&session_id)?;
-            ok_or_bail(
-                send_request(&cfg.data_dir, IpcRequest::ApproveSession { session_id }).await?,
-            )?;
-            println!("approved session");
+            apply_session_decision(
+                &cfg.data_dir,
+                &session_id,
+                |id| IpcRequest::ApproveSession { session_id: id },
+                "approved",
+            )
+            .await
         }
         SessionAction::Deny { session_id, reason } => {
-            let session_id = parse_session_id(&session_id)?;
-            ok_or_bail(
-                send_request(
-                    &cfg.data_dir,
-                    IpcRequest::DenySession { session_id, reason },
-                )
-                .await?,
-            )?;
-            println!("denied session");
+            apply_session_decision(
+                &cfg.data_dir,
+                &session_id,
+                |id| IpcRequest::DenySession {
+                    session_id: id,
+                    reason,
+                },
+                "denied",
+            )
+            .await
         }
         SessionAction::Pause { session_id } => {
-            let session_id = parse_session_id(&session_id)?;
-            ok_or_bail(
-                send_request(&cfg.data_dir, IpcRequest::PauseSession { session_id }).await?,
-            )?;
-            println!("paused session");
+            apply_session_decision(
+                &cfg.data_dir,
+                &session_id,
+                |id| IpcRequest::PauseSession { session_id: id },
+                "paused",
+            )
+            .await
         }
         SessionAction::Resume { session_id } => {
-            let session_id = parse_session_id(&session_id)?;
-            ok_or_bail(
-                send_request(&cfg.data_dir, IpcRequest::ResumeSession { session_id }).await?,
-            )?;
-            println!("resumed session");
+            apply_session_decision(
+                &cfg.data_dir,
+                &session_id,
+                |id| IpcRequest::ResumeSession { session_id: id },
+                "resumed",
+            )
+            .await
         }
         SessionAction::Revoke { session_id } => {
-            let session_id = parse_session_id(&session_id)?;
-            ok_or_bail(
-                send_request(&cfg.data_dir, IpcRequest::RevokeSession { session_id }).await?,
-            )?;
-            println!("revoked session");
+            apply_session_decision(
+                &cfg.data_dir,
+                &session_id,
+                |id| IpcRequest::RevokeSession { session_id: id },
+                "revoked",
+            )
+            .await
+        }
+    }
+}
+
+/// One local decision, whichever it is. The daemon applies it to the access
+/// grant first and only then mirrors it onto the transport-era session row,
+/// so a decision can never be a transport event.
+async fn apply_session_decision(
+    data_dir: &Path,
+    raw_session_id: &str,
+    request: impl FnOnce(companion_core::SessionId) -> IpcRequest,
+    outcome: &str,
+) -> anyhow::Result<()> {
+    let session_id = parse_session_id(raw_session_id)?;
+    ok_or_bail(send_request(data_dir, request(session_id)).await?)?;
+    println!("{outcome} session");
+    Ok(())
+}
+
+/// The authorization view leads, because it is the authoritative one; the
+/// transport-era session list follows as a separate surface for correlation,
+/// never as a substitute for authority.
+async fn list_authorization(data_dir: &Path) -> anyhow::Result<()> {
+    print_access_grants(data_dir).await?;
+    print_legacy_sessions(data_dir).await
+}
+
+async fn print_access_grants(data_dir: &Path) -> anyhow::Result<()> {
+    let response = ok_or_bail(send_request(data_dir, IpcRequest::ListAccessGrants).await?)?;
+    if let IpcResponse::AccessGrants(grants) = response {
+        if grants.is_empty() {
+            println!("no access grants");
+        }
+        // Grant ids are capability identifiers; keep them out of CLI output.
+        for grant in grants {
+            println!(
+                "{}  authorization {}  {}  {}  effective expiry {}  transport {}",
+                grant.remote_principal,
+                grant.authorization_status,
+                grant.grant_kind,
+                grant.capability_profile,
+                grant.expires_at,
+                grant.transport_state
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn print_legacy_sessions(data_dir: &Path) -> anyhow::Result<()> {
+    let response = ok_or_bail(send_request(data_dir, IpcRequest::ListSessions).await?)?;
+    if let IpcResponse::Sessions(sessions) = response {
+        if !sessions.is_empty() {
+            println!("\nlegacy transport-era session records (no authority of their own):");
+            for s in sessions {
+                println!(
+                    "  {}  session {}  authorization {}  transport {}",
+                    s.remote_principal, s.status, s.authorization_status, s.transport_state
+                );
+            }
         }
     }
     Ok(())
