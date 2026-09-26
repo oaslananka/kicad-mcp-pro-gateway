@@ -33,6 +33,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Release Documentation**: Added `docs/development/release.md` detailing code signing (macOS Developer ID, Windows Authenticode), notarization, release engineering, and multi-OS manual QA procedures.
 - **Full Catalog Disposition & Snapshot Reconciliation**: Enforced 100% explicit disposition coverage for upstream tool catalog snapshots and automated reconciliation tooling.
 - **Trusted Tool-Effect Contracts**: Added source-pinned read/write/create/delete normalization and argument-path containment for reviewed V1 tools; unreviewed effects now fail closed independently of caller `target_path`.
+- **Property/Fuzz Coverage for Trust Boundaries**: Added `proptest` targets for the local IPC framing and its size limit, the transport envelope, the local IPC request surface, the workspace path boundary, and the tool-registry/effect-manifest parsers, with in-code historical corpora for the inputs that have actually reached each boundary; the bounded CI lane and the longer local lane are documented in [`docs/development/testing.md`](docs/development/testing.md#property-and-fuzz-testing).
 
 ### Changed
 

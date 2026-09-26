@@ -36,6 +36,88 @@ through the `Clock` trait in `crates/core`. Tests use `FakeClock`, which is
 advanced explicitly (`clock.advance(Duration)`); no test should depend on
 `std::thread::sleep` to observe expiry.
 
+## Property and fuzz testing
+
+The trust-boundary parsers are covered by `proptest` property targets, because
+their input space is far larger than any example list: a panic, a hang, an
+unbounded allocation, or a fail-open classification at one of these boundaries
+is a defect, not a flake. Property coverage does not replace the explicit
+security regression tests listed further down — it covers the inputs those
+examples cannot.
+
+### Maintained targets
+
+| Boundary | Target | Invariants |
+| --- | --- | --- |
+| local IPC framing and its size limit | `crates/protocol/tests/property_codec.rs` | a read consumes exactly one newline-delimited frame and agrees with `serde_json` on that line; a payload of exactly `MAX_MESSAGE_BYTES` is writable, the first byte over it is refused, and a refused write emits nothing; oversized input is refused after reading only the limit |
+| transport envelope | `crates/protocol/tests/property_codec.rs` | every `MessageType` round-trips through the codec with every field intact; version compatibility is decided by the major component alone |
+| local IPC request surface | `crates/protocol/tests/property_codec.rs` | an unknown request tag never decodes; a nested tag is payload data, not a second verb; an id from another domain never decodes as a session id, and every accepted spelling normalizes to one identity |
+| workspace path boundary | `crates/workspace/tests/property_tests.rs` | a request resolves exactly when its lexically normalized form is inside the root, and then resolves to that form; a sibling directory sharing the root's name prefix is never inside; a symlink inside the root resolves and one pointing outside is refused (Unix) |
+| tool registry and effect manifest | `crates/policy/tests/property_registry.rs` | arbitrary and single-byte-mutated manifest text never panics, and never yields a capability, risk, or effect the source did not declare; a capability, risk, or effect outside its closed set is always a load error; an effect contract loads only when source, arguments, effects, and path arguments are all declared |
+| operation-effect normalization | `crates/policy/tests/operation_effects.rs` | every member of a multi-path argument is normalized; generated workspace-relative paths satisfy containment; a non-string member denies normalization |
+
+### Corpora
+
+Two mechanisms, both deliberate:
+
+- Each target carries a `historical_*` corpus: the inputs that have actually
+  reached that boundary (traversal and sibling-collision attempts, foreign
+  absolute syntax, mixed separators, NUL and Unicode look-alikes, split and
+  CRLF frames, lowercase and cross-domain ids, capability and effect
+  near-misses, partially declared manifests). They are enumerated in code so
+  they run on every run instead of only when the generator happens to produce
+  them.
+- `proptest` persists a minimized failing input to
+  `<test-file>.proptest-regressions` beside the target. Commit that file with
+  the fix: it is replayed before any new case is generated, so the finding
+  stays a regression.
+
+### Bounded CI lane
+
+`cargo test --workspace` runs every property target with proptest's default 256
+cases per property. The size-limit property is pinned to 8 cases by its own
+`proptest_config`, because its interesting inputs are the byte counts either
+side of the limit rather than 256 random ones, and each case pushes over a
+megabyte through the codec. The whole property suite is a few seconds of the
+CI test step. Nothing in this lane is time- or thread-dependent, so a failure
+replays from its persisted seed.
+
+### Longer lane (manual or scheduled)
+
+Not part of routine CI, and never a release gate — a long run is for finding
+new inputs, not for blocking a merge on a timeout. Run it locally, or wire it
+into a scheduled (non-required) job:
+
+```bash
+PROPTEST_CASES=20000 cargo test -p companion-protocol --release \
+  --test property_codec --test property_tests
+PROPTEST_CASES=20000 cargo test -p companion-policy --release \
+  --test property_registry --test operation_effects
+PROPTEST_CASES=20000 cargo test -p companion-workspace --release \
+  --test property_tests
+```
+
+This widens the generated case count only; a property that pins its own
+`proptest_config` keeps that bound.
+
+### Reproducing and minimizing a finding
+
+```bash
+# replay the persisted corpus for one target
+cargo test -p companion-protocol --test property_codec
+
+# re-run the exact random stream a failure came from
+PROPTEST_CASES=1 PROPTEST_RNG_SEED=<seed> \
+  cargo test -p companion-protocol --test property_codec -- --nocapture
+
+# shrink harder when the minimized input is still too large to read
+PROPTEST_MAX_SHRINK_ITERS=100000 cargo test -p companion-protocol \
+  --test property_codec -- --nocapture
+```
+
+`--nocapture` prints the minimized input and, when one is generated, the
+`cc <hex>` line to paste into the target's `.proptest-regressions` file.
+
 ## Required unit coverage (minimum)
 
 - device identity lifecycle (create, load, never-plaintext secret)
