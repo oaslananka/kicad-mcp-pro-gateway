@@ -68,6 +68,18 @@ Every message on the Gateway transport is versioned and typed:
 | `session.revoke` | Gateway → relay | Local revoke notification |
 | `heartbeat` | both | Liveness / reconnect signal |
 
+## Authorization is not a transport concept
+
+`session.request` asks for a grant; it never grants one. The daemon records
+an `AccessGrant` in `PendingApproval` — no authority — and only a local user's
+`ApproveSession` over local IPC moves it to `Active`. Transport
+messages cannot mint, extend, widen, or revive authority, and a
+`Revoked`/`Expired` grant is authoritative no matter what the pipe does
+afterwards. Authorization state is reported to clients through
+`ListAccessGrants` / `AccessGrantView`, separately from the transport-era
+`ListSessions` view and from the reported `transport_state`; see
+[session-lifecycle.md](../architecture/session-lifecycle.md).
+
 ## Security notes
 
 - TLS + standard crypto primitives only; no custom encryption is

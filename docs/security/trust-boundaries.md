@@ -54,15 +54,21 @@ never conflate them:
   the pipe. Established by the transport handshake.
 - **Pairing**: proves the device is *known and trusted* by the account.
   Established once, persists until revoked.
-- **Active session with effective capabilities**: proves *this specific
-  remote principal, right now, for this workspace and task scope, is allowed
-  to invoke this specific operation*. Established per-session, expires,
-  can be revoked, and is re-checked on every operation.
+- **Active access grant with effective capabilities**: proves *this specific
+  remote principal, on this device, right now, for this workspace and task
+  scope, is allowed to invoke this specific operation*. Established per grant,
+  expires, can be revoked, and is re-checked on every operation.
 
-A device being paired does not imply an active session. An active transport
-connection does not imply an active session. An active session does not
+A device being paired does not imply an active grant. An active transport
+connection does not imply an active grant. An active grant does not
 imply unrestricted tool access — it implies exactly its effective
 capabilities, subject to per-operation risk/approval checks.
+
+In the other direction too: revoking or expiring a grant does not disconnect
+the pipe, and a reconnecting pipe does not revive, extend, or widen a grant.
+Transport connectivity and authorization authority are separate records with
+separate lifecycles — see
+[session-lifecycle.md](../architecture/session-lifecycle.md).
 
 ## Process boundary note
 

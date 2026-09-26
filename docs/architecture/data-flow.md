@@ -8,9 +8,13 @@ pipeline. No step may be skipped, reordered, or short-circuited.
 ```
 1. Message arrives on transport (untrusted input)
 2. Envelope validated (protocol_version, size limits, well-formed payload)
-3. Session resolved by session_id
-4. Session state machine checked: Active, not expired, not revoked
-5. Operation's target workspace checked against session.workspace_ids
+3. Access grant resolved for the request's subject (`session_id`). The
+   persisted `access_grants` row is the authority; a pre-migration
+   `sessions` row is only ever used through the same deterministic adapter,
+   and a subject with neither has no authority at all
+4. Grant state machine checked: Active, not expired, not revoked, not a spent
+   one-shot. Transport state is not consulted anywhere in this pipeline
+5. Operation's target workspace checked against the grant's workspace_ids
 6. Tool name + forwarded arguments normalized through the SHA-pinned, reviewed
    tool-effect contract into reads/writes/creates/deletes and absolute path
    effects; `OperationRequest.target_path` is ignored as caller metadata
@@ -19,10 +23,13 @@ pipeline. No step may be skipped, reordered, or short-circuited.
    (canonicalized root, no traversal/symlink escape)
 8. Tool/operation capability and risk resolved from the same trusted contract
    -> unknown tool = DENY, no fallback
-9. Capability checked against session's effective capabilities
+9. Capability checked against the grant's effective capabilities
 10. Approval requirement evaluated (policy + risk); if required and not
-    already granted for this operation, session moves the operation to
-    PendingApproval and stops here until a local decision is made
+    already granted for this operation, the operation moves to the daemon's
+    PendingApproval queue and stops here until a local decision is made.
+    That per-operation decision is distinct from standing authorization: it
+    never activates, extends, or widens a grant (see
+    [session-lifecycle.md](session-lifecycle.md))
 11. AuditEvent durably recorded for the decision (Allow/Deny/RequireApproval).
     This is a gate, not a log line: if the record cannot be persisted the
     operation is refused here and step 12 never happens — for reads and
@@ -50,7 +57,7 @@ committed audit record. Nothing upstream of the policy engine is trusted.
 | Cloud ⇄ Gateway transport | Envelopes: pairing messages, session requests, `OperationRequest`/`OperationResult`, heartbeats | Private key material, raw project file contents beyond what a tool result legitimately returns, unrelated workspace paths |
 | Gateway daemon ⇄ Desktop/CLI (local IPC) | Status, session/workspace/audit views, approval decisions | Private key material, raw secrets/tokens |
 | Gateway ⇄ kicad-mcp-pro (loopback MCP) | `initialize`, `tools/list`, `tools/call` for the single authorized operation, with correlation id | Nothing about other sessions/workspaces; the bridge only ever performs the one operation policy allowed |
-| Gateway ⇄ SQLite | Device metadata (public), workspaces, sessions, approvals, audit, checkpoint metadata, settings | Private key material (goes through `SecretStore`, never the DB) |
+| Gateway ⇄ SQLite | Device metadata (public), workspaces, transport-era session records, access grants/leases, approvals, audit, checkpoint metadata, settings | Private key material (goes through `SecretStore`, never the DB) |
 
 ## Local-only data (never leaves the machine by default)
 

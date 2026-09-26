@@ -365,7 +365,16 @@ async fn status(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
                 "Offline"
             }
         );
-        println!("Active sessions: {}", view.active_session_count);
+        println!("Active authorization grants: {}", view.active_grant_count);
+        println!(
+            "Grants awaiting approval: {}",
+            view.pending_approval_grant_count
+        );
+        println!(
+            "Legacy session records (Active): {}",
+            view.active_session_count
+        );
+        println!("Transport connectivity: {}", view.transport_state);
         println!("Authorized workspaces: {}", view.workspace_count);
     }
     Ok(())
@@ -429,18 +438,39 @@ async fn session(
 ) -> anyhow::Result<()> {
     match action {
         SessionAction::List => {
+            // The authorization view is authoritative, so it is what the
+            // list leads with; the transport-era session list stays
+            // available for correlation, reported separately below it.
+            let grants =
+                ok_or_bail(send_request(&cfg.data_dir, IpcRequest::ListAccessGrants).await?)?;
+            if let IpcResponse::AccessGrants(grants) = grants {
+                if grants.is_empty() {
+                    println!("no access grants");
+                }
+                // Grant ids are capability identifiers; keep them out of CLI output.
+                for grant in grants {
+                    println!(
+                        "{}  authorization {}  {}  {}  effective expiry {}  transport {}",
+                        grant.remote_principal,
+                        grant.authorization_status,
+                        grant.grant_kind,
+                        grant.capability_profile,
+                        grant.expires_at,
+                        grant.transport_state
+                    );
+                }
+            }
             let response =
                 ok_or_bail(send_request(&cfg.data_dir, IpcRequest::ListSessions).await?)?;
             if let IpcResponse::Sessions(sessions) = response {
-                if sessions.is_empty() {
-                    println!("no active sessions");
-                }
-                // Session IDs are capability identifiers; keep them out of CLI output.
-                for s in sessions {
-                    println!(
-                        "{}  {}  {}  effective expiry {}",
-                        s.remote_principal, s.status, s.capability_profile, s.expires_at
-                    );
+                if !sessions.is_empty() {
+                    println!("\nlegacy transport-era session records (no authority of their own):");
+                    for s in sessions {
+                        println!(
+                            "  {}  session {}  authorization {}  transport {}",
+                            s.remote_principal, s.status, s.authorization_status, s.transport_state
+                        );
+                    }
                 }
             }
         }

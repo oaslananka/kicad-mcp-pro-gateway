@@ -209,6 +209,7 @@ async fn approve_pause_resume_revoke_session_round_trip() {
     use companion_core::{CapabilityProfile, SessionStatus};
     use companion_sessions::{new_unpaired_session, SessionRepository};
     use companion_storage::Storage;
+    use companion_workspace::{WorkspaceAuthorization, WorkspaceRepository};
 
     let data_dir = fresh_data_dir();
 
@@ -218,14 +219,24 @@ async fn approve_pause_resume_revoke_session_round_trip() {
     // from a remote transport request (Phase 7), which is exactly the
     // property this test relies on: the CLI can decide on an existing
     // session, never invent one.
+    //
+    // The row is seeded the transport-era way on purpose: the daemon's
+    // startup migration is what turns it into the access grant that the
+    // approve/pause/resume/revoke path actually acts on.
     let session_id = {
         let storage = Arc::new(Storage::open(&data_dir).unwrap());
-        let repo = SessionRepository::new(storage);
+        let repo = SessionRepository::new(Arc::clone(&storage));
         let clock = companion_core::SystemClock;
+        let workspace =
+            WorkspaceAuthorization::new("cli test".into(), &tempfile::tempdir().unwrap().keep())
+                .unwrap();
+        WorkspaceRepository::new(Arc::clone(&storage))
+            .save(&workspace)
+            .unwrap();
         let mut session = new_unpaired_session(
             companion_core::DeviceId::new(),
             "agent:test".into(),
-            BTreeSet::new(),
+            BTreeSet::from([workspace.workspace_id]),
             CapabilityProfile::Inspect,
             "read schematic".into(),
             time::Duration::hours(1),
@@ -262,6 +273,33 @@ async fn approve_pause_resume_revoke_session_round_trip() {
         IpcResponse::Sessions(sessions) => {
             assert_eq!(sessions.len(), 1);
             assert_eq!(sessions[0].status, "Active");
+            assert_eq!(
+                sessions[0].authorization_status, "active",
+                "the authority in force is reported next to the legacy status"
+            );
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    // The authorization view is the authoritative one, and it is a separate
+    // surface from the transport-era session list.
+    match send_request(&data_dir, IpcRequest::ListAccessGrants)
+        .await
+        .unwrap()
+    {
+        IpcResponse::AccessGrants(grants) => {
+            assert_eq!(grants.len(), 1);
+            assert_eq!(grants[0].subject_session_id, session_id);
+            assert_eq!(grants[0].authorization_status, "active");
+            assert_eq!(grants[0].grant_kind, "standing");
+            assert_eq!(
+                grants[0].principal_assurance, "unverified",
+                "V1 never verifies a remote principal and must not pretend to"
+            );
+            assert_eq!(
+                grants[0].transport_state, "Disconnected",
+                "transport connectivity is reported beside the authority, not inside it"
+            );
         }
         other => panic!("unexpected response: {other:?}"),
     }
@@ -293,6 +331,33 @@ async fn approve_pause_resume_revoke_session_round_trip() {
         IpcResponse::Sessions(sessions) => {
             assert_eq!(sessions.len(), 1);
             assert_eq!(sessions[0].status, "Active");
+            assert_eq!(
+                sessions[0].authorization_status, "active",
+                "the authority in force is reported next to the legacy status"
+            );
+        }
+        other => panic!("unexpected response: {other:?}"),
+    }
+
+    // The authorization view is the authoritative one, and it is a separate
+    // surface from the transport-era session list.
+    match send_request(&data_dir, IpcRequest::ListAccessGrants)
+        .await
+        .unwrap()
+    {
+        IpcResponse::AccessGrants(grants) => {
+            assert_eq!(grants.len(), 1);
+            assert_eq!(grants[0].subject_session_id, session_id);
+            assert_eq!(grants[0].authorization_status, "active");
+            assert_eq!(grants[0].grant_kind, "standing");
+            assert_eq!(
+                grants[0].principal_assurance, "unverified",
+                "V1 never verifies a remote principal and must not pretend to"
+            );
+            assert_eq!(
+                grants[0].transport_state, "Disconnected",
+                "transport connectivity is reported beside the authority, not inside it"
+            );
         }
         other => panic!("unexpected response: {other:?}"),
     }

@@ -14,11 +14,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use companion_audit::AuditRepository;
-use companion_core::{CompanionConfig, SystemClock, TransportMode};
+use companion_core::{CompanionConfig, SystemClock, TransportMode, TransportState};
 use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig};
 use companion_identity::{SecretStore, SqliteDeviceIdentityStore};
 use companion_policy::{AuthorizationTtlPolicy, PolicyEngine, TomlToolRegistry};
-use companion_sessions::SessionRepository;
+use companion_sessions::TransportConnectivityEvent;
+use companion_sessions::{migrate_legacy_sessions, AuthorizationRepository, SessionRepository};
 use companion_storage::Storage;
 use companion_transport::{jittered_delay, BackoffPolicy, MockTransport, Transport};
 use companion_workspace::WorkspaceRepository;
@@ -66,6 +67,32 @@ fn build_state_from_parts(
 ) -> anyhow::Result<Arc<DaemonState>> {
     let workspace_repo = Arc::new(WorkspaceRepository::new(Arc::clone(&storage)));
     let session_repo = Arc::new(SessionRepository::new(Arc::clone(&storage)));
+    let authorization_repo = Arc::new(AuthorizationRepository::new(Arc::clone(&storage)));
+    // Additive, fail-closed, idempotent: transport-era `sessions` rows that
+    // carried authority become explicit grants before anything is served, so
+    // an upgraded daemon never has to fall back to reading a legacy row as
+    // authority. Revocations and expiries migrate as revocations and
+    // expiries.
+    let migration = migrate_legacy_sessions(&session_repo, &authorization_repo)
+        .map_err(|error| anyhow::anyhow!("authorization migration failed: {error}"))?;
+    if migration.grants_written > 0
+        || migration.rows_without_authority > 0
+        || !migration.refused_session_ids.is_empty()
+    {
+        tracing::info!(
+            grants_written = migration.grants_written,
+            grants_already_present = migration.grants_already_present,
+            rows_without_authority = migration.rows_without_authority,
+            refused_legacy_rows = migration.refused_session_ids.len(),
+            "transport-era session rows mapped onto explicit authorization grants"
+        );
+    }
+    for refused in &migration.refused_session_ids {
+        tracing::error!(
+            session = %refused,
+            "legacy session row could not be interpreted as authorization; it carries no authority"
+        );
+    }
     let policy_engine = Arc::new(PolicyEngine::with_authorization_ttl_policy(
         TomlToolRegistry::try_embedded()?,
         AuthorizationTtlPolicy::new(config.authorization_ttl),
@@ -83,6 +110,7 @@ fn build_state_from_parts(
         identity_store,
         workspace_repo,
         session_repo,
+        authorization_repo,
         policy_engine,
         audit_repo,
         core_bridge,
@@ -90,6 +118,7 @@ fn build_state_from_parts(
         clock: Arc::new(SystemClock),
         shutdown: Arc::new(ShutdownSignal::new()),
         transport: std::sync::Mutex::new(None),
+        transport_state: std::sync::Mutex::new(TransportState::Disconnected),
         pending_operations: std::sync::Mutex::new(HashMap::new()),
     }))
 }
@@ -130,10 +159,17 @@ async fn run_transport_lifecycle(
             _ = state.shutdown.cancelled() => break,
             result = transport.connect() => result,
         };
+        if connect_result.is_ok() {
+            tracing::debug!(transport_state = ?state.transport_state(), "outbound transport connected");
+        }
 
         match connect_result {
             Ok(()) => {
                 failure_attempt = 0;
+                // Connectivity only. Nothing here reads, writes, extends, or
+                // resurrects an access grant: a reconnect changes the pipe,
+                // never the authority that outlives it.
+                state.record_transport_event(TransportConnectivityEvent::Connected);
                 let processor_result = remote_processor::run_remote_processor(
                     Arc::clone(&state),
                     Arc::clone(&transport),
@@ -146,11 +182,14 @@ async fn run_transport_lifecycle(
                 if let Err(error) = transport.disconnect().await {
                     tracing::warn!(error = %error, "outbound transport disconnect failed");
                 }
+                state.record_transport_event(TransportConnectivityEvent::Disconnected);
                 if state.shutdown.is_requested() {
                     break;
                 }
+                state.record_transport_event(TransportConnectivityEvent::Reconnecting);
             }
             Err(error) => {
+                state.record_transport_event(TransportConnectivityEvent::ConnectFailed);
                 tracing::warn!(error = %error, "outbound transport connect failed; retrying");
             }
         }

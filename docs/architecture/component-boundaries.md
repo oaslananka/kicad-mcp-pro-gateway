@@ -34,11 +34,11 @@ apps/cli      --local IPC-->  apps/daemon
 | Crate | Responsibility | Must not do |
 |---|---|---|
 | `protocol` | Wire types shared across daemon/CLI/desktop IPC and the future cloud transport: envelopes, versioning, pairing/session DTOs | No business logic, no I/O |
-| `core` | Strongly-typed domain IDs/models, error taxonomy, `Clock` abstraction | No I/O, no KiCad knowledge |
+| `core` | Strongly-typed domain IDs/models (including the `AccessGrant`/`AuthorizationLease` authorization model and the legacy `Session` adapter), error taxonomy, `Clock` abstraction | No I/O, no KiCad knowledge, no transport state |
 | `identity` | Device keypair generation, secure-storage abstraction, fingerprinting, signing | No session/workspace logic |
 | `workspace` | Authorized workspace records, canonical path boundary enforcement | No capability/risk logic |
-| `policy` | Capability/profile/risk model, `ToolCapabilityResolver`, deterministic policy evaluator | No I/O, no network, no KiCad tool implementations |
-| `sessions` | Session state machine, TTL, approvals, revoke/pause/resume | No transport, no policy decisions (consumes `policy`) |
+| `policy` | Capability/profile/risk model, `ToolCapabilityResolver`, deterministic policy evaluator (decides on an `AccessGrant`) | No I/O, no network, no KiCad tool implementations, no transport state |
+| `sessions` | Authorization state machine (`AccessGrant`/`AuthorizationLease`), legacy session state machine, TTL, approvals, revoke/pause/resume, persistence, legacy-row migration, and the transport-connectivity fold | No policy decisions (consumes `policy`); the authorization machine has no transport events at all |
 | `storage` | SQLite persistence + migrations for all non-secret state | No secret material ever written in plaintext |
 | `audit` | Structured audit event creation/query on top of `storage` | No policy decisions |
 | `transport` | Transport trait, mock transport, protocol envelope, reconnect/backoff | No vendor-specific cloud implementation (future work) |

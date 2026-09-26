@@ -7,6 +7,7 @@
 
 pub mod approval;
 pub mod audit;
+pub mod authorization;
 pub mod capability;
 pub mod clock;
 pub mod config;
@@ -20,6 +21,11 @@ pub mod transport_state;
 
 pub use approval::{ApprovalDecision, ApprovalRequest};
 pub use audit::{ApprovalDecisionKind, AuditEvent, ExecutionStatus, PolicyResultKind};
+pub use authorization::{
+    grant_from_legacy_session, AccessGrant, AuthorizationError, AuthorizationLease,
+    AuthorizationPrincipal, AuthorizationStatus, GrantKind, GrantRequest, LeaseRequest,
+    LegacySessionMappingError, PrincipalAssurance,
+};
 pub use capability::{Capability, CapabilityProfile, CapabilitySet};
 pub use clock::{Clock, SystemClock};
 pub use config::{
@@ -29,7 +35,8 @@ pub use config::{
 pub use device::{DeviceFingerprint, DeviceIdentity, DevicePublicKey};
 pub use error::CompanionError;
 pub use ids::{
-    AccountId, CheckpointId, DeviceId, IdParseError, OperationId, SessionId, TaskId, WorkspaceId,
+    AccountId, CheckpointId, DeviceId, GrantId, IdParseError, LeaseId, OperationId, SessionId,
+    TaskId, WorkspaceId,
 };
 pub use operation::{OperationError, OperationRequest, OperationResult};
 pub use risk::RiskLevel;
