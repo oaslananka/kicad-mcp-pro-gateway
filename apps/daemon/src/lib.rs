@@ -87,9 +87,17 @@ fn build_state_from_parts(
             "transport-era session rows mapped onto explicit authorization grants"
         );
     }
+    // One line per refused row, without the row's identity: `refused` is
+    // "<session id>: <reason>", and a session id is a capability identifier
+    // that must not become a log line. The rows themselves are still listed
+    // verbatim in the startup migration report and stay in `sessions`.
     for refused in &migration.refused_session_ids {
+        let reason = refused
+            .split_once(": ")
+            .map(|(_, reason)| reason)
+            .unwrap_or("unclassified");
         tracing::error!(
-            session = %refused,
+            reason,
             "legacy session row could not be interpreted as authorization; it carries no authority"
         );
     }
