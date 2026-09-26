@@ -70,3 +70,6 @@ policy layer also bounds its requested lifetime by the local profile/risk TTL
 ceilings documented in [Authorization TTL policy](../security/authorization-ttl.md).
 The policy-bounded `expires_at` is what the approver sees and what is durably
 persisted.
+
+## References
+- [Outbound Relay Security Contract](../security/outbound-relay-contract.md)

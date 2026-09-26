@@ -55,3 +55,6 @@
 The [security review checklist](../../README.md#security-review-checklist)
 in the README is the running acceptance gate for this threat model and is
 re-verified before any release claim.
+
+## References
+- [Outbound Relay Security Contract](./outbound-relay-contract.md)

@@ -1,0 +1,57 @@
+[
+  {
+    "file": "replay.json",
+    "abuse_case": "AC1",
+    "description": "Replay of a captured operation.request message"
+  },
+  {
+    "file": "duplicate.json",
+    "abuse_case": "AC1",
+    "description": "Duplicate operation.request with the same message_id within the replay validity window"
+  },
+  {
+    "file": "out_of_order.json",
+    "abuse_case": "AC1",
+    "description": "Two independent operation.request envelopes whose timestamps are out of transport arrival order; ordering must be handled deterministically"
+  },
+  {
+    "file": "stale_timestamp.json",
+    "abuse_case": "AC1",
+    "description": "operation.request whose timestamp is outside the replay validity window and must be rejected without processing or caching"
+  },
+  {
+    "file": "oversized.json",
+    "abuse_case": "AC3",
+    "description": "Envelope with payload exceeding MAX_MESSAGE_BYTES"
+  },
+  {
+    "file": "invalid_envelope.json",
+    "abuse_case": "AC3, AC4",
+    "description": "Malformed JSON envelope"
+  },
+  {
+    "file": "unknown_message_type.json",
+    "abuse_case": "AC4",
+    "description": "Envelope with message_type not in the V1 registry"
+  },
+  {
+    "file": "mismatched_device_id.json",
+    "abuse_case": "AC5",
+    "description": "session.request with device_id not matching the Gateway's persistent identity"
+  },
+  {
+    "file": "unapproved_operation.json",
+    "abuse_case": "AC6",
+    "description": "operation.request for a session that has not been approved by the local user"
+  },
+  {
+    "file": "post_reboot_session.json",
+    "abuse_case": "AC7",
+    "description": "Request presenting pre-restart session authority after Gateway restart for durable replay and local lease/principal-scope conformance"
+  },
+  {
+    "file": "flood.json",
+    "abuse_case": "AC2, AC8",
+    "description": "High-volume message stream to test rate limiting and connection handling"
+  }
+]

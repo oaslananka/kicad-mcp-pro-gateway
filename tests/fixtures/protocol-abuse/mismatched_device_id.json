@@ -1,0 +1,16 @@
+{
+  "protocol_version": "0.1.0",
+  "message_id": "01ARZ3NDEKTSV4RRFFQ69G5FD0",
+  "message_type": "session_request",
+  "device_id": "dev_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+  "timestamp": "2026-09-26T15:21:52Z",
+  "correlation_id": "01ARZ3NDEKTSV4RRFFQ69G5FD1",
+  "payload": {
+    "requested_workspaces": [
+      "ws_01ARZ3NDEKTSV4RRFFQ69G5FD2"
+    ],
+    "requested_capabilities": [
+      "kicad.version"
+    ]
+  }
+}
