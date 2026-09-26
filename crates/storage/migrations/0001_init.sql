@@ -1,5 +1,9 @@
 -- Non-secret local state. Private key material never lives in this
 -- database; see docs/security/secure-storage.md.
+--
+-- Dialect: SQLite, applied by `rusqlite_migration` at daemon start. Transact-SQL
+-- annotations from hosted static analysis are dispositions, not defects; see
+-- CONTRIBUTING.md and crates/storage/tests/migrations.rs.
 
 CREATE TABLE device (
     device_id TEXT PRIMARY KEY,

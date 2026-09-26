@@ -6,6 +6,15 @@
 -- pre-migration revocation/TTL history and the audit references that point
 -- at a `session_id` all keep resolving. `access_grants` is what authority
 -- decisions are made from; see docs/architecture/session-lifecycle.md.
+--
+-- Dialect: SQLite, applied by `rusqlite_migration` at daemon start. Hosted
+-- static analysis also runs its Transact-SQL rules over every `.sql` file, so
+-- it annotates this one for a mandatory identifier-quoting session option and
+-- for a compression clause on each CREATE TABLE. Those are dispositions, not
+-- defects: neither feature exists in SQLite and each is a syntax error that
+-- aborts this migration, failing the daemon closed at startup instead of
+-- running. See CONTRIBUTING.md, and the test
+-- sql_server_only_ddl_is_rejected_rather_than_added_to_a_sqlite_migration.
 
 CREATE TABLE access_grants (
     grant_id TEXT PRIMARY KEY,

@@ -178,3 +178,43 @@ fn data_persists_across_storage_reopens() {
         .unwrap();
     assert_eq!(name, "Test WS");
 }
+
+/// The migrations are SQLite DDL applied by `rusqlite_migration`, but hosted
+/// static analysis also runs its Transact-SQL rules over every `.sql` file, so
+/// it annotates the authorization migration for a mandatory identifier-quoting
+/// session option near the top of the file and for a compression clause on
+/// each `CREATE TABLE`. Neither feature exists in SQLite: each is a syntax
+/// error that aborts the migration, which fails the daemon closed at startup
+/// rather than running. Those annotations are dispositions, not defects, and
+/// this test is what keeps them from being "fixed" into a migration that
+/// cannot start.
+#[test]
+fn sql_server_only_ddl_is_rejected_rather_than_added_to_a_sqlite_migration() {
+    const MIGRATION: &str = include_str!("../migrations/0002_authorization.sql");
+
+    let dir = tempfile::tempdir().unwrap();
+    let open = |name: &str| {
+        rusqlite::Connection::open(dir.path().join(name)).expect("a fresh SQLite database opens")
+    };
+
+    open("applied.db")
+        .execute_batch(MIGRATION)
+        .expect("the migration applies as written");
+
+    let identifier_quoting = format!("SET QUOTED_IDENTIFIER ON;\n{MIGRATION}");
+    let compression = format!(
+        "{MIGRATION}\nCREATE TABLE probe (id TEXT PRIMARY KEY) WITH (DATA_COMPRESSION = PAGE);"
+    );
+    for (construct, sql) in [
+        ("identifier-quoting session option", identifier_quoting),
+        ("table compression clause", compression),
+    ] {
+        let error = open(&format!("{}.db", construct.replace([' ', '-'], "_")))
+            .execute_batch(&sql)
+            .expect_err("SQLite must refuse a Transact-SQL-only construct");
+        assert!(
+            error.to_string().contains("syntax error"),
+            "the {construct} must be refused as invalid syntax, got: {error}"
+        );
+    }
+}
