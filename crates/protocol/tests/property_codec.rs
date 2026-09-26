@@ -10,6 +10,7 @@
 //! longer local fuzz lane and for how to reproduce a failure from its
 //! minimized seed.
 
+use companion_core::DeviceId;
 use companion_protocol::{
     read_message, write_message, CodecError, Envelope, IpcRequest, MessageType, MAX_MESSAGE_BYTES,
     PROTOCOL_VERSION,
@@ -17,14 +18,23 @@ use companion_protocol::{
 use proptest::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::str::FromStr;
 
-/// One runtime per property case, built on the current thread. The codec never
-/// needs cross-thread concurrency, and a multi-threaded runtime would spawn a
-/// worker pool for every generated case.
-fn current_thread_runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
+thread_local! {
+    /// One current-thread runtime per test thread, reused by every case in
+    /// every property that runs on it. The codec's I/O needs a tokio reactor,
+    /// so a bare `futures::executor::block_on` cannot stand in for it, and a
+    /// multi-threaded runtime would spawn a worker pool per case; a
+    /// current-thread runtime drives the same futures with no worker threads
+    /// and no extra descriptors beyond the reactor's own.
+    static RUNTIME: tokio::runtime::Runtime = tokio::runtime::Builder::new_current_thread()
         .build()
-        .expect("current-thread runtime")
+        .expect("current-thread runtime");
+}
+
+/// Drives `future` to completion on the calling thread's runtime.
+fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    RUNTIME.with(|runtime| runtime.block_on(future))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -51,8 +61,10 @@ fn payload_overhead() -> usize {
         .len()
 }
 
-/// Every `MessageType`, so a new variant cannot be added without being
-/// covered here.
+/// Every `MessageType` this build knows, enumerated because `Arbitrary` cannot
+/// be derived for it from an integration test — both the trait and the type are
+/// foreign here, and a wire enum must not grow a test-only derive. A new
+/// variant has to be added to this list.
 const ALL_MESSAGE_TYPES: [MessageType; 10] = [
     MessageType::PairingBegin,
     MessageType::PairingChallenge,
@@ -254,12 +266,9 @@ fn first_frame(bytes: &[u8]) -> &[u8] {
 
 /// Reads exactly one frame and asserts the codec agreed with a plain
 /// `serde_json::from_slice` of the same line, on both success and failure.
-fn assert_next_frame(
-    runtime: &tokio::runtime::Runtime,
-    cursor: &mut std::io::Cursor<Vec<u8>>,
-) -> Result<(), TestCaseError> {
+fn assert_next_frame(cursor: &mut std::io::Cursor<Vec<u8>>) -> Result<(), TestCaseError> {
     let before = cursor.position() as usize;
-    let result: Result<Value, _> = runtime.block_on(read_message(cursor));
+    let result: Result<Value, _> = block_on(read_message(cursor));
     let after = cursor.position() as usize;
     let remaining = &cursor.get_ref()[before..];
 
@@ -320,13 +329,12 @@ proptest! {
         }
         framed.extend_from_slice(&trailer);
 
-        let runtime = current_thread_runtime();
         let mut cursor = std::io::Cursor::new(framed);
 
         // One read per frame, plus one for whatever the peer left buffered.
         // Nothing is ever merged across a delimiter and nothing is skipped.
         for _ in 0..=lines.len() {
-            assert_next_frame(&runtime, &mut cursor)?;
+            assert_next_frame(&mut cursor)?;
         }
     }
 
@@ -337,10 +345,9 @@ proptest! {
         text in framed_text(),
     ) {
         let payload = TestPayload { values, number, text };
-        let runtime = current_thread_runtime();
 
         let mut buf = Vec::new();
-        runtime.block_on(async { write_message(&mut buf, &payload).await })?;
+        block_on(async { write_message(&mut buf, &payload).await })?;
         prop_assert!(
             buf.len() <= MAX_MESSAGE_BYTES + 1,
             "framed message exceeded the limit: {}",
@@ -348,7 +355,7 @@ proptest! {
         );
 
         let mut cursor = std::io::Cursor::new(buf);
-        let read_back: TestPayload = runtime.block_on(read_message(&mut cursor))?;
+        let read_back: TestPayload = block_on(read_message(&mut cursor))?;
         prop_assert_eq!(payload, read_back);
     }
 
@@ -359,12 +366,17 @@ proptest! {
             prop::sample::select(historical_framing_inputs()),
         ],
     ) {
-        let runtime = current_thread_runtime();
         let mut cursor = std::io::Cursor::new(data);
 
-        let result: Result<Value, _> = runtime.block_on(read_message(&mut cursor));
+        let result: Result<Value, _> = block_on(read_message(&mut cursor));
         match result {
             Ok(_) => {}
+            // The framing is newline-delimited JSON with no length header and
+            // the reader is an in-memory cursor, so there is no `Io` variant to
+            // allow for: a stream that ends mid-message surfaces as
+            // `ConnectionClosed` when nothing was buffered, and as a JSON error
+            // otherwise. Accepting `CodecError::Io` here would let a genuine
+            // unexpected-error path pass as expected behaviour.
             Err(error) => prop_assert!(
                 matches!(error, CodecError::Json(_) | CodecError::ConnectionClosed),
                 "input below the size limit must not fail with {error}"
@@ -394,6 +406,7 @@ proptest! {
     #[test]
     fn an_envelope_round_trips_through_the_codec_without_losing_a_field(
         message_type in 0..ALL_MESSAGE_TYPES.len(),
+        device_id in prop::option::of(device_ids()),
         correlation_id in framed_text(),
         timestamp in prop::option::of(framed_text()),
         text in framed_text(),
@@ -402,18 +415,18 @@ proptest! {
             ALL_MESSAGE_TYPES[message_type],
             json!({ "data": text, "nested": [1, 2, { "deep": true }] }),
         )
-        .with_device_id(companion_core::DeviceId::new())
         .with_correlation_id(correlation_id);
-        // Assigned directly: the field is opaque metadata on the wire, so the
-        // round trip has to carry whatever text arrived, not a re-derived one.
+        // Assigned rather than generated: `device_id` and `timestamp` are
+        // optional wire metadata, so the round trip has to carry whatever the
+        // peer sent — including nothing at all.
+        envelope.device_id = device_id;
         envelope.timestamp = timestamp;
 
-        let runtime = current_thread_runtime();
         let mut buf = Vec::new();
-        runtime.block_on(async { write_message(&mut buf, &envelope).await })?;
+        block_on(async { write_message(&mut buf, &envelope).await })?;
 
         let mut cursor = std::io::Cursor::new(buf);
-        let read_back: Envelope = runtime.block_on(read_message(&mut cursor))?;
+        let read_back: Envelope = block_on(read_message(&mut cursor))?;
         prop_assert_eq!(&envelope, &read_back);
     }
 }
@@ -424,7 +437,6 @@ proptest! {
 /// partial frame is what the peer would then be handed to parse.
 #[test]
 fn write_message_refuses_the_first_byte_over_the_limit_without_emitting_a_frame() {
-    let runtime = current_thread_runtime();
     let overhead = payload_overhead();
 
     let at_limit = payload_with_text("a".repeat(MAX_MESSAGE_BYTES - overhead));
@@ -436,8 +448,7 @@ fn write_message_refuses_the_first_byte_over_the_limit_without_emitting_a_frame(
     );
 
     let mut buf = Vec::new();
-    runtime
-        .block_on(async { write_message(&mut buf, &at_limit).await })
+    block_on(async { write_message(&mut buf, &at_limit).await })
         .expect("a message of exactly the limit is writable");
     assert_eq!(
         buf.len(),
@@ -446,14 +457,13 @@ fn write_message_refuses_the_first_byte_over_the_limit_without_emitting_a_frame(
     );
 
     let mut cursor = std::io::Cursor::new(&buf);
-    let read_back: TestPayload = runtime
-        .block_on(read_message(&mut cursor))
-        .expect("a message at the limit round trips");
+    let read_back: TestPayload =
+        block_on(read_message(&mut cursor)).expect("a message at the limit round trips");
     assert_eq!(at_limit, read_back);
 
     let over_limit = payload_with_text("a".repeat(MAX_MESSAGE_BYTES - overhead + 1));
     let mut rejected = Vec::new();
-    let result = runtime.block_on(write_message(&mut rejected, &over_limit));
+    let result = block_on(write_message(&mut rejected, &over_limit));
     assert!(matches!(
         result,
         Err(CodecError::MessageTooLarge { max }) if max == MAX_MESSAGE_BYTES
@@ -475,10 +485,9 @@ proptest! {
     fn oversized_input_is_refused_after_reading_only_the_limit(
         excess in prop::sample::select(vec![1usize, 2, 7, 64, 4096]),
     ) {
-        let runtime = current_thread_runtime();
         let mut cursor = std::io::Cursor::new(vec![b'a'; MAX_MESSAGE_BYTES + excess]);
 
-        let result: Result<Value, _> = runtime.block_on(read_message(&mut cursor));
+        let result: Result<Value, _> = block_on(read_message(&mut cursor));
         match result {
             Err(CodecError::MessageTooLarge { max }) => {
                 prop_assert_eq!(max, MAX_MESSAGE_BYTES);
@@ -498,6 +507,44 @@ proptest! {
 /// more spellings than this — every accepted spelling has to normalize back to
 /// this exact value, or two spellings could end up denoting two identities.
 const SESSION_ID: &str = "sess_01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
+/// Crockford base32 without the ambiguous letters, in both cases: a ULID body
+/// is case-insensitive, so both are legal spellings of the same value.
+const CROCKFORD: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZabcdefghjkmnpqrstvwxyz";
+
+/// The first characters a canonical ULID body can start with: the 128-bit value
+/// is carried by 26 five-bit characters, so the first one only has three
+/// significant bits and minted ids always start in `0..=7`.
+const CANONICAL_FIRST: &str = "01234567";
+
+/// Arbitrary device ids on the wire, so the envelope round trip has to carry
+/// whatever id the peer sent rather than a freshly generated one.
+fn device_ids() -> impl Strategy<Value = DeviceId> {
+    let first = prop::sample::select(
+        CANONICAL_FIRST
+            .chars()
+            .chain(CROCKFORD.chars())
+            .collect::<Vec<char>>(),
+    );
+    let rest = prop::collection::vec(
+        prop::sample::select(CROCKFORD.chars().collect::<Vec<char>>()),
+        25..=25,
+    );
+    (first, rest).prop_map(|(first, rest): (char, Vec<char>)| {
+        let body: String = std::iter::once(first).chain(rest).collect();
+        DeviceId::from_str(&format!("dev_{body}")).expect("26 Crockford characters are a ULID")
+    })
+}
+
+/// Spellings of one id body that a peer can put on the wire: the canonical one
+/// and the same body in the other case, since a ULID body is case-insensitive
+/// Crockford base32.
+fn id_spellings(prefix: &str, body: &str) -> Vec<String> {
+    vec![
+        format!("{prefix}{body}"),
+        format!("{prefix}{}", body.to_lowercase()),
+    ]
+}
 
 #[test]
 fn a_canonical_session_id_decodes_into_the_matching_request() {
@@ -532,7 +579,51 @@ fn a_lowercase_session_id_names_the_same_session_as_the_canonical_spelling() {
     assert_eq!(canonical, lowercase);
 }
 
+/// 26 Crockford characters are 130 bits and a ULID is 128, so the first
+/// character only carries three significant bits: an id body whose first
+/// character is above `7` decodes to the identity spelled with that character
+/// reduced modulo 8 rather than being rejected. Every id this codebase mints
+/// has a first character in `0..=7`, so this only widens the set of spellings
+/// that reach an existing identity. It is a property of the ULID wire format,
+/// not a Gateway decision, so it is pinned here; rejecting it in `typed_id!`
+/// would narrow the accepted input space and is a separate hardening change.
+#[test]
+fn an_id_whose_first_character_does_not_fit_the_body_decodes_to_the_truncated_identity() {
+    let aliased = DeviceId::from_str("dev_81ARZ3NDEKTSV4RRFFQ69G5FAV").expect("decodes");
+    let canonical = DeviceId::from_str("dev_01ARZ3NDEKTSV4RRFFQ69G5FAV").expect("decodes");
+
+    assert_eq!(aliased, canonical);
+    assert_eq!(aliased.to_string(), "dev_01ARZ3NDEKTSV4RRFFQ69G5FAV");
+}
+
 proptest! {
+    /// Every spelling of an id that decodes has to denote the same identity,
+    /// and the canonical spelling always decodes. A peer can send any case, so
+    /// two spellings of one id must never end up as two identities.
+    #[test]
+    fn every_id_spelling_that_decodes_denotes_the_same_identity(
+        device_id in device_ids(),
+    ) {
+        let canonical = device_id.to_string();
+        let body = canonical["dev_".len()..].to_string();
+
+        prop_assert_eq!(
+            DeviceId::from_str(&canonical)
+                .expect("a canonical id decodes")
+                .to_string(),
+            canonical.clone()
+        );
+        for spelling in id_spellings("dev_", &body) {
+            let Ok(decoded) = DeviceId::from_str(&spelling) else {
+                continue;
+            };
+            prop_assert!(
+                decoded.to_string() == canonical,
+                "{spelling} decoded to a different identity"
+            );
+        }
+    }
+
     #[test]
     fn an_unknown_local_ipc_request_tag_never_decodes(
         tag in prop_oneof![
