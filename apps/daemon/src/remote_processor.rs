@@ -152,9 +152,11 @@ async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
         // grant's deadline or widen its scope. An identical live request for
         // the same device/principal/workspace/scope is dropped instead.
         if let Some(existing) = state.authorization_repo.find_live_request(&grant)? {
+            // No grant/session id in the log: these are capability
+            // identifiers, and the append-only audit store already holds the
+            // correlation. See docs/development/daemon-lifecycle.md on not
+            // creating a secret-bearing log channel.
             tracing::info!(
-                grant_id = %existing.grant_id,
-                subject_session_id = %existing.subject_session_id,
                 expires_at = %existing.expires_at,
                 "duplicate or replayed session request ignored; existing grant untouched"
             );
@@ -164,8 +166,6 @@ async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
         state.session_repo.save(&session)?;
         state.authorization_repo.save_grant(&grant)?;
         tracing::info!(
-            grant_id = %grant.grant_id,
-            session_id = %session.session_id,
             requested_ttl_minutes = effective_ttl.requested_minutes,
             effective_ttl_minutes = effective_ttl.effective_minutes,
             expires_at = %grant.expires_at,
@@ -223,7 +223,9 @@ async fn handle_operation_request(
         .map(|grant| grant.device_id)
         .or_else(|| session.as_ref().map(|session| session.device_id));
     if bound_device != Some(local_device_id) {
-        tracing::warn!(session_id = %request.session_id, "operation request device binding rejected");
+        // Deliberately without the session id: a rejected binding must not
+        // turn a log line into a usable capability identifier.
+        tracing::warn!("operation request device binding rejected");
         return;
     }
 

@@ -5,6 +5,7 @@
 //! kicad-mcp-pro; that only ever happens through the policy-gated
 //! operation path built in later phases.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use companion_core::{
@@ -308,7 +309,10 @@ async fn list_sessions(state: &Arc<DaemonState>) -> IpcResponse {
             .authorization_repo
             .list_all_grants()
             .map_err(DaemonError::Authorization)?;
-        let statuses: Vec<(SessionId, AuthorizationStatus)> = grants
+        // Keyed lookup, not a scan per session: correlating N sessions with M
+        // grants must stay linear, because this runs on every status/list
+        // request and both counts are attacker-influenceable over time.
+        let statuses: HashMap<SessionId, AuthorizationStatus> = grants
             .into_iter()
             .map(|grant| (grant.subject_session_id, grant.status))
             .collect();
@@ -321,9 +325,8 @@ async fn list_sessions(state: &Arc<DaemonState>) -> IpcResponse {
                 .iter()
                 .map(|session| {
                     let authorization_status = grants
-                        .iter()
-                        .find(|(subject, _)| *subject == session.session_id)
-                        .map(|(_, status)| format!("{:?}", status).to_lowercase())
+                        .get(&session.session_id)
+                        .map(|status| format!("{status:?}").to_lowercase())
                         .unwrap_or_else(|| "none".to_string());
                     to_session_view(
                         session,

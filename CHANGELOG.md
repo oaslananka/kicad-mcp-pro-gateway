@@ -38,6 +38,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Local IPC Contract Version 2**: The desktop/CLI IPC contract version is now `2`, bumped in the
+  same change that added `ListAccessGrants`/`ListAuthorizationLeases` and the separate
+  authorization/transport view fields. Version 1 is rejected by the readiness handshake, so a client
+  that cannot see authorization state separately from transport connectivity is retired instead of
+  talking to a daemon whose views it would misread; a wrong-protocol endpoint still receives no
+  lifecycle or privileged request and no alternate endpoint is tried. The version history lives on
+  `companion_protocol::LOCAL_IPC_PROTOCOL_VERSION` and is pinned by a test.
 - **Companion → Gateway identity migration**: renamed the public product identity from KiCad MCP Pro Companion (`kicad-mcp-pro-companion`) to KiCad MCP Pro Gateway (`kicad-mcp-pro-gateway`) across README, SECURITY, contributing/architecture/protocol/development docs, Cargo repository & package metadata, CLI/daemon/desktop package and binary names, Tauri product title & bundle identifier, release workflow artifact and release titles, data directory, IPC socket/pipe prefix, keyring service label, environment variable prefix, and the MCP `clientInfo.name`. The pre-release compatibility decision and the full old → new mapping are recorded in `docs/development/identity-migration.md`; historical design records under `docs/superpowers/` keep their original names behind an explicit historical-record banner.
 - Updated GitHub Actions CI workflow to run frontend tests (`pnpm test`).
 - Reconciled documentation maturity and status claims to reflect pre-alpha / unreleased development state.

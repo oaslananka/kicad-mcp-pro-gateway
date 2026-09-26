@@ -13,7 +13,16 @@ use serde::{Deserialize, Serialize};
 pub const DAEMON_PRODUCT_ID: &str = "kicad-mcp-gateway";
 /// Version of the local desktop/CLI IPC contract. The major version is
 /// checked before any privileged request is forwarded.
-pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 1;
+///
+/// Bump this whenever the contract changes shape — a new request or response
+/// variant, or a field a client must read to avoid a wrong conclusion.
+/// History:
+/// - 1: status/approve/deny/pause/resume/revoke, workspace CRUD, audit read.
+/// - 2: `ListAccessGrants`/`ListAuthorizationLeases` and the authorization
+///   view. A version-1 client cannot see that authority is separate from
+///   transport connectivity, so it must be retired rather than left to run
+///   against a daemon that answers with views it will misread.
+pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DaemonIdentityView {
@@ -308,6 +317,32 @@ pub enum IpcResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A client and a daemon that disagree on the contract must never reach a
+    /// privileged request, and the version is the only thing that decides it.
+    /// Pinned so a contract change cannot ship without a deliberate bump —
+    /// and so a bump is a reviewable diff, not a silent capability change.
+    #[test]
+    fn a_changed_local_ipc_contract_bumps_the_version_it_is_checked_against() {
+        assert_eq!(
+            LOCAL_IPC_PROTOCOL_VERSION, 2,
+            "2 = the AccessGrant/AuthorizationLease contract; bump this, and this test, \
+             whenever a request/response variant or a client-relevant field changes"
+        );
+        let previous_contract = DaemonIdentityView {
+            product_id: DAEMON_PRODUCT_ID.to_string(),
+            protocol_version: LOCAL_IPC_PROTOCOL_VERSION - 1,
+            daemon_version: "0.1.0".to_string(),
+            instance_id: "01J00000000000000000000000".to_string(),
+        };
+        assert!(
+            matches!(
+                previous_contract.validate_for_client(),
+                Err(DaemonIdentityError::ProtocolMismatch { .. })
+            ),
+            "a daemon from the previous contract must be refused, not talked to"
+        );
+    }
 
     #[test]
     fn request_round_trips_through_json() {

@@ -94,7 +94,8 @@ process handle.
 The local IPC readiness response contains:
 
 - stable product ID `kicad-mcp-gateway`;
-- local IPC contract version;
+- local IPC contract version (currently `2`; the history of what each version
+  added lives on `companion_protocol::LOCAL_IPC_PROTOCOL_VERSION`);
 - packaged daemon version;
 - a random per-process instance ID.
 
