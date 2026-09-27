@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::watch;
 
 use companion_audit::AuditRepository;
+use companion_checkpoints::FilesystemCheckpointStore;
 use companion_core::{Capability, Clock, OperationId, OperationRequest, RiskLevel, TransportState};
 use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig};
 use companion_identity::DeviceIdentityStore;
@@ -81,6 +82,10 @@ pub struct DaemonState {
     pub authorization_repo: Arc<AuthorizationRepository>,
     pub policy_engine: Arc<PolicyEngine<TomlToolRegistry>>,
     pub audit_repo: Arc<AuditRepository>,
+    /// Checkpoint store rooted at `<data_dir>/checkpoints`, held here with the
+    /// other repositories so startup recovery and later restores read the same
+    /// root instead of each re-deriving it.
+    pub checkpoint_store: Arc<FilesystemCheckpointStore>,
     pub core_bridge: Arc<CoreBridgeClient>,
     /// One-shot status probes build a separate client from this config so
     /// health checks cannot mutate the operation bridge's MCP session.
