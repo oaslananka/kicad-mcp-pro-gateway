@@ -8,6 +8,12 @@ pub enum CheckpointError {
     WorkspaceMismatch,
     #[error("checkpoint snapshot data is missing on disk; refusing to restore")]
     SnapshotMissing,
+    /// A row recorded a snapshot path that is not absolute, so the tree it
+    /// names cannot be located without guessing a base directory. Guessing
+    /// would read the daemon's working directory instead of the data dir, so
+    /// the row is treated as corrupt rather than resolved.
+    #[error("checkpoint snapshot path is not absolute; the snapshot cannot be located")]
+    SnapshotPathNotAbsolute,
     #[error("filesystem error: {0}")]
     Io(String),
     #[error("storage error: {0}")]
@@ -20,6 +26,7 @@ impl CompanionError for CheckpointError {
             CheckpointError::NotFound => "CHECKPOINT_NOT_FOUND",
             CheckpointError::WorkspaceMismatch => "CHECKPOINT_WORKSPACE_MISMATCH",
             CheckpointError::SnapshotMissing => "CHECKPOINT_SNAPSHOT_MISSING",
+            CheckpointError::SnapshotPathNotAbsolute => "CHECKPOINT_SNAPSHOT_PATH_NOT_ABSOLUTE",
             CheckpointError::Io(_) => "CHECKPOINT_IO",
             CheckpointError::Storage(_) => "CHECKPOINT_STORAGE",
         }

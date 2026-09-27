@@ -58,10 +58,11 @@ impl FilesystemCheckpointStore {
             .map_err(|e| CheckpointError::Io(e.to_string()))?;
 
         let checkpoint_id = CheckpointId::new();
-        let dest = self
-            .checkpoints_root
-            .join(workspace.workspace_id.to_string())
-            .join(checkpoint_id.to_string());
+        let dest = snapshot_destination(
+            &self.checkpoints_root,
+            workspace.workspace_id,
+            checkpoint_id,
+        )?;
 
         copy_dir_recursive(&workspace.canonical_root, &dest, &self.checkpoints_root)
             .map_err(|e| CheckpointError::Io(e.to_string()))?;
@@ -83,51 +84,62 @@ impl FilesystemCheckpointStore {
         &self,
         workspace_id: WorkspaceId,
     ) -> Result<Vec<CheckpointMetadata>, CheckpointError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| CheckpointError::Storage("mutex poisoned".into()))?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT checkpoint_id, workspace_id, session_id, task_id, created_at, root_snapshot_path \
-                 FROM checkpoints WHERE workspace_id = ?1 ORDER BY created_at DESC",
-            )
-            .map_err(|e| CheckpointError::Storage(e.to_string()))?;
-        let rows = stmt
-            .query_map(rusqlite::params![workspace_id.to_string()], row_to_raw)
-            .map_err(|e| CheckpointError::Storage(e.to_string()))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(parse_raw(
-                row.map_err(|e| CheckpointError::Storage(e.to_string()))?,
-            )?);
-        }
-        Ok(out)
+        self.query_checkpoints(Some(workspace_id))
     }
 
     pub fn list_all(&self) -> Result<Vec<CheckpointMetadata>, CheckpointError> {
-        let conn = self
-            .storage
-            .connection()
-            .lock()
-            .map_err(|_| CheckpointError::Storage("mutex poisoned".into()))?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT checkpoint_id, workspace_id, session_id, task_id, created_at, root_snapshot_path \
-                 FROM checkpoints ORDER BY created_at DESC",
-            )
-            .map_err(|e| CheckpointError::Storage(e.to_string()))?;
-        let rows = stmt
-            .query_map([], row_to_raw)
-            .map_err(|e| CheckpointError::Storage(e.to_string()))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(parse_raw(
-                row.map_err(|e| CheckpointError::Storage(e.to_string()))?,
-            )?);
+        self.query_checkpoints(None)
+    }
+
+    /// Every checkpoint row whose snapshot cannot be used for a restore,
+    /// paired with the reason. Startup recovery reads this to fail closed
+    /// instead of running with a recovery guarantee it cannot honour.
+    ///
+    /// A row is unusable either because its snapshot directory is gone, or
+    /// because the recorded path is relative and therefore names no knowable
+    /// tree (see [`FilesystemCheckpointStore::snapshot_path`]).
+    pub fn unusable_snapshots(
+        &self,
+    ) -> Result<Vec<(CheckpointId, WorkspaceId, CheckpointError)>, CheckpointError> {
+        let mut unusable = Vec::new();
+        for metadata in self.list_all()? {
+            if let Err(reason) = self.snapshot_unusable_reason(&metadata) {
+                unusable.push((metadata.checkpoint_id, metadata.workspace_id, reason));
+            }
         }
-        Ok(out)
+        Ok(unusable)
+    }
+
+    /// Why `metadata`'s snapshot cannot be used for a restore, or `Ok(())`
+    /// when it can. Same two conditions [`FilesystemCheckpointStore::restore`]
+    /// refuses on, so startup rejects exactly the rows a restore would reject.
+    fn snapshot_unusable_reason(
+        &self,
+        metadata: &CheckpointMetadata,
+    ) -> Result<(), CheckpointError> {
+        let snapshot_path = self.snapshot_path(metadata)?;
+        if snapshot_path.exists() {
+            Ok(())
+        } else {
+            Err(CheckpointError::SnapshotMissing)
+        }
+    }
+
+    /// The on-disk directory backing `metadata`'s snapshot.
+    ///
+    /// Rows written by [`FilesystemCheckpointStore::create`] hold an absolute
+    /// path. A row written while the data dir was configured as a relative
+    /// CLI override (`--data-dir ./state`) holds a relative one, and joining
+    /// it onto `checkpoints_root` would be wrong too — the stored value
+    /// already carries that prefix. Such a row is reported as corrupt instead
+    /// of being resolved against whichever directory the daemon happens to be
+    /// started in, which would silently check and restore the wrong tree.
+    pub fn snapshot_path(&self, metadata: &CheckpointMetadata) -> Result<PathBuf, CheckpointError> {
+        if metadata.root_snapshot_path.is_absolute() {
+            Ok(metadata.root_snapshot_path.clone())
+        } else {
+            Err(CheckpointError::SnapshotPathNotAbsolute)
+        }
     }
 
     pub fn get(
@@ -165,14 +177,15 @@ impl FilesystemCheckpointStore {
         if metadata.workspace_id != workspace.workspace_id {
             return Err(CheckpointError::WorkspaceMismatch);
         }
-        if !metadata.root_snapshot_path.exists() {
+        let snapshot_path = self.snapshot_path(&metadata)?;
+        if !snapshot_path.exists() {
             return Err(CheckpointError::SnapshotMissing);
         }
 
         clear_dir_excluding(&workspace.canonical_root, &self.checkpoints_root)
             .map_err(|e| CheckpointError::Io(e.to_string()))?;
         copy_dir_recursive(
-            &metadata.root_snapshot_path,
+            &snapshot_path,
             &workspace.canonical_root,
             &self.checkpoints_root,
         )
@@ -185,8 +198,9 @@ impl FilesystemCheckpointStore {
     /// silently erased in aggregate.
     pub fn delete(&self, checkpoint_id: CheckpointId) -> Result<(), CheckpointError> {
         let metadata = self.get(checkpoint_id)?.ok_or(CheckpointError::NotFound)?;
-        if metadata.root_snapshot_path.exists() {
-            std::fs::remove_dir_all(&metadata.root_snapshot_path)
+        let snapshot_path = self.snapshot_path(&metadata)?;
+        if snapshot_path.exists() {
+            std::fs::remove_dir_all(&snapshot_path)
                 .map_err(|e| CheckpointError::Io(e.to_string()))?;
         }
         let conn = self
@@ -200,6 +214,42 @@ impl FilesystemCheckpointStore {
         )
         .map_err(|e| CheckpointError::Storage(e.to_string()))?;
         Ok(())
+    }
+
+    /// The one query behind both [`FilesystemCheckpointStore::list`] and
+    /// [`FilesystemCheckpointStore::list_all`]: `Some(workspace_id)` filters to
+    /// a single workspace, `None` returns every row, newest first either way.
+    fn query_checkpoints(
+        &self,
+        workspace_id: Option<WorkspaceId>,
+    ) -> Result<Vec<CheckpointMetadata>, CheckpointError> {
+        let conn = self
+            .storage
+            .connection()
+            .lock()
+            .map_err(|_| CheckpointError::Storage("mutex poisoned".into()))?;
+        // The filter is optional in the SQL and optional in the parameter list
+        // at the same time, so `?1` is bound exactly when it is referenced.
+        let sql = match workspace_id {
+            Some(_) => {
+                format!("{CHECKPOINT_COLUMNS} WHERE workspace_id = ?1 ORDER BY created_at DESC")
+            }
+            None => format!("{CHECKPOINT_COLUMNS} ORDER BY created_at DESC"),
+        };
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| CheckpointError::Storage(e.to_string()))?;
+        let filter = workspace_id.map(|id| id.to_string());
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(filter), row_to_raw)
+            .map_err(|e| CheckpointError::Storage(e.to_string()))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(parse_raw(
+                row.map_err(|e| CheckpointError::Storage(e.to_string()))?,
+            )?);
+        }
+        Ok(out)
     }
 
     fn insert_row(&self, metadata: &CheckpointMetadata) -> Result<(), CheckpointError> {
@@ -223,6 +273,29 @@ impl FilesystemCheckpointStore {
         .map_err(|e| CheckpointError::Storage(e.to_string()))?;
         Ok(())
     }
+}
+
+const CHECKPOINT_COLUMNS: &str =
+    "SELECT checkpoint_id, workspace_id, session_id, task_id, created_at, \
+     root_snapshot_path FROM checkpoints";
+
+/// Where a new snapshot for `workspace_id` is written.
+///
+/// Always absolute, including when the data dir was configured as a relative
+/// CLI override (`--data-dir ./state`). A relative stored path would name no
+/// knowable tree at read time, so it is resolved once, here, against the
+/// working directory that is known to be correct at creation.
+fn snapshot_destination(
+    checkpoints_root: &std::path::Path,
+    workspace_id: WorkspaceId,
+    checkpoint_id: CheckpointId,
+) -> Result<PathBuf, CheckpointError> {
+    std::path::absolute(
+        checkpoints_root
+            .join(workspace_id.to_string())
+            .join(checkpoint_id.to_string()),
+    )
+    .map_err(|e| CheckpointError::Io(e.to_string()))
 }
 
 struct RawRow {
@@ -413,6 +486,162 @@ mod tests {
         assert!(store.get(b.checkpoint_id).unwrap().is_some());
         assert!(!a.root_snapshot_path.exists());
         assert!(b.root_snapshot_path.exists());
+    }
+
+    #[test]
+    fn list_all_returns_every_workspaces_checkpoints_newest_first() {
+        let (store, _data_dir) = store();
+        let (workspace_a, _dir_a) = workspace_with_file("a.kicad_pcb", "a");
+        let (workspace_b, _dir_b) = workspace_with_file("b.kicad_pcb", "b");
+
+        store.create(&workspace_a, None, None).unwrap();
+        store.create(&workspace_b, None, None).unwrap();
+
+        let all = store.list_all().unwrap();
+        assert_eq!(all.len(), 2, "list_all must not filter by workspace");
+        // ORDER BY created_at DESC, so the later checkpoint is first.
+        assert!(
+            all[0].created_at >= all[1].created_at,
+            "list_all must be newest first, got {:?}",
+            all.iter().map(|m| m.created_at).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_new_snapshot_destination_is_absolute_even_for_a_relative_checkpoints_root() {
+        // A relative checkpoints root is reachable through a relative
+        // `--data-dir`. The stored path must not depend on the daemon's
+        // working directory at read time. Pure path computation: nothing is
+        // written, so this cannot leave a `relative/` tree in the source
+        // directory the way a real `create` against a relative root would.
+        let workspace_id = WorkspaceId::new();
+        let checkpoint_id = CheckpointId::new();
+
+        let destination = snapshot_destination(
+            std::path::Path::new("relative/checkpoints"),
+            workspace_id,
+            checkpoint_id,
+        )
+        .unwrap();
+
+        assert!(
+            destination.is_absolute(),
+            "snapshot destination must be absolute, got {}",
+            destination.display()
+        );
+        assert_eq!(
+            destination.file_name().unwrap().to_str().unwrap(),
+            checkpoint_id.to_string()
+        );
+        assert_eq!(
+            destination
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            workspace_id.to_string()
+        );
+    }
+
+    #[test]
+    fn create_records_an_absolute_snapshot_path() {
+        let (store, _data_dir) = store();
+        let (workspace, _ws_dir) = workspace_with_file("board.kicad_pcb", "v1");
+
+        let metadata = store.create(&workspace, None, None).unwrap();
+
+        assert!(metadata.root_snapshot_path.is_absolute());
+        assert_eq!(
+            store.snapshot_path(&metadata).unwrap(),
+            metadata.root_snapshot_path
+        );
+    }
+
+    /// Rewrites a stored snapshot path, standing in for a row written before
+    /// paths were absolutized.
+    fn rewrite_stored_snapshot_path(
+        store: &FilesystemCheckpointStore,
+        checkpoint_id: CheckpointId,
+        path: &std::path::Path,
+    ) {
+        let conn = store.storage.connection().lock().unwrap();
+        conn.execute(
+            "UPDATE checkpoints SET root_snapshot_path = ?1 WHERE checkpoint_id = ?2",
+            rusqlite::params![path.to_string_lossy(), checkpoint_id.to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_relative_stored_snapshot_path_is_reported_unusable_not_resolved_against_the_working_directory(
+    ) {
+        let (store, _data_dir) = store();
+        let (workspace, _ws_dir) = workspace_with_file("board.kicad_pcb", "v1");
+        let metadata = store.create(&workspace, None, None).unwrap();
+        rewrite_stored_snapshot_path(
+            &store,
+            metadata.checkpoint_id,
+            std::path::Path::new("checkpoints/x/y"),
+        );
+
+        let unusable = store.unusable_snapshots().unwrap();
+        assert_eq!(unusable.len(), 1);
+        assert_eq!(unusable[0].0, metadata.checkpoint_id);
+        assert!(matches!(
+            unusable[0].2,
+            CheckpointError::SnapshotPathNotAbsolute
+        ));
+    }
+
+    #[test]
+    fn restore_refuses_a_relative_stored_snapshot_path_rather_than_reading_an_arbitrary_tree() {
+        let (store, _data_dir) = store();
+        let (workspace, ws_dir) = workspace_with_file("board.kicad_pcb", "v1");
+        let metadata = store.create(&workspace, None, None).unwrap();
+        std::fs::write(ws_dir.path().join("board.kicad_pcb"), "v2-in-progress").unwrap();
+        rewrite_stored_snapshot_path(
+            &store,
+            metadata.checkpoint_id,
+            std::path::Path::new("checkpoints/x/y"),
+        );
+
+        let result = store.restore(metadata.checkpoint_id, &workspace);
+        assert!(matches!(
+            result,
+            Err(CheckpointError::SnapshotPathNotAbsolute)
+        ));
+        // Fail-closed: the workspace is left untouched rather than being
+        // cleared and refilled from a guessed path.
+        assert_eq!(
+            std::fs::read_to_string(ws_dir.path().join("board.kicad_pcb")).unwrap(),
+            "v2-in-progress"
+        );
+    }
+
+    #[test]
+    fn a_deleted_snapshot_directory_is_reported_unusable() {
+        let (store, _data_dir) = store();
+        let (workspace, _ws_dir) = workspace_with_file("board.kicad_pcb", "v1");
+        let metadata = store.create(&workspace, None, None).unwrap();
+        std::fs::remove_dir_all(&metadata.root_snapshot_path).unwrap();
+
+        let unusable = store.unusable_snapshots().unwrap();
+        assert_eq!(unusable.len(), 1);
+        assert_eq!(unusable[0].0, metadata.checkpoint_id);
+        assert!(matches!(unusable[0].2, CheckpointError::SnapshotMissing));
+    }
+
+    #[test]
+    fn healthy_checkpoints_report_nothing_unusable() {
+        let (store, _data_dir) = store();
+        let (workspace_a, _dir_a) = workspace_with_file("a.kicad_pcb", "a");
+        let (workspace_b, _dir_b) = workspace_with_file("b.kicad_pcb", "b");
+        store.create(&workspace_a, None, None).unwrap();
+        store.create(&workspace_b, None, None).unwrap();
+
+        assert!(store.unusable_snapshots().unwrap().is_empty());
     }
 
     #[test]

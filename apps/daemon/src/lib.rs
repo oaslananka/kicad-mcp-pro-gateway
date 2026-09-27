@@ -107,6 +107,10 @@ fn build_state_from_parts(
         AuthorizationTtlPolicy::new(config.authorization_ttl),
     ));
     let audit_repo = Arc::new(AuditRepository::new(Arc::clone(&storage)));
+    let checkpoint_store = Arc::new(FilesystemCheckpointStore::new(
+        Arc::clone(&storage),
+        config.data_dir.join("checkpoints"),
+    ));
     let core_bridge = Arc::new(CoreBridgeClient::new(CoreBridgeConfig::new(
         config.core_bridge_endpoint.clone(),
     ))?);
@@ -122,6 +126,7 @@ fn build_state_from_parts(
         authorization_repo,
         policy_engine,
         audit_repo,
+        checkpoint_store,
         core_bridge,
         core_health_probe_config,
         clock: Arc::new(SystemClock),
@@ -215,6 +220,63 @@ async fn run_transport_lifecycle(
     Ok(())
 }
 
+/// One checkpoint row that cannot be used to restore, and why.
+#[derive(Debug)]
+pub struct UnusableSnapshot {
+    pub checkpoint_id: companion_core::CheckpointId,
+    pub workspace_id: companion_core::WorkspaceId,
+    pub reason: String,
+}
+
+/// What startup found when it read the persisted audit and checkpoint state.
+#[derive(Debug, Default)]
+pub struct RecoveryIntegrity {
+    /// Operations whose audit row records an authorization but no execution
+    /// outcome — the signature of a process that died between the two writes.
+    ///
+    /// Reported, not fatal: nothing reconciles these rows yet, so refusing to
+    /// start would wedge the daemon permanently after a single crash. Startup
+    /// must not call that a clean recovery either, so it is logged loudly and
+    /// the count is returned for an operator-visible degraded state.
+    pub incomplete_operations: usize,
+    /// Checkpoint rows a restore would refuse. Fatal — see
+    /// [`check_recovery_integrity`].
+    pub unusable_snapshots: Vec<UnusableSnapshot>,
+}
+
+/// Reads the persisted recovery state and fails closed.
+///
+/// An unreadable audit or checkpoint store returns an error rather than
+/// degrading to a log line: the daemon must never start and behave as though
+/// recovery were verified when it was not. Callers treat that error as fatal.
+///
+/// The caller decides what to do with a successfully-read-but-unusable result;
+/// [`run`] refuses to start on it.
+pub fn check_recovery_integrity(state: &DaemonState) -> anyhow::Result<RecoveryIntegrity> {
+    let incomplete_operations = state
+        .audit_repo
+        .list_incomplete()
+        .map_err(|error| anyhow::anyhow!("cannot read audit state for recovery check: {error}"))?
+        .len();
+    let unusable_snapshots = state
+        .checkpoint_store
+        .unusable_snapshots()
+        .map_err(|error| {
+            anyhow::anyhow!("cannot read checkpoint state for recovery check: {error}")
+        })?
+        .into_iter()
+        .map(|(checkpoint_id, workspace_id, reason)| UnusableSnapshot {
+            checkpoint_id,
+            workspace_id,
+            reason: reason.to_string(),
+        })
+        .collect();
+    Ok(RecoveryIntegrity {
+        incomplete_operations,
+        unusable_snapshots,
+    })
+}
+
 /// Runs the daemon until shutdown is requested (via `DaemonShutdown` IPC
 /// request or Ctrl-C). A single-instance conflict on `config.data_dir`
 /// surfaces as an error from [`build_state`] before anything else starts.
@@ -226,40 +288,34 @@ pub async fn run(config: CompanionConfig) -> anyhow::Result<()> {
         "daemon starting"
     );
 
-    // Recovery check: incomplete operations
-    match state.audit_repo.list_incomplete() {
-        Ok(incomplete_ops) => {
-            if !incomplete_ops.is_empty() {
-                tracing::warn!(
-                    count = incomplete_ops.len(),
-                    "Found incomplete audit operations at startup"
-                );
-            }
+    let integrity = check_recovery_integrity(&state).inspect_err(|error| {
+        tracing::error!(
+            %error,
+            "recovery state could not be read; refusing to start"
+        );
+    })?;
+
+    if !integrity.unusable_snapshots.is_empty() {
+        for unusable in &integrity.unusable_snapshots {
+            tracing::error!(
+                checkpoint_id = %unusable.checkpoint_id,
+                workspace_id = %unusable.workspace_id,
+                reason = %unusable.reason,
+                "checkpoint snapshot cannot be used for recovery"
+            );
         }
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to check for incomplete audit operations");
-        }
+        anyhow::bail!(
+            "refusing to start: {} checkpoint snapshot(s) cannot be used for recovery",
+            integrity.unusable_snapshots.len()
+        );
     }
 
-    // Recovery check: corrupt checkpoints
-    let checkpoints_root = config.data_dir.join("checkpoints");
-    let checkpoint_store =
-        FilesystemCheckpointStore::new(Arc::clone(&state.storage), checkpoints_root);
-    match checkpoint_store.list_all() {
-        Ok(checkpoints) => {
-            for checkpoint in checkpoints {
-                if !checkpoint.root_snapshot_path.exists() {
-                    tracing::warn!(
-                        checkpoint_id = %checkpoint.checkpoint_id,
-                        workspace_id = %checkpoint.workspace_id,
-                        "Checkpoint snapshot missing; recovery will fail"
-                    );
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to list all checkpoints for recovery check");
-        }
+    if integrity.incomplete_operations > 0 {
+        tracing::warn!(
+            count = integrity.incomplete_operations,
+            "operations were left without an execution outcome by an earlier run; \
+             they stay in the audit trail unreconciled and this is a degraded recovery state"
+        );
     }
 
     let transport = transport_for_mode(config.transport_mode);
@@ -286,6 +342,161 @@ pub async fn run(config: CompanionConfig) -> anyhow::Result<()> {
             shutdown.request();
             runtime.await
         }
+    }
+}
+
+#[cfg(test)]
+mod recovery_integrity_tests {
+    use companion_core::{
+        AuditEvent, Capability, ExecutionStatus, OperationId, PolicyResultKind, RiskLevel,
+    };
+    use companion_identity::InMemorySecretStore;
+    use companion_workspace::WorkspaceAuthorization;
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    fn state(data_dir: &std::path::Path) -> Arc<DaemonState> {
+        let config = companion_core::config::load(companion_core::config::CliOverrides {
+            data_dir: Some(data_dir.to_path_buf()),
+            core_bridge_endpoint: Some("http://127.0.0.1:1/mcp".into()),
+            ..Default::default()
+        })
+        .unwrap();
+        build_state_with_secret_store(&config, InMemorySecretStore::new()).unwrap()
+    }
+
+    fn allowed_but_unexecuted_event() -> AuditEvent {
+        AuditEvent {
+            operation_id: OperationId::new(),
+            timestamp: OffsetDateTime::now_utc(),
+            session_id: None,
+            workspace_id: None,
+            remote_principal: None,
+            requested_tool: "schematic.read".into(),
+            capability: Some(Capability::SCHEMATIC_READ),
+            risk: Some(RiskLevel::Low),
+            policy_result: PolicyResultKind::Allow,
+            approval_decision: None,
+            execution_status: ExecutionStatus::NotExecuted,
+            error_class: None,
+            duration_ms: None,
+        }
+    }
+
+    #[test]
+    fn a_fresh_data_dir_reports_a_clean_recovery_state() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let integrity = check_recovery_integrity(&state(dir.path())).unwrap();
+
+        assert_eq!(integrity.incomplete_operations, 0);
+        assert!(integrity.unusable_snapshots.is_empty());
+    }
+
+    #[test]
+    fn an_operation_left_without_an_execution_outcome_is_counted_not_hidden() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state(dir.path());
+        state
+            .audit_repo
+            .record(&allowed_but_unexecuted_event())
+            .unwrap();
+
+        let integrity = check_recovery_integrity(&state).unwrap();
+
+        assert_eq!(integrity.incomplete_operations, 1);
+        assert!(
+            integrity.unusable_snapshots.is_empty(),
+            "an incomplete audit row is degraded, not an unusable checkpoint"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_audit_store_is_an_error_rather_than_a_degraded_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state(dir.path());
+        // A store that cannot answer "is recovery verified?" must never be
+        // reported as verified.
+        let conn = state.storage.connection();
+        conn.lock()
+            .unwrap()
+            .execute_batch("DROP TABLE audit_events")
+            .unwrap();
+
+        let error = check_recovery_integrity(&state).unwrap_err();
+
+        assert!(
+            error.to_string().contains("cannot read audit state"),
+            "got {error}"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_checkpoint_store_is_an_error_rather_than_a_degraded_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state(dir.path());
+        let conn = state.storage.connection();
+        conn.lock()
+            .unwrap()
+            .execute_batch("DROP TABLE checkpoints")
+            .unwrap();
+
+        let error = check_recovery_integrity(&state).unwrap_err();
+
+        assert!(
+            error.to_string().contains("cannot read checkpoint state"),
+            "got {error}"
+        );
+    }
+
+    /// Creates a real checkpoint row and then removes its snapshot data,
+    /// standing in for a snapshot that did not survive a crash or a prune.
+    fn checkpoint_with_missing_snapshot(
+        state: &DaemonState,
+    ) -> companion_checkpoints::CheckpointMetadata {
+        let workspace_dir = tempfile::tempdir().unwrap();
+        std::fs::write(workspace_dir.path().join("board.kicad_pcb"), "v1").unwrap();
+        let workspace = WorkspaceAuthorization::new("proj".into(), workspace_dir.path()).unwrap();
+        let metadata = state
+            .checkpoint_store
+            .create(&workspace, None, None)
+            .unwrap();
+        std::fs::remove_dir_all(&metadata.root_snapshot_path).unwrap();
+        metadata
+    }
+
+    #[test]
+    fn a_checkpoint_whose_snapshot_is_gone_is_reported_unusable() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state(dir.path());
+        let metadata = checkpoint_with_missing_snapshot(&state);
+
+        let integrity = check_recovery_integrity(&state).unwrap();
+
+        assert_eq!(integrity.unusable_snapshots.len(), 1);
+        assert_eq!(
+            integrity.unusable_snapshots[0].checkpoint_id,
+            metadata.checkpoint_id
+        );
+        assert!(integrity.unusable_snapshots[0].reason.contains("missing"));
+    }
+
+    #[test]
+    fn a_checkpoint_with_an_absolute_snapshot_path_is_usable() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state(dir.path());
+        let workspace_dir = tempfile::tempdir().unwrap();
+        std::fs::write(workspace_dir.path().join("board.kicad_pcb"), "v1").unwrap();
+        let workspace = WorkspaceAuthorization::new("proj".into(), workspace_dir.path()).unwrap();
+        state
+            .checkpoint_store
+            .create(&workspace, None, None)
+            .unwrap();
+
+        let integrity = check_recovery_integrity(&state).unwrap();
+
+        assert!(integrity.unusable_snapshots.is_empty());
     }
 }
 

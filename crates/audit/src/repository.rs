@@ -106,6 +106,13 @@ impl AuditRepository {
         Ok(())
     }
 
+    /// Operations whose audit row records an authorization but no execution
+    /// outcome.
+    ///
+    /// [`ExecutionStatus`] is only written by [`Self::update_execution`] after
+    /// the operation finishes, so `NotExecuted` on an `Allow` row is precisely
+    /// the signature of a process that died between the two writes. There is
+    /// no in-progress status to also match.
     pub fn list_incomplete(&self) -> Result<Vec<AuditEvent>, AuditError> {
         let conn = self
             .storage
@@ -113,11 +120,9 @@ impl AuditRepository {
             .lock()
             .map_err(|_| AuditError::Storage("mutex poisoned".into()))?;
         let mut stmt = conn
-            .prepare(
-                "SELECT operation_id, timestamp, session_id, workspace_id, remote_principal, requested_tool, \
-                 capability, risk, policy_result, approval_decision, execution_status, error_class, duration_ms \
-                 FROM audit_events WHERE policy_result = ?1 AND execution_status = ?2",
-            )
+            .prepare(&format!(
+                "{SELECT_COLUMNS} WHERE policy_result = ?1 AND execution_status = ?2"
+            ))
             .map_err(|e| AuditError::Storage(e.to_string()))?;
         let rows = stmt
             .query_map(
@@ -344,6 +349,57 @@ mod tests {
             recent[0].approval_decision,
             Some(ApprovalDecisionKind::AllowOnce)
         );
+    }
+
+    #[test]
+    fn list_incomplete_returns_only_allowed_operations_with_no_execution_outcome() {
+        let repository = repo();
+
+        // Allowed, never executed: a crash between record() and
+        // update_execution() leaves exactly this row behind.
+        let crashed = sample_event(OperationId::new(), SessionId::new());
+        repository.record(&crashed).unwrap();
+
+        // Allowed and completed: no longer incomplete.
+        let completed = sample_event(OperationId::new(), SessionId::new());
+        repository.record(&completed).unwrap();
+        repository
+            .update_execution(
+                completed.operation_id,
+                ExecutionStatus::Success,
+                None,
+                Some(7),
+            )
+            .unwrap();
+
+        // Denied: never executed by design, not a recovery concern.
+        let denied = sample_event(OperationId::new(), SessionId::new());
+        let mut denied = denied;
+        denied.policy_result = PolicyResultKind::Deny;
+        repository.record(&denied).unwrap();
+
+        let incomplete = repository.list_incomplete().unwrap();
+        assert_eq!(incomplete.len(), 1);
+        assert_eq!(incomplete[0].operation_id, crashed.operation_id);
+        assert_eq!(incomplete[0].policy_result, PolicyResultKind::Allow);
+        assert_eq!(incomplete[0].execution_status, ExecutionStatus::NotExecuted);
+    }
+
+    #[test]
+    fn list_incomplete_is_empty_when_every_allowed_operation_recorded_an_outcome() {
+        let repository = repo();
+        let event = sample_event(OperationId::new(), SessionId::new());
+        repository.record(&event).unwrap();
+        repository
+            .update_execution(
+                event.operation_id,
+                ExecutionStatus::Failed,
+                Some("io".into()),
+                None,
+            )
+            .unwrap();
+
+        assert!(repository.list_incomplete().unwrap().is_empty());
     }
 
     #[test]
