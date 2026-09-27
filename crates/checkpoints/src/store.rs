@@ -106,6 +106,30 @@ impl FilesystemCheckpointStore {
         Ok(out)
     }
 
+    pub fn list_all(&self) -> Result<Vec<CheckpointMetadata>, CheckpointError> {
+        let conn = self
+            .storage
+            .connection()
+            .lock()
+            .map_err(|_| CheckpointError::Storage("mutex poisoned".into()))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT checkpoint_id, workspace_id, session_id, task_id, created_at, root_snapshot_path \
+                 FROM checkpoints ORDER BY created_at DESC",
+            )
+            .map_err(|e| CheckpointError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map([], row_to_raw)
+            .map_err(|e| CheckpointError::Storage(e.to_string()))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(parse_raw(
+                row.map_err(|e| CheckpointError::Storage(e.to_string()))?,
+            )?);
+        }
+        Ok(out)
+    }
+
     pub fn get(
         &self,
         checkpoint_id: CheckpointId,

@@ -106,6 +106,28 @@ impl AuditRepository {
         Ok(())
     }
 
+    pub fn list_incomplete(&self) -> Result<Vec<AuditEvent>, AuditError> {
+        let conn = self
+            .storage
+            .connection()
+            .lock()
+            .map_err(|_| AuditError::Storage("mutex poisoned".into()))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT operation_id, timestamp, session_id, workspace_id, remote_principal, requested_tool, \
+                 capability, risk, policy_result, approval_decision, execution_status, error_class, duration_ms \
+                 FROM audit_events WHERE policy_result = ?1 AND execution_status = ?2",
+            )
+            .map_err(|e| AuditError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(
+                rusqlite::params![to_json(PolicyResultKind::Allow)?, to_json(ExecutionStatus::NotExecuted)?],
+                row_to_raw,
+            )
+            .map_err(|e| AuditError::Storage(e.to_string()))?;
+        collect_rows(rows)
+    }
+
     pub fn list_recent(&self, limit: usize) -> Result<Vec<AuditEvent>, AuditError> {
         let conn = self
             .storage
