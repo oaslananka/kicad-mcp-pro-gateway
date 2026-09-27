@@ -121,7 +121,10 @@ impl AuditRepository {
             .map_err(|e| AuditError::Storage(e.to_string()))?;
         let rows = stmt
             .query_map(
-                rusqlite::params![to_json(PolicyResultKind::Allow)?, to_json(ExecutionStatus::NotExecuted)?],
+                rusqlite::params![
+                    to_json(PolicyResultKind::Allow)?,
+                    to_json(ExecutionStatus::NotExecuted)?
+                ],
                 row_to_raw,
             )
             .map_err(|e| AuditError::Storage(e.to_string()))?;

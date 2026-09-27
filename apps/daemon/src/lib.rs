@@ -19,8 +19,8 @@ use companion_core::{CompanionConfig, SystemClock, TransportMode, TransportState
 use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig};
 use companion_identity::{SecretStore, SqliteDeviceIdentityStore};
 use companion_policy::{AuthorizationTtlPolicy, PolicyEngine, TomlToolRegistry};
+use companion_sessions::TransportConnectivityEvent;
 use companion_sessions::{migrate_legacy_sessions, AuthorizationRepository, SessionRepository};
-use companion_sessions::{TransportConnectivityEvent};
 use companion_storage::Storage;
 use companion_transport::{jittered_delay, BackoffPolicy, MockTransport, Transport};
 use companion_workspace::WorkspaceRepository;
@@ -220,48 +220,49 @@ async fn run_transport_lifecycle(
 /// surfaces as an error from [`build_state`] before anything else starts.
 pub async fn run(config: CompanionConfig) -> anyhow::Result<()> {
     let state = build_state(&config)?;
-tracing::info!(
-            instance_id = %state.instance_id,
-            data_dir = %config.data_dir.display(),
-            "daemon starting"
-        );
+    tracing::info!(
+        instance_id = %state.instance_id,
+        data_dir = %config.data_dir.display(),
+        "daemon starting"
+    );
 
-        // Recovery check: incomplete operations
-        match state.audit_repo.list_incomplete() {
-            Ok(incomplete_ops) => {
-                if !incomplete_ops.is_empty() {
+    // Recovery check: incomplete operations
+    match state.audit_repo.list_incomplete() {
+        Ok(incomplete_ops) => {
+            if !incomplete_ops.is_empty() {
+                tracing::warn!(
+                    count = incomplete_ops.len(),
+                    "Found incomplete audit operations at startup"
+                );
+            }
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to check for incomplete audit operations");
+        }
+    }
+
+    // Recovery check: corrupt checkpoints
+    let checkpoints_root = config.data_dir.join("checkpoints");
+    let checkpoint_store =
+        FilesystemCheckpointStore::new(Arc::clone(&state.storage), checkpoints_root);
+    match checkpoint_store.list_all() {
+        Ok(checkpoints) => {
+            for checkpoint in checkpoints {
+                if !checkpoint.root_snapshot_path.exists() {
                     tracing::warn!(
-                        count = incomplete_ops.len(),
-                        "Found incomplete audit operations at startup"
+                        checkpoint_id = %checkpoint.checkpoint_id,
+                        workspace_id = %checkpoint.workspace_id,
+                        "Checkpoint snapshot missing; recovery will fail"
                     );
                 }
             }
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to check for incomplete audit operations");
-            }
         }
-
-        // Recovery check: corrupt checkpoints
-        let checkpoints_root = config.data_dir.join("checkpoints");
-        let checkpoint_store = FilesystemCheckpointStore::new(Arc::clone(&state.storage), checkpoints_root);
-        match checkpoint_store.list_all() {
-            Ok(checkpoints) => {
-                for checkpoint in checkpoints {
-                    if !checkpoint.root_snapshot_path.exists() {
-                        tracing::warn!(
-                            checkpoint_id = %checkpoint.checkpoint_id,
-                            workspace_id = %checkpoint.workspace_id,
-                            "Checkpoint snapshot missing; recovery will fail"
-                        );
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to list all checkpoints for recovery check");
-            }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to list all checkpoints for recovery check");
         }
+    }
 
-        let transport = transport_for_mode(config.transport_mode);
+    let transport = transport_for_mode(config.transport_mode);
     match config.transport_mode {
         TransportMode::Disabled => {
             tracing::info!("outbound relay transport disabled; local IPC remains available");
