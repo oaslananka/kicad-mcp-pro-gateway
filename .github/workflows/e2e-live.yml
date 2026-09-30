@@ -170,8 +170,9 @@ jobs:
       - name: Run live E2E tests
         env:
           GATEWAY_CORE_BRIDGE_ENDPOINT: http://127.0.0.1:3334/mcp
-          # Cargo integration tests run with the daemon crate as cwd, not repo root.
-          KICAD_TEST_FIXTURE_DIR: ${{ env.FIXTURE_DIR }}
+          # Use the checkout context directly (not a dynamically set env-context key).
+          # Cargo integration tests run with the daemon crate as cwd.
+          KICAD_TEST_FIXTURE_DIR: ${{ github.workspace }}/tests/fixtures/kicad-test-project
           GATEWAY_TRANSPORT_MODE: disabled
           GATEWAY_LOG_LEVEL: debug
         run: |
