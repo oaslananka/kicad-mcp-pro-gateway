@@ -560,6 +560,20 @@ async fn list_pending_approvals(state: &Arc<DaemonState>) -> IpcResponse {
     }
 }
 
+async fn approve_operation(state: &Arc<DaemonState>, operation_id: OperationId) -> IpcResponse {
+    match remote_processor::approve_pending_operation(state, operation_id).await {
+        Ok(()) => IpcResponse::Ack,
+        Err(e) => error_response(e),
+    }
+}
+
+async fn deny_operation(state: &Arc<DaemonState>, operation_id: OperationId) -> IpcResponse {
+    match remote_processor::deny_pending_operation(state, operation_id).await {
+        Ok(()) => IpcResponse::Ack,
+        Err(e) => error_response(e),
+    }
+}
+
 #[cfg(test)]
 mod principal_view_tests {
     use super::*;
@@ -628,19 +642,5 @@ mod principal_view_tests {
         let record = grant(AuthorizationPrincipal::verified("trusted-subject", actor));
         assert!(!record.principal.is_verified());
         assert!(verified_identity_view(&record).is_none());
-    }
-}
-
-async fn approve_operation(state: &Arc<DaemonState>, operation_id: OperationId) -> IpcResponse {
-    match remote_processor::approve_pending_operation(state, operation_id).await {
-        Ok(()) => IpcResponse::Ack,
-        Err(e) => error_response(e),
-    }
-}
-
-async fn deny_operation(state: &Arc<DaemonState>, operation_id: OperationId) -> IpcResponse {
-    match remote_processor::deny_pending_operation(state, operation_id).await {
-        Ok(()) => IpcResponse::Ack,
-        Err(e) => error_response(e),
     }
 }
