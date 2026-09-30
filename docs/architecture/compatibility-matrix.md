@@ -9,8 +9,9 @@ Neither is a second support matrix: both must agree with the declarations here.
 
 ## Baseline provenance
 
-Audited on **2026-09-24** against `oaslananka/kicad-mcp-pro` release
-`mcp-server-v3.35.0`, pinned to commit
+Baseline audited on **2026-09-24** against `oaslananka/kicad-mcp-pro` release
+`mcp-server-v3.35.0`, with live-E2E status reconciled against the Gateway
+workflow on **2026-09-30**. The upstream baseline is pinned to commit
 `f641a92596ab7adc1e134287578b1ae5ff9580ad`. The upstream compatibility contract
 at that commit declares KiCad 10.0.x primary (10.0.6 latest verified) and KiCad
 8.x deprecated, with file-level read/migration support and manual validation
