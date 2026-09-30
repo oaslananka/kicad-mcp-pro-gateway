@@ -184,8 +184,9 @@ jobs:
           set -e
 
           # A green cargo command with 0 executed (or ignored) tests is NOT
-          # valid release-gating evidence; fail closed rather than silently skip.
-          if [ "$TEST_EXIT_CODE" -eq 0 ] && ! grep -Eq 'test result: ok[.] [1-9][0-9]* passed; 0 failed; 0 ignored;' test-output.txt; then
+          # valid release-gating evidence; require at least the 3 critical live
+          # tests, with no failures or ignored tests.
+          if [ "$TEST_EXIT_CODE" -eq 0 ] && ! grep -Eq 'test result: ok[.] ([3-9]|[1-9][0-9]+) passed; 0 failed; 0 ignored;' test-output.txt; then
             echo "Live E2E gate rejected: no executed tests or ignored tests remain" | tee -a test-output.txt >&2
             TEST_EXIT_CODE=1
           fi
