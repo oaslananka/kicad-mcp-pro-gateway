@@ -243,9 +243,11 @@ Historical rows default safely:
 - old `risk` remains readable as the effective risk;
 - missing `base_risk` means "historical/unknown base", not an inferred lower risk;
 - missing factors become an empty historical factor list;
-- missing version remains historical version 1 where that is already established by surrounding row context, otherwise represented explicitly as absent in the domain adapter rather than fabricated evidence.
+- missing `risk_policy_version` is represented as `None`/historical unknown in the audit domain adapter. The reader must not fabricate version 1 when the row itself does not contain that evidence.
 
 The audit repository must serialize/parse factor JSON strictly and fail closed on malformed new writes. It must continue reading legitimate pre-migration rows.
+
+The existing pre-execution audit row is also the canonical durable approval-decision record: `update_approval_decision` mutates that row only after a local decision is durably accepted. Therefore the risk assessment fields are written before the operation is queued and remain unchanged when `approval_decision` is later updated to Approved/AllowOnce/Denied. This satisfies the approval-record requirement without creating a second divergent risk record.
 
 ## 11. Pending approval and IPC/UI
 
@@ -266,7 +268,7 @@ High risk — bulk delete
 
 The UI receives only the reviewed argument identifier and counts. It never receives the item IDs through the risk explanation path.
 
-Approval persistence continues to record the effective risk. If approval records gain structured factor metadata, the implementation should reuse the same serialized `RiskAssessment` representation rather than create a divergent explanation format.
+Approval persistence must preserve the same structured assessment used for the pre-execution decision. The durable approval-decision record is the audit row described above; updating `approval_decision` must not recompute, replace, or drop `risk_policy_version`, `base_risk`, effective `risk`, or `risk_factors`. Pending in-memory state and IPC views use that same immutable assessment.
 
 ## 12. Interaction with upstream reviewed effect manifests
 
@@ -338,6 +340,7 @@ Verify:
 
 - a multi-item delete is queued and never reaches `kicad-mcp-pro` before approval;
 - pre-execution audit records effective `High`, base `Normal`, version 2, and a factor containing only count/threshold metadata;
+- the later durable approval decision remains attached to that same risk assessment without recomputation;
 - the raw supplied item IDs do not appear in the audit row, logs, pending IPC risk explanation, or refusal/approval payload;
 - audit-persistence failure still blocks execution;
 - approved execution keeps the same immutable pre-execution risk assessment.
@@ -407,7 +410,7 @@ The implementation tranche is complete when all of the following are true:
 - the same tool with two or more IDs becomes `High` and requires local approval;
 - risk cannot fall below the existing static base risk;
 - malformed or inconsistent risk facts fail closed;
-- audit and pending approval surfaces expose policy version, base/effective risk, and safe factor metadata;
+- the durable audit/approval-decision record and pending approval surfaces expose policy version, base/effective risk, and safe factor metadata;
 - no raw item IDs leak through those surfaces;
 - migration, policy, daemon, audit, IPC, desktop, and security regression tests pass;
 - repository-required CI/security checks remain green without weakening any gate.
