@@ -39,9 +39,10 @@ artifacts. A separate `e2e-live.yml` workflow installs KiCad 10.0.6 and the
 pinned `kicad-mcp-pro 3.35.0` baseline. **As discovered on 2026-09-30,
 prior green workflow runs actually executed zero tests (3 ignored)**, so
 those runs are not positive Ubuntu live-E2E qualification evidence. PR #57
-corrects the invocation and requires executed tests; retain a passing
-post-fix run before citing the lane as validated. Even that evidence does
-**not** substitute for
+corrects the invocation and requires executed tests. The
+[post-fix Ubuntu Live E2E run](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) at `98967a3549701da2e2b596d7cf977aff8689987f`
+executed **3 tests: 3 passed, 0 failed, 0 ignored** on 2026-09-30.
+This provides bounded Ubuntu CI live test evidence but **not**
 exact-artifact clean-machine qualification, and this repository still has no
 equivalent automated live KiCad/MCP lane for macOS or Windows. A version tag
 runs the fail-closed release-candidate workflow, which requires and verifies
@@ -76,15 +77,21 @@ passed, but `sch_add_symbol` correctly failed closed with
 `UnmodelledToolContract` because no reviewed effect contract exists.
 PR #57 now tests this explicit deny/audit invariant and continues to
 the already-modelled high-risk approval, revocation, and reconnect
-stages. **The revised end-to-end test is not yet verified green**;
-retain a 3/3 successful executed run before claiming Ubuntu live qualification.
+stages. The [repaired exact-head run](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865)
+at `98967a3549701da2e2b596d7cf977aff8689987f` **passed all 3 live tests, with none failed or ignored**.
+In the vertical slice, the read and audit succeeded; the unmodelled
+write was denied and audited without execution; the reviewed high-risk
+PCB tool was approved and returned success, but the fixture had no
+schematic symbols to place. Revocation and post-reconnect denial passed.
+This validates the scoped policy and RPC path, **not actual PCB
+placement, all KiCad features, or signed install packages**.
 macOS and Windows have no equivalent automated live KiCad/MCP lanes.
 Exact release artifacts still require separate clean-machine qualification
 on every supported platform.
 
 | Combination | Current Status | Required Evidence |
 |---|---|---|
-| Linux `x86_64` + KiCad 10.0.6 + pinned kicad-mcp-pro 3.35.0 | Workflow exists; **positive 3-test live E2E result pending** after correcting historical zero-test green runs. | Require a run with 3 tests executed and no failures/ignores; separately qualify the exact tagged artifact on a clean Ubuntu 24.04 machine before promotion. |
+| Linux `x86_64` + KiCad 10.0.6 + pinned kicad-mcp-pro 3.35.0 | **3/3 real live E2E tests passed** in [GitHub Actions run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) on 2026-09-30; prior zero-test green runs remain invalid evidence. | Preserve this bounded Ubuntu CI evidence; separately qualify the exact tagged artifact on a clean Ubuntu 24.04 machine before promotion. |
 | macOS `aarch64` + KiCad 10.0.x + pinned kicad-mcp-pro | Not live-validated by this repository | Run the live probe and exact-artifact smoke/clean-machine qualification on Apple Silicon and retain the evidence. |
 | Windows `x86_64` + KiCad 10.0.x + pinned kicad-mcp-pro | Not live-validated by this repository | Run the live probe and exact-artifact smoke/clean-machine qualification on Windows 11 and retain the evidence. |
 | KiCad 8.x, 9.x, or 11.x | Unsupported for Gateway release qualification | Do not promote a support claim; an explicit future compatibility review is required. |
