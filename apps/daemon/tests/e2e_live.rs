@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use companion_core::config::{self, CliOverrides};
 use companion_core::{CapabilityProfile, OperationId, SessionStatus};
-use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig};
+use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig, MCP_PROTOCOL_VERSION};
 use companion_identity::InMemorySecretStore;
 use companion_policy::{TomlToolRegistry, ToolCapabilityResolver};
 use companion_transport::{MockTransport, Transport};
@@ -573,10 +573,12 @@ async fn live_core_health_check() {
         .await
         .expect("live kicad-mcp-pro server must be reachable");
 
-    assert_eq!(init_result["jsonrpc"], "2.0");
-    assert!(init_result["result"]["serverInfo"]["name"]
+    // CoreBridgeClient::initialize returns the JSON-RPC result payload,
+    // not the outer `{ jsonrpc, result }` envelope.
+    assert_eq!(init_result["protocolVersion"], MCP_PROTOCOL_VERSION);
+    assert!(init_result["serverInfo"]["name"]
         .as_str()
-        .unwrap()
+        .expect("initialized server must expose a name")
         .contains("kicad-mcp-pro"));
 
     let tools = bridge
