@@ -9,6 +9,7 @@ use companion_core::{
 };
 use companion_policy::{
     ApprovalReason, DenyReason, PolicyDecision, PolicyEngine, TomlToolRegistry,
+    OPERATION_RISK_POLICY_VERSION,
 };
 use companion_workspace::WorkspaceAuthorization;
 use time::OffsetDateTime;
@@ -87,6 +88,11 @@ fn registry() -> TomlToolRegistry {
 
 fn workspace(dir: &Path) -> WorkspaceAuthorization {
     WorkspaceAuthorization::new("proj".into(), dir).unwrap()
+}
+
+fn static_assessment(risk: RiskLevel) -> RiskAssessment {
+    RiskAssessment::new(OPERATION_RISK_POLICY_VERSION, risk, risk, vec![])
+        .expect("equal base and effective risk is valid")
 }
 
 fn active_session(
@@ -291,7 +297,7 @@ fn caller_target_path_is_not_authorization_evidence() {
         engine.evaluate(&req, &session, &ws, &clock),
         PolicyDecision::Allow {
             capability: Capability::SCHEMATIC_READ,
-            risk: RiskLevel::Low
+            risk: static_assessment(RiskLevel::Low)
         },
         "caller metadata may be wrong without expanding or changing derived authority"
     );
@@ -581,7 +587,7 @@ fn requires_approval_for_high_risk_operation_even_with_capability_granted() {
         decision,
         PolicyDecision::RequireApproval {
             reason: ApprovalReason::HighRiskOperation,
-            risk: RiskLevel::High,
+            risk: static_assessment(RiskLevel::High),
             capability: Capability::MANUFACTURING_EXPORT,
         }
     );
@@ -605,7 +611,7 @@ fn allows_low_risk_known_tool_within_authorized_workspace_with_capability() {
         decision,
         PolicyDecision::Allow {
             capability: Capability::SCHEMATIC_READ,
-            risk: RiskLevel::Low
+            risk: static_assessment(RiskLevel::Low)
         }
     );
 }
@@ -865,7 +871,7 @@ fn an_active_unexpired_grant_allows_a_low_risk_operation() {
         ),
         PolicyDecision::Allow {
             capability: Capability::SCHEMATIC_READ,
-            risk: RiskLevel::Low,
+            risk: static_assessment(RiskLevel::Low),
         }
     );
 }

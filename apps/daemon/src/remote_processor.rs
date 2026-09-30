@@ -14,7 +14,7 @@ use companion_core::{
     OperationRequest, PolicyResultKind, PrincipalAssurance, RiskLevel, Session, SessionId,
     VerifiedPrincipal, WorkspaceId,
 };
-use companion_policy::PolicyDecision;
+use companion_policy::{PolicyDecision, OPERATION_RISK_POLICY_VERSION};
 use companion_protocol::{Envelope, MessageType};
 use companion_sessions::{new_unpaired_session, SessionEvent, SessionTransition};
 use companion_transport::{InboundEnvelope, Transport, TransportError};
@@ -186,7 +186,7 @@ async fn handle_session_request_with_principal(
                 task_scope: payload.task_scope,
                 kind: GrantKind::Standing,
                 lifetime: ttl,
-                risk_policy_version: 1,
+                risk_policy_version: OPERATION_RISK_POLICY_VERSION,
             },
             state.clock.as_ref().now(),
         );
@@ -339,7 +339,7 @@ async fn handle_operation_request_with_principal(
                     PendingOperation {
                         request,
                         capability,
-                        risk,
+                        risk: risk.effective_risk,
                     },
                 );
         }
@@ -422,16 +422,18 @@ fn build_audit_event(
     decision: &PolicyDecision,
 ) -> AuditEvent {
     let (policy_result, capability, risk) = match decision {
-        PolicyDecision::Allow { capability, risk } => {
-            (PolicyResultKind::Allow, Some(*capability), Some(*risk))
-        }
+        PolicyDecision::Allow { capability, risk } => (
+            PolicyResultKind::Allow,
+            Some(*capability),
+            Some(risk.effective_risk),
+        )
         PolicyDecision::Deny { .. } => (PolicyResultKind::Deny, None, None),
         PolicyDecision::RequireApproval {
             capability, risk, ..
         } => (
             PolicyResultKind::RequireApproval,
             Some(*capability),
-            Some(*risk),
+            Some(risk.effective_risk),
         ),
     };
     let verified = grant
@@ -588,7 +590,7 @@ pub async fn approve_pending_operation(
     let still_authorized = matches!(
         current_decision,
         PolicyDecision::RequireApproval { capability, risk, .. }
-            if capability == pending.capability && risk == pending.risk
+            if capability == pending.capability && risk.effective_risk == pending.risk
     );
 
     if let Err(audit_error) = state

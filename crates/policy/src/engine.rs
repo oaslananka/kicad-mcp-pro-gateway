@@ -12,12 +12,13 @@
 
 use companion_core::{
     grant_from_legacy_session, AccessGrant, AuthorizationStatus, Capability, CapabilityProfile,
-    Clock, OperationRequest, RiskLevel, Session, SessionStatus,
+    Clock, OperationRequest, RiskAssessment, RiskAssessmentError, RiskLevel, Session, SessionStatus,
 };
 use companion_workspace::{WorkspaceAuthorization, WorkspaceBoundary};
 
 use crate::authorization_ttl::{AuthorizationTtlPolicy, EffectiveAuthorizationTtl};
 use crate::operation_effects::{NormalizedOperationEffects, OperationEffectNormalizationError};
+use crate::risk_assessment::assess_operation_risk;
 use crate::tool_registry::ToolCapabilityResolver;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,14 +53,14 @@ pub enum ApprovalReason {
 pub enum PolicyDecision {
     Allow {
         capability: Capability,
-        risk: RiskLevel,
+        risk: RiskAssessment,
     },
     Deny {
         reason: DenyReason,
     },
     RequireApproval {
         reason: ApprovalReason,
-        risk: RiskLevel,
+        risk: RiskAssessment,
         capability: Capability,
     },
 }
@@ -210,15 +211,44 @@ impl<R: ToolCapabilityResolver> PolicyEngine<R> {
             };
         }
 
-        if risk >= RiskLevel::High {
+        let assessment = match assess_operation_risk(
+            self.resolver.risk_rules(&request.tool_name),
+            &request.arguments,
+            &effects,
+            risk,
+        ) {
+            Ok(assessment) => assessment,
+            Err(
+                RiskAssessmentError::RequiredArgumentMissing
+                | RiskAssessmentError::ArgumentNotArray
+                | RiskAssessmentError::ArgumentCardinalityOverflow,
+            ) => {
+                return PolicyDecision::Deny {
+                    reason: DenyReason::MalformedToolArguments,
+                }
+            }
+            Err(
+                RiskAssessmentError::RequiredEffectMissing
+                | RiskAssessmentError::EffectiveRiskBelowBase,
+            ) => {
+                return PolicyDecision::Deny {
+                    reason: DenyReason::UnmodelledToolContract,
+                }
+            }
+        };
+
+        if assessment.effective_risk >= RiskLevel::High {
             return PolicyDecision::RequireApproval {
                 reason: ApprovalReason::HighRiskOperation,
-                risk,
+                risk: assessment,
                 capability,
             };
         }
 
-        PolicyDecision::Allow { capability, risk }
+        PolicyDecision::Allow {
+            capability,
+            risk: assessment,
+        }
     }
 
     /// Compatibility adapter for callers that only have a transport-era

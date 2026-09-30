@@ -54,6 +54,14 @@ pub struct RiskAssessment {
 pub enum RiskAssessmentError {
     #[error("effective risk cannot be below base risk")]
     EffectiveRiskBelowBase,
+    #[error("reviewed risk rule requires an effect absent from normalized operation effects")]
+    RequiredEffectMissing,
+    #[error("reviewed risk rule argument is missing")]
+    RequiredArgumentMissing,
+    #[error("reviewed risk rule argument must be an array")]
+    ArgumentNotArray,
+    #[error("reviewed risk rule argument cardinality cannot be represented")]
+    ArgumentCardinalityOverflow,
 }
 
 impl RiskAssessment {

@@ -7,6 +7,7 @@
 mod authorization_ttl;
 mod engine;
 mod operation_effects;
+mod risk_assessment;
 mod tool_catalog;
 mod tool_registry;
 mod upstream_effect_manifest;
@@ -17,6 +18,7 @@ pub use operation_effects::{
     NormalizedOperationEffects, OperationEffect, OperationEffectNormalizationError,
     PathArgumentContract, ToolEffectContract, ToolEffectContractError,
 };
+pub use risk_assessment::assess_operation_risk;
 pub use tool_catalog::{ToolCatalogError, ToolCatalogSnapshot};
 pub use tool_registry::{
     RiskRule, TomlToolRegistry, ToolCapabilityResolver, ToolContractSource, ToolRegistryCoverage,
