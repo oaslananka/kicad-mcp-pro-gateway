@@ -800,7 +800,10 @@ mod tests {
         assert_eq!(verified.assurance, PrincipalAssurance::Verified);
         assert!(verified.is_verified());
         assert_eq!(
-            verified.verified_principal().expect("verified actor").subject,
+            verified
+                .verified_principal()
+                .expect("verified actor")
+                .subject,
             "actor-123"
         );
         assert_eq!(verified.name, "display:claim");
