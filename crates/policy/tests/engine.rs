@@ -4,7 +4,8 @@ use std::path::Path;
 use companion_core::{
     AccessGrant, ApprovalPolicy, AuthorizationPrincipal, AuthorizationStatus, Capability,
     CapabilityProfile, Clock, DeviceId, FakeClock, GrantKind, GrantRequest, OperationId,
-    OperationRequest, RiskLevel, Session, SessionId, SessionStatus, WorkspaceId,
+    OperationRequest, RiskAssessment, RiskFactor, RiskFactorCode, RiskLevel, Session, SessionId,
+    SessionStatus, WorkspaceId,
 };
 use companion_policy::{
     ApprovalReason, DenyReason, PolicyDecision, PolicyEngine, TomlToolRegistry,
@@ -66,6 +67,19 @@ fn registry() -> TomlToolRegistry {
         [[tool.path_arguments]]
         argument = "path"
         effects = ["read"]
+
+        [[tool]]
+        name = "pcb_delete_items"
+        capability = "pcb.write"
+        risk = "normal"
+        arguments = ["item_ids"]
+        effects = ["read", "delete"]
+        [[tool.risk_rules]]
+        kind = "argument_cardinality"
+        argument = "item_ids"
+        minimum_count = 2
+        requires_effect = "delete"
+        escalate_to = "high"
         "#,
     )
     .unwrap()
@@ -594,6 +608,169 @@ fn allows_low_risk_known_tool_within_authorized_workspace_with_capability() {
             risk: RiskLevel::Low
         }
     );
+}
+
+fn delete_request(
+    subject: SessionId,
+    workspace_id: WorkspaceId,
+    item_ids: serde_json::Value,
+) -> OperationRequest {
+    let mut request = request(subject, workspace_id, "pcb_delete_items");
+    request.arguments.insert("item_ids".into(), item_ids);
+    request
+}
+
+#[test]
+fn one_item_delete_stays_at_base_normal_risk() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Design, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate_with_grant(
+            &delete_request(subject, ws.workspace_id, serde_json::json!(["a"])),
+            &grant,
+            &ws,
+            &clock,
+        ),
+        PolicyDecision::Allow {
+            capability: Capability::PCB_WRITE,
+            risk: RiskAssessment::new(2, RiskLevel::Normal, RiskLevel::Normal, vec![]).unwrap(),
+        }
+    );
+}
+
+#[test]
+fn multiple_item_delete_escalates_to_high_with_safe_factor() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Design, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate_with_grant(
+            &delete_request(subject, ws.workspace_id, serde_json::json!(["a", "b"])),
+            &grant,
+            &ws,
+            &clock,
+        ),
+        PolicyDecision::RequireApproval {
+            reason: ApprovalReason::HighRiskOperation,
+            capability: Capability::PCB_WRITE,
+            risk: RiskAssessment::new(
+                2,
+                RiskLevel::Normal,
+                RiskLevel::High,
+                vec![RiskFactor {
+                    code: RiskFactorCode::BulkArgumentCardinality,
+                    subject: "item_ids".into(),
+                    observed_count: 2,
+                    threshold: 2,
+                    escalated_to: RiskLevel::High,
+                }],
+            )
+            .unwrap(),
+        }
+    );
+}
+
+#[test]
+fn larger_bulk_delete_preserves_observed_count_without_raising_above_high() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Design, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    let decision = engine.evaluate_with_grant(
+        &delete_request(
+            subject,
+            ws.workspace_id,
+            serde_json::json!(["a", "b", "c"]),
+        ),
+        &grant,
+        &ws,
+        &clock,
+    );
+    let PolicyDecision::RequireApproval { risk, .. } = decision else {
+        panic!("three-item delete must require approval");
+    };
+    assert_eq!(risk.effective_risk, RiskLevel::High);
+    assert_eq!(risk.factors[0].observed_count, 3);
+}
+
+#[test]
+fn missing_or_scalar_risk_relevant_argument_fails_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Design, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    for request in [
+        request(subject, ws.workspace_id, "pcb_delete_items"),
+        delete_request(subject, ws.workspace_id, serde_json::json!("a")),
+    ] {
+        assert_eq!(
+            engine.evaluate_with_grant(&request, &grant, &ws, &clock),
+            PolicyDecision::Deny {
+                reason: DenyReason::MalformedToolArguments,
+            }
+        );
+    }
+}
+
+#[test]
+fn empty_delete_list_never_lowers_base_risk() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Design, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    let PolicyDecision::Allow { risk, .. } = engine.evaluate_with_grant(
+        &delete_request(subject, ws.workspace_id, serde_json::json!([])),
+        &grant,
+        &ws,
+        &clock,
+    ) else {
+        panic!("empty reviewed delete request should remain at base risk");
+    };
+    assert_eq!(risk.base_risk, RiskLevel::Normal);
+    assert_eq!(risk.effective_risk, RiskLevel::Normal);
+}
+
+#[test]
+fn static_high_risk_remains_high_without_dynamic_factors() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let session = active_session(ws.workspace_id, CapabilityProfile::Manufacturing, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    let PolicyDecision::RequireApproval { risk, .. } = engine.evaluate(
+        &request(
+            session.session_id,
+            ws.workspace_id,
+            "manufacturing.export_gerber",
+        ),
+        &session,
+        &ws,
+        &clock,
+    ) else {
+        panic!("static high-risk tool must still require approval");
+    };
+    assert_eq!(risk.base_risk, RiskLevel::High);
+    assert_eq!(risk.effective_risk, RiskLevel::High);
+    assert!(risk.factors.is_empty());
 }
 
 #[test]
