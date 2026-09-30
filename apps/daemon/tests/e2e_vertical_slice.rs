@@ -216,7 +216,6 @@ async fn full_vertical_slice_from_pairing_through_revocation() {
         companion_core::ExecutionStatus::Success
     );
 
-
     // Dynamic-risk regression: the same statically-Normal destructive tool is
     // escalated when two reviewed item ids are supplied. The ids themselves
     // must never cross the local risk-explanation surface.
