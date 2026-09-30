@@ -104,10 +104,11 @@ describe("WorkspacesScreen", () => {
     fireEvent.change(pathInput, { target: { value: "/home/user/new-project" } });
 
     // Click authorize
-    screen.getByRole("button", { name: "Authorize" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
 
     await waitFor(() => {
       expect(api.authorizeWorkspace).toHaveBeenCalledWith("/home/user/new-project", "/home/user/new-project");
+      expect(screen.getByText("New Project")).toBeInTheDocument();
     });
   });
 
@@ -132,10 +133,12 @@ describe("WorkspacesScreen", () => {
     const nameInput = screen.getByPlaceholderText("Display name (optional)");
     fireEvent.change(nameInput, { target: { value: "Custom Name" } });
 
-    screen.getByRole("button", { name: "Authorize" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
 
     await waitFor(() => {
       expect(api.authorizeWorkspace).toHaveBeenCalledWith("/home/user/new-project", "Custom Name");
+      expect(pathInput).toHaveValue("");
+      expect(nameInput).toHaveValue("");
     });
   });
 
@@ -162,7 +165,7 @@ describe("WorkspacesScreen", () => {
     const pathInput = screen.getByPlaceholderText("Absolute path to a KiCad project directory");
     fireEvent.change(pathInput, { target: { value: "/home/user/existing" } });
 
-    screen.getByRole("button", { name: "Authorize" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
 
     await waitFor(() => {
       expect(screen.getByText("Path already authorized")).toBeInTheDocument();
@@ -194,10 +197,11 @@ describe("WorkspacesScreen", () => {
       expect(screen.getByText("To Remove")).toBeInTheDocument();
     });
 
-    screen.getByRole("button", { name: "Remove" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {
       expect(api.removeWorkspace).toHaveBeenCalledWith("ws_1");
+      expect(screen.getByText("No authorized workspaces yet.")).toBeInTheDocument();
     });
   });
 
@@ -218,7 +222,7 @@ describe("WorkspacesScreen", () => {
       expect(screen.getByText("Cannot Remove")).toBeInTheDocument();
     });
 
-    screen.getByRole("button", { name: "Remove" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {
       expect(screen.getByText("Workspace in use by active session")).toBeInTheDocument();
