@@ -1043,7 +1043,11 @@ risk = "critical"
         .await;
 
         assert!(state.session_repo.list_all().unwrap().is_empty());
-        assert!(state.authorization_repo.list_all_grants().unwrap().is_empty());
+        assert!(state
+            .authorization_repo
+            .list_all_grants()
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
