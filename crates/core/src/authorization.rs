@@ -86,6 +86,17 @@ pub struct VerifiedPrincipal {
     pub transport_binding: String,
 }
 
+impl VerifiedPrincipal {
+    /// Structural sanity only; the transport must still authenticate proof.
+    /// Blank mandatory claims cannot establish an identity/binding.
+    pub fn has_required_binding_fields(&self) -> bool {
+        !self.issuer.trim().is_empty()
+            && !self.subject.trim().is_empty()
+            && !self.authentication_strength.trim().is_empty()
+            && !self.transport_binding.trim().is_empty()
+    }
+}
+
 /// The remote principal a grant is issued to.
 ///
 /// `name` is always the remote-supplied display claim. A verified identity,
@@ -126,7 +137,11 @@ impl AuthorizationPrincipal {
     }
 
     pub fn is_verified(&self) -> bool {
-        matches!(self.assurance, PrincipalAssurance::Verified) && self.verified.is_some()
+        matches!(self.assurance, PrincipalAssurance::Verified)
+            && self
+                .verified
+                .as_ref()
+                .is_some_and(VerifiedPrincipal::has_required_binding_fields)
     }
 
     pub fn verified_principal(&self) -> Option<&VerifiedPrincipal> {
@@ -140,8 +155,14 @@ impl AuthorizationPrincipal {
         match self.assurance {
             PrincipalAssurance::Unverified => self.verified.is_none(),
             PrincipalAssurance::Verified => {
-                matches!((self.verified.as_ref(), current), (Some(expected), Some(actual)) if expected == actual)
-            },
+                matches!(
+                    (self.verified.as_ref(), current),
+                    (Some(expected), Some(actual))
+                        if expected.has_required_binding_fields()
+                            && actual.has_required_binding_fields()
+                            && expected == actual
+                )
+            }
         }
     }
 }
@@ -837,6 +858,21 @@ mod tests {
         let actor = verified_actor("bind-A");
         assert!(!malformed.accepts_transport_principal(None));
         assert!(!malformed.accepts_transport_principal(Some(&actor)));
+    }
+
+    #[test]
+    fn empty_transport_binding_is_not_a_verified_identity() {
+        let mut actor = verified_actor("binding");
+        actor.transport_binding.clear();
+        let principal = AuthorizationPrincipal::verified("display:claim", actor.clone());
+        assert!(!principal.is_verified());
+        assert!(!principal.accepts_transport_principal(Some(&actor)));
+
+        actor.transport_binding = "binding".into();
+        actor.authentication_strength = "  ".into();
+        let principal = AuthorizationPrincipal::verified("display:claim", actor.clone());
+        assert!(!principal.is_verified());
+        assert!(!principal.accepts_transport_principal(Some(&actor)));
     }
 
     #[test]
