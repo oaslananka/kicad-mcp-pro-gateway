@@ -55,7 +55,7 @@ export default function StatusScreen() {
         {sessions?.map((s) => (
           <div className="row" key={s.session_id}>
             <span>
-              {s.remote_principal} · {s.capability_profile}
+              {s.remote_principal} (claimed; {s.verified_identity ? "verified transport identity" : "unverified"}) · {s.capability_profile}
             </span>
             <span className="mono">expires {s.expires_at}</span>
           </div>
