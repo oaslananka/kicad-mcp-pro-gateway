@@ -49,13 +49,16 @@ fn a_fresh_database_reports_the_current_schema_version() {
         ("audit_events", "verified_principal_subject"),
         ("audit_events", "principal_verification_source"),
         ("audit_events", "authentication_strength"),
+        ("audit_events", "risk_policy_version"),
+        ("audit_events", "base_risk"),
+        ("audit_events", "risk_factors_json"),
     ] {
         let sql = format!("SELECT {column} FROM {table} LIMIT 0");
         conn.prepare(&sql)
             .unwrap_or_else(|_| panic!("{table}.{column} must exist after migration"));
     }
     assert_eq!(
-        SCHEMA_VERSION, 4,
+        SCHEMA_VERSION, 5,
         "one migration per schema version; bump this with the migration"
     );
 }
@@ -172,6 +175,68 @@ fn reopening_a_v3_database_marks_existing_audit_rows_unverified_without_inventin
     assert_eq!(row.2, None);
     assert_eq!(row.3, None);
     assert_eq!(row.4, None);
+}
+
+
+#[test]
+fn reopening_a_v4_database_adds_dynamic_risk_columns_without_rewriting_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("gateway.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(include_str!("../migrations/0001_init.sql"))
+            .unwrap();
+        conn.execute_batch(include_str!("../migrations/0002_authorization.sql"))
+            .unwrap();
+        conn.execute_batch(include_str!("../migrations/0003_verified_principal.sql"))
+            .unwrap();
+        conn.execute_batch(include_str!(
+            "../migrations/0004_audit_principal_verification.sql"
+        ))
+        .unwrap();
+        conn.execute(
+            "INSERT INTO audit_events (
+                operation_id, timestamp, session_id, workspace_id, remote_principal,
+                requested_tool, capability, risk, policy_result, approval_decision,
+                execution_status, error_class, duration_ms
+             ) VALUES (
+                'op_01J00000000000000000000001', '2026-09-02T00:00:00Z', NULL, NULL,
+                'agent:v4', 'pcb_delete_items', 'pcb.write', ?1, ?2,
+                NULL, ?3, NULL, NULL
+             )",
+            rusqlite::params!["\"High\"", "\"RequireApproval\"", "\"NotExecuted\""],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 4i64).unwrap();
+    }
+
+    let storage = Storage::open(dir.path()).expect("a V4 database opens and migrates");
+    let conn = storage.connection().lock().unwrap();
+    assert_eq!(schema_version(&conn).unwrap(), SCHEMA_VERSION);
+
+    let row: (Option<i64>, Option<String>, String, String, String) = conn
+        .query_row(
+            "SELECT risk_policy_version, base_risk, risk_factors_json, requested_tool, risk
+             FROM audit_events
+             WHERE operation_id = 'op_01J00000000000000000000001'",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
+
+    assert_eq!(row.0, None, "migration must not invent a policy version");
+    assert_eq!(row.1, None, "migration must not invent a base risk");
+    assert_eq!(row.2, "[]", "historical rows have no dynamic risk factors");
+    assert_eq!(row.3, "pcb_delete_items");
+    assert_eq!(row.4, "\"High\"", "existing effective risk is preserved");
 }
 
 #[test]
