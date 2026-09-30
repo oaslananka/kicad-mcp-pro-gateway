@@ -449,9 +449,22 @@ async fn session(
                 }
                 // Grant ids are capability identifiers; keep them out of CLI output.
                 for grant in grants {
+                    let verified = grant
+                        .verified_identity
+                        .as_ref()
+                        .map(|actor| {
+                            format!(
+                                "verified {} via {} ({})",
+                                actor.subject,
+                                actor.verification_source,
+                                actor.authentication_strength
+                            )
+                        })
+                        .unwrap_or_else(|| "unverified claim".to_string());
                     println!(
-                        "{}  authorization {}  {}  {}  effective expiry {}  transport {}",
+                        "{} (claimed)  identity {}  authorization {}  {}  {}  effective expiry {}  transport {}",
                         grant.remote_principal,
+                        verified,
                         grant.authorization_status,
                         grant.grant_kind,
                         grant.capability_profile,
