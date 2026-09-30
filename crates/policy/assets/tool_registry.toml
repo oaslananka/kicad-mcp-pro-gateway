@@ -763,6 +763,13 @@ risk = "normal"
 arguments = ["item_ids"]
 effects = ["read", "delete"]
 
+[[tool.risk_rules]]
+kind = "argument_cardinality"
+argument = "item_ids"
+minimum_count = 2
+requires_effect = "delete"
+escalate_to = "high"
+
 [[tool]]
 name = "pcb_delete_object"
 capability = "pcb.write"
