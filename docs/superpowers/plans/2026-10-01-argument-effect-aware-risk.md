@@ -110,7 +110,8 @@ The constructor API must make `RiskAssessment` impossible to create with `effect
 
 Run:
 ```bash
-cargo test -p companion-core risk::tests authorization::tests -- --nocapture
+cargo test -p companion-core risk::tests -- --nocapture
+cargo test -p companion-core authorization::tests -- --nocapture
 ```
 
 Expected: FAIL because the new assessment types/constructor and `GrantRequest.risk_policy_version` do not exist.
