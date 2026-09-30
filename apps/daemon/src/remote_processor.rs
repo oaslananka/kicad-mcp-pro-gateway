@@ -11,7 +11,8 @@ use std::time::Duration;
 use companion_core::{
     AccessGrant, ApprovalDecisionKind, AuditEvent, AuthorizationPrincipal, CapabilityProfile,
     CompanionError, DeviceId, ExecutionStatus, GrantKind, GrantRequest, OperationId,
-    OperationRequest, PolicyResultKind, RiskLevel, Session, SessionId, VerifiedPrincipal, WorkspaceId,
+    OperationRequest, PolicyResultKind, RiskLevel, Session, SessionId, VerifiedPrincipal,
+    WorkspaceId,
 };
 use companion_policy::PolicyDecision;
 use companion_protocol::{Envelope, MessageType};
@@ -96,18 +97,14 @@ async fn handle_inbound_envelope(
             handle_session_request_with_principal(state, envelope, verified_principal).await
         }
         MessageType::OperationRequest => {
-            handle_operation_request_with_principal(
-                state,
-                transport,
-                envelope,
-                verified_principal,
-            )
-            .await
+            handle_operation_request_with_principal(state, transport, envelope, verified_principal)
+                .await
         }
         _ => {}
     }
 }
 
+#[cfg(test)]
 async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
     handle_session_request_with_principal(state, envelope, None).await;
 }
@@ -215,6 +212,7 @@ async fn handle_session_request_with_principal(
     }
 }
 
+#[cfg(test)]
 async fn handle_operation_request(
     state: &Arc<DaemonState>,
     transport: &dyn Transport,
@@ -278,9 +276,7 @@ async fn handle_operation_request_with_principal(
             .principal
             .accepts_transport_principal(verified_principal.as_ref())
         {
-            tracing::warn!(
-                "operation request verified-principal transport binding rejected"
-            );
+            tracing::warn!("operation request verified-principal transport binding rejected");
             decision = PolicyDecision::Deny {
                 reason: companion_policy::DenyReason::PrincipalBindingMismatch,
             };
