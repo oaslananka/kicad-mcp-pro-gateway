@@ -6,12 +6,13 @@ use crate::error::StorageError;
 /// The schema version this build expects to find, i.e. the number of applied
 /// migrations. Bump this by adding a migration file, never by editing an
 /// already-released one.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
         M::up(include_str!("../migrations/0001_init.sql")),
         M::up(include_str!("../migrations/0002_authorization.sql")),
+        M::up(include_str!("../migrations/0003_verified_principal.sql")),
     ])
 }
 
