@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import PairingScreen from "../PairingScreen";
 import { api } from "../../api/client";
@@ -34,7 +34,7 @@ describe("PairingScreen", () => {
     });
 
     // Click the begin pairing button
-    screen.getByRole("button", { name: "Begin pairing" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Begin pairing" }));
 
     await waitFor(() => {
       expect(screen.getByText("ABCD-EFGH-IJKL")).toBeInTheDocument();
@@ -53,7 +53,7 @@ describe("PairingScreen", () => {
       expect(screen.getByRole("button", { name: "Begin pairing" })).toBeInTheDocument();
     });
 
-    screen.getByRole("button", { name: "Begin pairing" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Begin pairing" }));
 
     await waitFor(() => {
       expect(screen.getByText(/Daemon not reachable: connection refused/i)).toBeInTheDocument();
@@ -73,16 +73,20 @@ describe("PairingScreen", () => {
       expect(screen.getByRole("button", { name: "Begin pairing" })).toBeInTheDocument();
     });
 
-    screen.getByRole("button", { name: "Begin pairing" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Begin pairing" }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Starting…" })).toBeDisabled();
     });
 
-    resolvePairing!({ pairing_code: "TEST-CODE", mock_provider: false });
+    await act(async () => {
+      resolvePairing!({ pairing_code: "TEST-CODE", mock_provider: false });
+      await pairingPromise;
+    });
 
     await waitFor(() => {
       expect(screen.getByText("TEST-CODE")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Begin pairing" })).toBeEnabled();
     });
   });
 
@@ -95,7 +99,7 @@ describe("PairingScreen", () => {
       expect(screen.getByRole("button", { name: "Begin pairing" })).toBeInTheDocument();
     });
 
-    screen.getByRole("button", { name: "Begin pairing" }).click();
+    fireEvent.click(screen.getByRole("button", { name: "Begin pairing" }));
 
     await waitFor(() => {
       expect(screen.getByText(/Network error/i)).toBeInTheDocument();
