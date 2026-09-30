@@ -290,7 +290,7 @@ async fn full_vertical_slice_from_pairing_through_revocation() {
         &data_dir,
         IpcRequest::DenyOperation {
             operation_id: bulk_delete_op_id,
-            reason: Some("dynamic-risk regression cleanup".into()),
+            reason: "dynamic-risk regression cleanup".into(),
         },
     )
     .await;
