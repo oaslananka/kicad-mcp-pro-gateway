@@ -48,11 +48,15 @@ next run again executed **2 passed, 1 failed**: the live read and audit
 succeeded, while `sch_add_symbol` correctly failed closed with
 `UnmodelledToolContract` (no reviewed effects). PR #57's updated scenario
 now asserts that deny/audit behavior instead of requesting a new grant;
-the high-risk approval, revocation, and reconnect stages still require
-fresh passing test evidence.
-Until an exact-head run passes all 3 executed tests, **Ubuntu live E2E
-qualification is unverified**. Earlier green workflow statuses cannot be
-used to demonstrate compatibility. This correction applies prospectively
+the high-risk approval, revocation, and reconnect stages needed
+fresh passing test evidence. The [2026-09-30 repaired run](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865)
+at `98967a3549701da2e2b596d7cf977aff8689987f` subsequently executed **all 3 tests successfully
+(3 passed; 0 failed; 0 ignored)**. The vertical slice verified real
+read/audit, unmodelled-write denial and nonexecution audit, a reviewed
+high-risk tool call only after approval, revocation, and reconnect denial.
+The high-risk tool returned "No schematic symbols were found to place";
+this **does not demonstrate actual board component placement**.
+Earlier zero-test green workflow statuses remain invalid evidence. This correction applies prospectively
 to release authorization; it does not alter the historical fact that
 implementation issue #38 closed or waive independent macOS/Windows live,
 clean-machine, signing, and human release-owner gates.
@@ -63,7 +67,7 @@ clean-machine, signing, and human release-owner gates.
 
 This document records a dated **conditional V1 stable-release readiness assessment** for KiCad MCP Pro Gateway. It is based on release-pipeline implementation, automated verification workflows, and documented security/compatibility baselines; it is not evidence that the external qualification and promotion steps were completed.
 
-**Historical decision (superseded for promotion):** **CONDITIONAL GO** was recorded on 2026-09-25. The 2026-09-30 correction above invalidates prior green Ubuntu live-E2E status as positive test evidence. **No stable promotion is authorized** until executed Ubuntu live tests pass and all remaining release qualification gates are satisfied.
+**Historical decision (superseded for promotion):** **CONDITIONAL GO** was recorded on 2026-09-25. The 2026-09-30 correction above invalidates prior green Ubuntu live-E2E status as positive test evidence. The Ubuntu execution gate was subsequently satisfied in [run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865); **no stable promotion is authorized** until the remaining release qualification gates are satisfied.
 
 ---
 
@@ -75,7 +79,7 @@ This document records a dated **conditional V1 stable-release readiness assessme
 | Fail-Closed Audit Persistence | #36 / PR #36 | ✅ **CLOSED** | Durable append-only audit store; `AuditPersistence` error on write failure; zero upstream calls when audit unavailable |
 | Release Candidate Pipeline | #41 / PR #41 | ✅ **CLOSED** | Fail-closed tag-triggered pipeline with SBOM, provenance, SBOM attestations, draft-prerelease-only publication |
 | Signed Desktop Installers | #40 / PR #40 | ✅ **CLOSED** | `.deb` (Linux, validated via provenance), `.dmg` (macOS Developer ID + notarization), `.msi` (Windows Authenticode + timestamp) |
-| Live E2E Release Gate | #38 / PR #38 | ✅ **IMPLEMENTATION CLOSED; EXECUTION NOT YET QUALIFIED** | Workflow exists against pinned baseline, but pre-fix green runs executed 0 tests; PR #57 repairs test execution, subsequent actual run reached a correctly denied unmodelled write; full suite not yet green. |
+| Live E2E Release Gate | #38 / PR #38 | ✅ **IMPLEMENTATION CLOSED; UBUNTU EXECUTION VERIFIED** | Historic false-green was corrected in PR #57; [real run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) passed 3/3, including correct denied-write and approved high-risk paths. Separate installer/cross-platform gates remain. |
 | Desktop Security-Critical UX | #39 / PR #39 | ✅ **CLOSED** | Comprehensive UI tests for offline/failure states; Vitest + React Testing Library in CI |
 | Update/Upgrade/Rollback Strategy | #42 / PR #42 | ✅ **CLOSED** | Documented in `docs/upgrade-v1.md`; tested in CI matrix |
 | Compatibility Matrix Baseline | #32 / PR #32 | ✅ **CLOSED** | Canonical matrix in `docs/architecture/compatibility-matrix.md` for Ubuntu 24.04 x86_64, macOS Apple Silicon, Windows 11 x86_64 |
@@ -120,7 +124,7 @@ This document records a dated **conditional V1 stable-release readiness assessme
 
 **Upstream Baseline:** `kicad-mcp-pro@3.35.0` pinned to commit `f641a92596ab7adc1e134287578b1ae5ff9580ad` (387 tools reviewed)
 
-**Live-Core Validation Status (2026-09-30 correction):** Ubuntu live-E2E workflow exists but its historical green runs executed 0 tests. An actually executed and passing 3-test run is now an outstanding promotion requirement. macOS/Windows live evidence and exact-artifact clean-machine qualification remain separately outstanding.
+**Live-Core Validation Status (2026-09-30 correction):** Historical green Ubuntu workflows executed 0 tests. The subsequent [corrected run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) executed and passed 3/3 tests at `98967a3549701da2e2b596d7cf977aff8689987f`. This is bounded live integration evidence, not proof of physical PCB mutations or release artifact qualification. macOS/Windows live evidence and exact-artifact clean-machine qualification remain separately outstanding.
 
 ---
 
@@ -175,8 +179,8 @@ This document records a dated **conditional V1 stable-release readiness assessme
 
 | Test | Status | Details |
 |------|--------|---------|
-| Automated live E2E on Ubuntu | ⚠️ **RUNNER IMPLEMENTED; PASSING TEST EVIDENCE PENDING** | Earlier green runs skipped all 3 tests; PR #57 adds `--include-ignored` and rejects zero-test success. First two real runs: 2 passed/1 failed (fixture path, then correctly denied unmodelled write); revised test pending validation. |
-| Live reconciliation test | ✅ **EXECUTED ONCE; PASSED** | `cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --include-ignored --nocapture` executed 3 tests; tool reconciliation and health check passed, full vertical slice failed. |
+| Automated live E2E on Ubuntu | ✅ **3/3 EXECUTED AND PASSED** | PR #57 fixes previous `0 passed; 3 ignored` false-green and explicitly validates denied unmodelled writes; [run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) passed all three. |
+| Live reconciliation test | ✅ **EXECUTED AND PASSED** | `cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --include-ignored --nocapture` on [run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) passed health, reconciliation, and full vertical slice, with 0 ignored. |
 | macOS live E2E | ❌ **NOT CONFIGURED** | No macOS runner in matrix (only Ubuntu) |
 | Windows live E2E | ❌ **NOT CONFIGURED** | No Windows runner in matrix (only Ubuntu) |
 
@@ -250,7 +254,7 @@ surfaces directly rather than inferring a zero-alert state from CI alone.
 - [x] Release candidate pipeline implemented and fail-closed
 - [x] Signed installer pipeline implemented for all three platforms
 - [x] Compatibility matrix documented and matches CI/release targets
-- [ ] Ubuntu live E2E **executed and passing** — historical green runs executed 0 tests; PR #57 repair validation pending
+- [x] Ubuntu live E2E **executed and passing** — historical zero-test runs remain invalid; [run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) passed 3/3
 - [x] Security invariants verified (TTL, audit, trust boundaries, tool effects)
 - [x] Upgrade/rollback strategy documented and tested
 - [x] No expired release-blocking advisory exceptions
