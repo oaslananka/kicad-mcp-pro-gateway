@@ -640,7 +640,11 @@ mod tests {
         repository.save_grant(&grant).unwrap();
         repository.save_lease(&lease).unwrap();
         assert_eq!(
-            repository.load_lease(lease.lease_id).unwrap().unwrap().principal,
+            repository
+                .load_lease(lease.lease_id)
+                .unwrap()
+                .unwrap()
+                .principal,
             lease.principal
         );
     }
