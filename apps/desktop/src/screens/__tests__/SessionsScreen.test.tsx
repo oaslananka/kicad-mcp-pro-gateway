@@ -23,6 +23,10 @@ function createMockSession(overrides: Partial<SessionView> = {}): SessionView {
   return {
     session_id: "ses_100",
     remote_principal: "agent@cloud",
+    principal_assurance: "unverified",
+    verified_identity: null,
+    authorization_status: "active",
+    transport_state: "Connected",
     status: "Active",
     capability_profile: "Design",
     task_scope: "PCB Routing",
@@ -59,6 +63,43 @@ describe("SessionsScreen", () => {
     await waitFor(() => {
       expect(screen.getByText(/No sessions yet/i)).toBeInTheDocument();
     });
+  });
+
+  it("never presents a matching remote claim as a verified identity", async () => {
+    vi.mocked(api.listSessions).mockResolvedValue([
+      createMockSession({ remote_principal: "trusted-subject", verified_identity: null }),
+    ]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
+    render(<SessionsScreen />);
+    await waitFor(() => {
+      expect(screen.getByText("Unverified claim")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Verified")).not.toBeInTheDocument();
+  });
+
+  it("shows verified issuer, subject, source and strength in the approval dialog", async () => {
+    vi.mocked(api.listSessions).mockResolvedValue([
+      createMockSession({
+        status: "PendingApproval",
+        remote_principal: "someone-claimed",
+        principal_assurance: "verified",
+        verified_identity: {
+          issuer: "trusted-issuer",
+          subject: "actor-7",
+          verification_source: "authenticated_transport",
+          authentication_strength: "mfa",
+        },
+      }),
+    ]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([]);
+    render(<SessionsScreen />);
+    await waitFor(() => {
+      expect(screen.getByText("Verified")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const modal = screen.getByText("Remote access request").closest(".modal") as HTMLElement;
+    expect(within(modal).getByText("someone-claimed")).toBeInTheDocument();
+    expect(within(modal).getByText(/actor-7.*trusted-issuer.*authenticated_transport.*mfa/)).toBeInTheDocument();
   });
 
   it("renders active sessions and pending approvals", async () => {

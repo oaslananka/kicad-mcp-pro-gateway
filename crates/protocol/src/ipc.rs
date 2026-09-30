@@ -22,7 +22,7 @@ pub const DAEMON_PRODUCT_ID: &str = "kicad-mcp-gateway";
 ///   view. A version-1 client cannot see that authority is separate from
 ///   transport connectivity, so it must be retired rather than left to run
 ///   against a daemon that answers with views it will misread.
-pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 2;
+pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DaemonIdentityView {
@@ -191,10 +191,25 @@ pub struct WorkspaceInfo {
     pub display_name: String,
 }
 
+/// Safe metadata derived from authenticated grant state; never a remote
+/// display claim, transport binding, token, or raw credential.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifiedIdentityView {
+    pub issuer: String,
+    pub subject: String,
+    pub verification_source: String,
+    pub authentication_strength: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionView {
     pub session_id: SessionId,
+    /// Untrusted, remote-supplied display claim, NOT a proven identity.
     pub remote_principal: String,
+    /// Unverified if no usable authenticated grant evidence exists.
+    pub principal_assurance: String,
+    /// Verified actor metadata only; never the transport binding itself.
+    pub verified_identity: Option<VerifiedIdentityView>,
     /// The transport-era status of this subject record, kept for existing
     /// clients. It is a compatibility field, not an authorization signal —
     /// see `authorization_status` for the authority that is actually in
@@ -231,6 +246,8 @@ pub struct AccessGrantView {
     /// `unverified` until a real remote-identity verification exists; a UI
     /// must not present this as a proven identity.
     pub principal_assurance: String,
+    /// Null for unverified or incomplete authority.
+    pub verified_identity: Option<VerifiedIdentityView>,
     pub authorization_status: String,
     /// `standing` or `one_shot`. A one-shot grant authorizes a single lease,
     /// which is not the same thing as a per-operation "allow once".
@@ -325,8 +342,8 @@ mod tests {
     #[test]
     fn a_changed_local_ipc_contract_bumps_the_version_it_is_checked_against() {
         assert_eq!(
-            LOCAL_IPC_PROTOCOL_VERSION, 2,
-            "2 = the AccessGrant/AuthorizationLease contract; bump this, and this test, \
+            LOCAL_IPC_PROTOCOL_VERSION, 3,
+            "3 = identity source is separate from claims; bump this test, \
              whenever a request/response variant or a client-relevant field changes"
         );
         let previous_contract = DaemonIdentityView {
@@ -452,6 +469,7 @@ mod authorization_view_tests {
             device_id: DeviceId::new(),
             remote_principal: "agent:test".into(),
             principal_assurance: "unverified".into(),
+            verified_identity: None,
             authorization_status: "active".into(),
             grant_kind: "standing".into(),
             capability_profile: "Inspect".into(),
@@ -485,6 +503,7 @@ mod authorization_view_tests {
             "connectivity is reported next to the authority, not inside it"
         );
         assert_eq!(value["principal_assurance"], "unverified");
+        assert!(value["verified_identity"].is_null());
     }
 
     #[test]
@@ -492,6 +511,8 @@ mod authorization_view_tests {
         let view = SessionView {
             session_id: SessionId::new(),
             remote_principal: "agent:test".into(),
+            principal_assurance: "unverified".into(),
+            verified_identity: None,
             status: "Connected".into(),
             authorization_status: "pending_approval".into(),
             transport_state: "Connected".into(),
@@ -509,6 +530,8 @@ mod authorization_view_tests {
             "pending_approval"
         );
         assert_eq!(value["payload"][0]["transport_state"], "Connected");
+        assert_eq!(value["payload"][0]["principal_assurance"], "unverified");
+        assert!(value["payload"][0]["verified_identity"].is_null());
 
         let json = serde_json::to_string(&IpcResponse::Sessions(vec![view])).unwrap();
         let back: IpcResponse = serde_json::from_str(&json).unwrap();
@@ -516,6 +539,26 @@ mod authorization_view_tests {
             panic!("expected Sessions");
         };
         assert_eq!(views[0].authorization_status, "pending_approval");
+    }
+
+    #[test]
+    fn verified_identity_view_round_trips_without_transport_binding() {
+        let mut view = grant_view();
+        view.principal_assurance = "verified".into();
+        view.verified_identity = Some(VerifiedIdentityView {
+            issuer: "trusted-issuer".into(),
+            subject: "actor-7".into(),
+            verification_source: "authenticated_transport".into(),
+            authentication_strength: "phishing_resistant".into(),
+        });
+        let value = serde_json::to_value(&view).unwrap();
+        assert_eq!(value["verified_identity"]["subject"], "actor-7");
+        assert!(value.get("transport_binding").is_none());
+        assert!(value["verified_identity"]
+            .get("transport_binding")
+            .is_none());
+        let back: AccessGrantView = serde_json::from_value(value).unwrap();
+        assert_eq!(view, back);
     }
 
     #[test]

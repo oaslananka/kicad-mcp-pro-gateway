@@ -52,7 +52,7 @@ export default function SessionsScreen() {
           <tbody>
             {sessions?.map((s) => (
               <tr key={s.session_id}>
-                <td>{s.remote_principal}</td>
+                <td>{s.remote_principal} <span className={s.verified_identity ? "badge active" : "badge"}>{s.verified_identity ? "Verified" : "Unverified claim"}</span></td>
                 <td>{s.capability_profile}</td>
                 <td>
                   <span className={statusBadgeClass(s.status)}>{s.status}</span>
@@ -132,8 +132,22 @@ export default function SessionsScreen() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Remote access request</h3>
             <div className="row">
-              <span className="label">Source</span>
+              <span className="label">Claimed remote name</span>
               <span>{sessionDialog.remote_principal}</span>
+            </div>
+            <div className="row">
+              <span className="label">Identity assurance</span>
+              <span>{sessionDialog.verified_identity ? "Verified transport identity" : "Unverified claim"}</span>
+            </div>
+            {sessionDialog.verified_identity && (
+              <div className="row">
+                <span className="label">Verified identity</span>
+                <span className="mono">{sessionDialog.verified_identity.subject} (issuer: {sessionDialog.verified_identity.issuer}; source: {sessionDialog.verified_identity.verification_source}; strength: {sessionDialog.verified_identity.authentication_strength})</span>
+              </div>
+            )}
+            <div className="row">
+              <span className="label">Authorization</span>
+              <span>{sessionDialog.authorization_status}</span>
             </div>
             <div className="row">
               <span className="label">Profile</span>

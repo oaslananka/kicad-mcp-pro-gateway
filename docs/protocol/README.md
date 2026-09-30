@@ -105,6 +105,11 @@ persists — so a client never has to normalize a debug rendering.
 All three protocol boundaries are explicit. A breaking Gateway transport
 change bumps the envelope's major component; receivers reject majors they do
 not understand rather than guess. Local IPC has a separate integer contract
-version and requires an exact match before a client forwards any privileged
-request. Daemon package versions are checked separately so a stale Gateway
+version (currently 3) and requires an exact match before forwarding privileged
+requests. IPC v3 distinguishes the remote claimed display name from verified
+actor identity on both SessionView and AccessGrantView: verified_identity is
+null for absent or incomplete authenticated grant evidence. The view carries
+only issuer, subject, verification source and authentication strength, never
+a credential or transport binding. These fields do not imply production relay
+credential verification is implemented. Daemon package versions are checked separately so a stale Gateway
 process can be retired before its packaged replacement starts.

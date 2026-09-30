@@ -36,10 +36,21 @@ export interface PairingBegunView {
   mock_provider: boolean;
 }
 
+export interface VerifiedIdentityView {
+  issuer: string;
+  subject: string;
+  verification_source: string;
+  authentication_strength: string;
+}
+
 export interface SessionView {
   session_id: string;
   remote_principal: string;
+  principal_assurance: "unverified" | "verified";
+  verified_identity: VerifiedIdentityView | null;
   status: string;
+  authorization_status: string;
+  transport_state: string;
   capability_profile: string;
   task_scope: string;
   expires_at: string;

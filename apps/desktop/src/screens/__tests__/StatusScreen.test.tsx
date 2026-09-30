@@ -18,7 +18,7 @@ describe("StatusScreen", () => {
       message: null,
       identity: {
         product_id: "kicad-mcp-gateway",
-        protocol_version: 1,
+        protocol_version: 3,
         daemon_version: "0.1.0",
         instance_id: "instance-1",
       },
@@ -34,6 +34,10 @@ describe("StatusScreen", () => {
       {
         session_id: "ses_1",
         remote_principal: "user@remote",
+        principal_assurance: "unverified",
+        verified_identity: null,
+        authorization_status: "active",
+        transport_state: "Connected",
         status: "Active",
         capability_profile: "Design",
         task_scope: "General editing",
@@ -114,7 +118,7 @@ describe("StatusScreen", () => {
       message: null,
       identity: {
         product_id: "kicad-mcp-gateway",
-        protocol_version: 1,
+        protocol_version: 3,
         daemon_version: "0.1.0",
         instance_id: "instance-1",
       },
@@ -142,7 +146,7 @@ describe("StatusScreen", () => {
       message: null,
       identity: {
         product_id: "kicad-mcp-gateway",
-        protocol_version: 1,
+        protocol_version: 3,
         daemon_version: "0.1.0",
         instance_id: "instance-1",
       },
@@ -169,7 +173,7 @@ describe("StatusScreen", () => {
       message: null,
       identity: {
         product_id: "kicad-mcp-gateway",
-        protocol_version: 1,
+        protocol_version: 3,
         daemon_version: "0.1.0",
         instance_id: "instance-1",
       },
@@ -196,7 +200,7 @@ describe("StatusScreen", () => {
       message: null,
       identity: {
         product_id: "kicad-mcp-gateway",
-        protocol_version: 1,
+        protocol_version: 3,
         daemon_version: "0.1.0",
         instance_id: "instance-1",
       },
@@ -212,6 +216,10 @@ describe("StatusScreen", () => {
       {
         session_id: "ses_1",
         remote_principal: "user1@remote",
+        principal_assurance: "unverified",
+        verified_identity: null,
+        authorization_status: "active",
+        transport_state: "Connected",
         status: "Active",
         capability_profile: "Design",
         task_scope: "General editing",
@@ -222,6 +230,10 @@ describe("StatusScreen", () => {
       {
         session_id: "ses_2",
         remote_principal: "user2@remote",
+        principal_assurance: "unverified",
+        verified_identity: null,
+        authorization_status: "active",
+        transport_state: "Connected",
         status: "Active",
         capability_profile: "View",
         task_scope: "Read-only review",
@@ -232,6 +244,10 @@ describe("StatusScreen", () => {
       {
         session_id: "ses_3",
         remote_principal: "ci@build",
+        principal_assurance: "unverified",
+        verified_identity: null,
+        authorization_status: "active",
+        transport_state: "Connected",
         status: "Active",
         capability_profile: "Automation",
         task_scope: "CI build",
@@ -292,7 +308,7 @@ describe("StatusScreen", () => {
       message: null,
       identity: {
         product_id: "kicad-mcp-gateway",
-        protocol_version: 1,
+        protocol_version: 3,
         daemon_version: "0.1.0",
         instance_id: "instance-1",
       },
@@ -308,6 +324,10 @@ describe("StatusScreen", () => {
       {
         session_id: "ses_1",
         remote_principal: "user@remote",
+        principal_assurance: "unverified",
+        verified_identity: null,
+        authorization_status: "active",
+        transport_state: "Connected",
         status: "Active",
         capability_profile: "Design",
         task_scope: "General editing",
