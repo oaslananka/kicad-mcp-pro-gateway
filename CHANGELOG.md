@@ -4,7 +4,13 @@ All notable changes to this project are documented in this file. Format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.0.0-rc1] - 2026-09-25
+## Planned `1.0.0-rc1` scope — not released
+
+> This section records implementation intended for the first V1 release
+> candidate. It is **not** release history. As of the 2026-09-30 live
+> reconciliation, the workspace remains at `0.1.0` and the release record
+> still requires an actual tagged candidate plus external qualification
+> evidence before promotion.
 
 ### Added
 
