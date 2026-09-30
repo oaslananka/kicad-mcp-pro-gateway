@@ -1,21 +1,25 @@
 use std::error::Error;
-use std::path::PathBuf;
+use std::io::Read;
 
 use companion_policy::{TomlToolRegistry, ToolCatalogSnapshot, UpstreamEffectManifest};
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let args = std::env::args().skip(1).collect::<Vec<_>>();
-    if args.is_empty() || args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
-        println!("reconcile-upstream-effect-manifest: Strictly validate and compare a reviewed upstream effect manifest.");
-        println!("Usage: reconcile-upstream-effect-manifest <tool-effect-manifest.json>");
-        return Ok(());
-    }
-    if args.len() != 1 {
-        return Err("usage: reconcile-upstream-effect-manifest <tool-effect-manifest.json>".into());
-    }
+const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 
-    let path = PathBuf::from(&args[0]);
-    let json = std::fs::read_to_string(&path)?;
+fn read_manifest<R: Read>(reader: R) -> Result<String, Box<dyn Error>> {
+    let mut input = String::new();
+    let mut limited = reader.take(MAX_MANIFEST_BYTES + 1);
+    limited.read_to_string(&mut input)?;
+    if input.len() as u64 > MAX_MANIFEST_BYTES {
+        return Err("tool-effect manifest exceeds the 1 MiB reconciliation limit".into());
+    }
+    if input.trim().is_empty() {
+        return Err("tool-effect manifest input is empty".into());
+    }
+    Ok(input)
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let json = read_manifest(std::io::stdin().lock())?;
     let manifest = UpstreamEffectManifest::from_json_str(&json)?;
     let registry = TomlToolRegistry::try_embedded()?;
     let snapshot = ToolCatalogSnapshot::embedded();
@@ -65,4 +69,30 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("upstream effect manifest exactly matches the pinned production fallback");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn rejects_empty_input() {
+        assert!(read_manifest(Cursor::new(Vec::<u8>::new())).is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_input() {
+        let payload = vec![b'x'; MAX_MANIFEST_BYTES as usize + 1];
+        assert!(read_manifest(Cursor::new(payload)).is_err());
+    }
+
+    #[test]
+    fn accepts_bounded_utf8_json_input() {
+        let payload = br#"{"schemaVersion":"1.0.0"}"#.to_vec();
+        assert_eq!(
+            read_manifest(Cursor::new(payload)).unwrap(),
+            r#"{"schemaVersion":"1.0.0"}"#
+        );
+    }
 }

@@ -87,11 +87,11 @@ the fallback is changed.
 For a candidate upstream artifact, run:
 
 ```sh
-cargo run -p companion-policy --bin reconcile-upstream-effect-manifest -- \
+cargo run -p companion-policy --bin reconcile-upstream-effect-manifest < \
   /path/to/tool-effect-manifest.json
 ```
 
-The command exits non-zero when the manifest source pin differs from the
+The command accepts manifest JSON only through bounded standard input (max 1 MiB), performs no caller-selected filesystem reads, and exits non-zero when the manifest source pin differs from the
 production snapshot or when reviewed tool/effect contracts differ from the
 fallback. It reports drift but never writes policy or promotes an upstream
 tool into the allowlist.
