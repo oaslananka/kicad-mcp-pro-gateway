@@ -12,7 +12,7 @@ pub use envelope::{Envelope, EnvelopeError, MessageType, PROTOCOL_VERSION};
 pub use ipc::{
     AccessGrantView, AuditSummaryView, AuthorizationLeaseView, DaemonIdentityError,
     DaemonIdentityView, DaemonStatusView, IpcErrorView, IpcRequest, IpcResponse, PairingBegunView,
-    PairingStatusView, PendingApprovalView, SessionView, WorkspaceInfo, WorkspaceView,
-    DAEMON_PRODUCT_ID, LOCAL_IPC_PROTOCOL_VERSION,
+    PairingStatusView, PendingApprovalView, SessionView, VerifiedIdentityView, WorkspaceInfo,
+    WorkspaceView, DAEMON_PRODUCT_ID, LOCAL_IPC_PROTOCOL_VERSION,
 };
 pub use ipc_naming::socket_name;
