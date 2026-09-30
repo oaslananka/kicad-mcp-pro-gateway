@@ -427,16 +427,15 @@ fn parse_risk_rules(
                         ),
                     });
                 }
-                let escalate_to =
-                    RiskLevel::parse(&raw_rule.escalate_to).ok_or_else(|| {
-                        ToolRegistryError::InvalidRiskRule {
-                            tool: raw.name.clone(),
-                            message: format!(
-                                "unknown escalation risk level '{}'",
-                                raw_rule.escalate_to
-                            ),
-                        }
-                    })?;
+                let escalate_to = RiskLevel::parse(&raw_rule.escalate_to).ok_or_else(|| {
+                    ToolRegistryError::InvalidRiskRule {
+                        tool: raw.name.clone(),
+                        message: format!(
+                            "unknown escalation risk level '{}'",
+                            raw_rule.escalate_to
+                        ),
+                    }
+                })?;
                 if escalate_to <= base_risk {
                     return Err(ToolRegistryError::InvalidRiskRule {
                         tool: raw.name.clone(),
