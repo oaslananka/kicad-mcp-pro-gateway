@@ -61,6 +61,41 @@ categories. They are security-boundary facts, not a reimplementation of KiCad
 domain behavior. Contract review consumes upstream signatures and catalog
 metadata; it does not duplicate PCB/schematic semantics in Gateway.
 
+## Upstream reviewed-manifest transition
+
+`kicad-mcp-pro` now publishes a versioned machine-readable reviewed effect manifest (upstream PR #1014, merged as `e5065df453a57367cf1ea83437717967d36de77c`).
+Gateway treats that document as factual compatibility input, **not** as an
+authorization grant. `UpstreamEffectManifest` in `companion-policy` parses the
+JSON with closed enums/fields, validates schema/source identity, constructs the
+same `ToolEffectContract` domain model used by policy, and can reconcile it
+against the embedded fallback without executing upstream Python code.
+
+The production daemon continues to trust only the source-pinned
+`tool_registry.toml` fallback until the upstream artifact and
+`upstream_tool_snapshot.toml` are reviewed and pinned to the same immutable
+upstream revision. Reconciliation rejects locally unclassified manifest tools;
+a newly published upstream tool therefore cannot become authorized by
+discovery or by manifest presence alone.
+
+The committed test fixture under `crates/policy/tests/fixtures/` is compatibility
+evidence only. It deliberately detects source-SHA staleness against the current
+production snapshot and exposes contract drift (for example, the current
+upstream `export_gerber` surface no longer contains the older reviewed
+`variant_name` argument). Stale or malformed evidence must be reviewed before
+the fallback is changed.
+
+For a candidate upstream artifact, run:
+
+```sh
+cargo run -p companion-policy --bin reconcile-upstream-effect-manifest < \
+  /path/to/tool-effect-manifest.json
+```
+
+The command accepts manifest JSON only through bounded standard input (max 1 MiB), performs no caller-selected filesystem reads, and exits non-zero when the manifest source pin differs from the
+production snapshot or when reviewed tool/effect contracts differ from the
+fallback. It reports drift but never writes policy or promotes an upstream
+tool into the allowlist.
+
 ## Refresh procedure
 
 1. Refresh `upstream_tool_snapshot.toml` with `reconcile-tool-registry` at an

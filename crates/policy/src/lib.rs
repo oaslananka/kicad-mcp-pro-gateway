@@ -9,6 +9,7 @@ mod engine;
 mod operation_effects;
 mod tool_catalog;
 mod tool_registry;
+mod upstream_effect_manifest;
 
 pub use authorization_ttl::{AuthorizationTtlPolicy, EffectiveAuthorizationTtl};
 pub use engine::{ApprovalReason, DenyReason, PolicyDecision, PolicyEngine};
@@ -20,4 +21,10 @@ pub use tool_catalog::{ToolCatalogError, ToolCatalogSnapshot};
 pub use tool_registry::{
     TomlToolRegistry, ToolCapabilityResolver, ToolContractSource, ToolRegistryCoverage,
     ToolRegistryError, TOOL_EFFECT_CONTRACT_VERSION,
+};
+pub use upstream_effect_manifest::{
+    EffectManifestReconciliation, EffectVerificationRequirement, ReviewedToolEffectFacts,
+    TransactionSupport, UpstreamEffectManifest, UpstreamEffectManifestError,
+    UpstreamEffectManifestSource, UPSTREAM_EFFECT_MANIFEST_REPOSITORY,
+    UPSTREAM_EFFECT_MANIFEST_SCHEMA_MAJOR,
 };
