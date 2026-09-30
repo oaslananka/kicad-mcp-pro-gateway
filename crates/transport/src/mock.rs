@@ -7,11 +7,11 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-use companion_core::TransportState;
+use companion_core::{TransportState, VerifiedPrincipal};
 use companion_protocol::Envelope;
 
 use crate::error::TransportError;
-use crate::transport::{Transport, TransportHealth};
+use crate::transport::{InboundEnvelope, Transport, TransportHealth};
 
 pub struct MockTransport {
     state: Mutex<TransportState>,
@@ -19,7 +19,7 @@ pub struct MockTransport {
     receive_failures_remaining: Mutex<u32>,
     connect_attempts: AtomicU32,
     outbox: Mutex<VecDeque<Envelope>>,
-    inbox: Mutex<VecDeque<Envelope>>,
+    inbox: Mutex<VecDeque<InboundEnvelope>>,
 }
 
 impl Default for MockTransport {
@@ -64,7 +64,24 @@ impl MockTransport {
         self.inbox
             .lock()
             .expect("mock mutex poisoned")
-            .push_back(envelope);
+            .push_back(envelope.into());
+    }
+
+    /// Scripts an inbound message carrying already-authenticated remote actor
+    /// metadata. Test-only/dev mock callers must opt in explicitly; ordinary
+    /// mock traffic remains unauthenticated.
+    pub fn push_authenticated_incoming(
+        &self,
+        envelope: Envelope,
+        verified_principal: VerifiedPrincipal,
+    ) {
+        self.inbox
+            .lock()
+            .expect("mock mutex poisoned")
+            .push_back(InboundEnvelope {
+                envelope,
+                verified_principal: Some(verified_principal),
+            });
     }
 
     pub fn sent_messages(&self) -> Vec<Envelope> {
@@ -112,7 +129,7 @@ impl Transport for MockTransport {
         Ok(())
     }
 
-    async fn receive(&self) -> Result<Envelope, TransportError> {
+    async fn receive(&self) -> Result<InboundEnvelope, TransportError> {
         let mut remaining = self
             .receive_failures_remaining
             .lock()
@@ -165,7 +182,8 @@ mod tests {
         let incoming = Envelope::new(MessageType::OperationResult, json!({ "ok": true }));
         transport.push_incoming(incoming.clone());
         let received = transport.receive().await.unwrap();
-        assert_eq!(received, incoming);
+        assert_eq!(received.envelope, incoming);
+        assert!(received.verified_principal.is_none());
     }
 
     #[tokio::test]
