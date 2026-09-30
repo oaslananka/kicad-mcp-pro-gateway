@@ -45,6 +45,9 @@ function createMockPendingApproval(overrides: Partial<PendingApprovalView> = {})
     workspace: { workspace_id: "ws_001", display_name: "Test Workspace" },
     tool_name: "pcb_export_gerber",
     risk: "High",
+    base_risk: "High",
+    risk_policy_version: 2,
+    risk_factors: [],
     ...overrides,
   };
 }
@@ -232,6 +235,104 @@ describe("SessionsScreen", () => {
     expect(within(modal).getByText("Test Workspace (ws_001)")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Allow Once" })).toBeInTheDocument();
+  });
+
+  it("explains argument-aware risk without exposing raw item ids", async () => {
+    const rawItemIds = [
+      "00000000-0000-0000-0000-0000000000a1",
+      "00000000-0000-0000-0000-0000000000b2",
+    ];
+    vi.mocked(api.listSessions).mockResolvedValue([]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([
+      createMockPendingApproval({
+        tool_name: "pcb_delete_items",
+        risk: "High",
+        base_risk: "Normal",
+        risk_policy_version: 2,
+        risk_factors: [
+          {
+            code: "bulk_argument_cardinality",
+            subject: "item_ids",
+            observed_count: 3,
+            threshold: 2,
+            escalated_to: "High",
+          },
+        ],
+      }),
+    ]);
+
+    render(<SessionsScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    const modal = screen.getByText("High-risk action requires approval").closest(".modal") as HTMLElement;
+    expect(within(modal).getByText("High")).toBeInTheDocument();
+    expect(within(modal).getByText("Normal")).toBeInTheDocument();
+    expect(within(modal).getByText("Policy v2")).toBeInTheDocument();
+    expect(
+      within(modal).getByText("2+ items triggers local approval; this request contains 3 items."),
+    ).toBeInTheDocument();
+    for (const rawItemId of rawItemIds) {
+      expect(within(modal).queryByText(rawItemId)).not.toBeInTheDocument();
+    }
+  });
+
+  it("keeps static high-risk approvals readable without dynamic factors", async () => {
+    vi.mocked(api.listSessions).mockResolvedValue([]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([
+      createMockPendingApproval({
+        risk: "High",
+        base_risk: "High",
+        risk_policy_version: 2,
+        risk_factors: [],
+      }),
+    ]);
+
+    render(<SessionsScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    const modal = screen.getByText("High-risk action requires approval").closest(".modal") as HTMLElement;
+    expect(within(modal).getByText("High")).toBeInTheDocument();
+    expect(within(modal).getByText("Policy v2")).toBeInTheDocument();
+    expect(
+      within(modal).queryByText(/items triggers local approval/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders unknown reviewed risk factors generically instead of dumping data", async () => {
+    vi.mocked(api.listSessions).mockResolvedValue([]);
+    vi.mocked(api.listPendingApprovals).mockResolvedValue([
+      createMockPendingApproval({
+        risk_factors: [
+          {
+            code: "future_reviewed_factor",
+            subject: "future_subject",
+            observed_count: 9,
+            threshold: 4,
+            escalated_to: "High",
+          },
+        ],
+      }),
+    ]);
+
+    render(<SessionsScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+    const modal = screen.getByText("High-risk action requires approval").closest(".modal") as HTMLElement;
+    expect(within(modal).getByText("Additional reviewed risk factor")).toBeInTheDocument();
+    expect(within(modal).queryByText("future_subject")).not.toBeInTheDocument();
+    expect(within(modal).queryByText("future_reviewed_factor")).not.toBeInTheDocument();
   });
 
   it("calls approveSession when Approve is clicked in session dialog", async () => {
