@@ -204,151 +204,9 @@ impl UpstreamEffectManifest {
         let raw: RawManifest = serde_json::from_str(source)
             .map_err(|error| UpstreamEffectManifestError::MalformedJson(error.to_string()))?;
 
-        let Some(schema_major) = strict_semver_major(&raw.schema_version) else {
-            return Err(UpstreamEffectManifestError::UnsupportedSchemaVersion(
-                raw.schema_version,
-            ));
-        };
-        if schema_major != UPSTREAM_EFFECT_MANIFEST_SCHEMA_MAJOR {
-            return Err(UpstreamEffectManifestError::UnsupportedSchemaVersion(
-                raw.schema_version,
-            ));
-        }
-
-        if raw.source.repository != UPSTREAM_EFFECT_MANIFEST_REPOSITORY {
-            return Err(UpstreamEffectManifestError::SourceRepositoryMismatch {
-                expected: UPSTREAM_EFFECT_MANIFEST_REPOSITORY,
-                actual: raw.source.repository,
-            });
-        }
-        if strict_semver_major(&raw.source.version).is_none() {
-            return Err(UpstreamEffectManifestError::InvalidSourceVersion(
-                raw.source.version,
-            ));
-        }
-        if !is_lower_hex_sha(&raw.source.reviewed_source_sha) {
-            return Err(UpstreamEffectManifestError::InvalidSourceSha(
-                raw.source.reviewed_source_sha,
-            ));
-        }
-        if raw.tools.is_empty() {
-            return Err(UpstreamEffectManifestError::EmptyManifest);
-        }
-
-        let source = UpstreamEffectManifestSource {
-            repository: raw.source.repository,
-            version: raw.source.version,
-            reviewed_source_sha: raw.source.reviewed_source_sha,
-        };
-        let mut tools = BTreeMap::new();
-
-        for raw_tool in raw.tools {
-            validate_tool_name(&raw_tool.name)?;
-            if tools.contains_key(&raw_tool.name) {
-                return Err(UpstreamEffectManifestError::DuplicateTool(raw_tool.name));
-            }
-            reject_duplicates(&raw_tool.name, "arguments", &raw_tool.arguments)?;
-            reject_duplicates(&raw_tool.name, "effects", &raw_tool.effects)?;
-            reject_duplicates(
-                &raw_tool.name,
-                "verification requirements",
-                &raw_tool.verification_requirements,
-            )?;
-            reject_duplicates(
-                &raw_tool.name,
-                "reviewed source paths",
-                &raw_tool.reviewed_source_paths,
-            )?;
-
-            let verification_requirements = raw_tool
-                .verification_requirements
-                .iter()
-                .copied()
-                .collect::<BTreeSet<_>>();
-            if !verification_requirements.contains(&EffectVerificationRequirement::SourceReview)
-                || !verification_requirements
-                    .contains(&EffectVerificationRequirement::InputSchemaMatch)
-            {
-                return Err(UpstreamEffectManifestError::MissingReviewEvidence {
-                    tool: raw_tool.name,
-                });
-            }
-            if raw_tool.reviewed_source_paths.is_empty() {
-                return Err(UpstreamEffectManifestError::MissingReviewEvidence {
-                    tool: raw_tool.name,
-                });
-            }
-            for source_path in &raw_tool.reviewed_source_paths {
-                if !is_safe_source_path(source_path) {
-                    return Err(UpstreamEffectManifestError::InvalidReviewedSourcePath {
-                        tool: raw_tool.name.clone(),
-                        path: source_path.clone(),
-                    });
-                }
-            }
-
-            let mut path_arguments = Vec::with_capacity(raw_tool.path_arguments.len());
-            let mut path_names = BTreeSet::new();
-            let mut changes_state = raw_tool.effects.iter().any(is_mutating_effect);
-            for path in raw_tool.path_arguments {
-                if !path_names.insert(path.argument.clone()) {
-                    return Err(UpstreamEffectManifestError::DuplicateFact {
-                        tool: raw_tool.name.clone(),
-                        field: "path arguments",
-                    });
-                }
-                reject_duplicates(&raw_tool.name, "path effects", &path.effects)?;
-                if path.required && path.default.is_some() {
-                    return Err(UpstreamEffectManifestError::InvalidPathContract {
-                        tool: raw_tool.name.clone(),
-                        message: format!(
-                            "required path argument '{}' must not declare a default",
-                            path.argument
-                        ),
-                    });
-                }
-                changes_state |= path.effects.iter().any(is_mutating_effect);
-                let contract = PathArgumentContract::new(
-                    path.argument,
-                    path.effects,
-                    path.required,
-                    path.default,
-                    path.base_argument,
-                )
-                .map_err(|error| {
-                    UpstreamEffectManifestError::InvalidPathContract {
-                        tool: raw_tool.name.clone(),
-                        message: error.to_string(),
-                    }
-                })?;
-                path_arguments.push(contract);
-            }
-
-            if raw_tool.destructive != changes_state {
-                return Err(UpstreamEffectManifestError::InconsistentDestructive {
-                    tool: raw_tool.name,
-                });
-            }
-
-            let contract =
-                ToolEffectContract::new(raw_tool.arguments, raw_tool.effects, path_arguments)
-                    .map_err(|error| UpstreamEffectManifestError::InvalidEffectContract {
-                        tool: raw_tool.name.clone(),
-                        message: error.to_string(),
-                    })?;
-
-            let facts = ReviewedToolEffectFacts {
-                contract,
-                destructive: raw_tool.destructive,
-                idempotent: raw_tool.idempotent,
-                supports_dry_run: raw_tool.supports_dry_run,
-                supports_rollback: raw_tool.supports_rollback,
-                transaction_support: raw_tool.transaction_support,
-                verification_requirements,
-                reviewed_source_paths: raw_tool.reviewed_source_paths,
-            };
-            tools.insert(raw_tool.name, facts);
-        }
+        validate_schema_version(&raw.schema_version)?;
+        let source = parse_source(raw.source)?;
+        let tools = parse_tools(raw.tools)?;
 
         Ok(Self {
             schema_version: raw.schema_version,
@@ -435,6 +293,183 @@ impl UpstreamEffectManifest {
             contract_mismatches,
         })
     }
+}
+
+fn validate_schema_version(version: &str) -> Result<(), UpstreamEffectManifestError> {
+    if strict_semver_major(version) == Some(UPSTREAM_EFFECT_MANIFEST_SCHEMA_MAJOR) {
+        Ok(())
+    } else {
+        Err(UpstreamEffectManifestError::UnsupportedSchemaVersion(
+            version.to_string(),
+        ))
+    }
+}
+
+fn parse_source(
+    source: RawSource,
+) -> Result<UpstreamEffectManifestSource, UpstreamEffectManifestError> {
+    if source.repository != UPSTREAM_EFFECT_MANIFEST_REPOSITORY {
+        return Err(UpstreamEffectManifestError::SourceRepositoryMismatch {
+            expected: UPSTREAM_EFFECT_MANIFEST_REPOSITORY,
+            actual: source.repository,
+        });
+    }
+    if strict_semver_major(&source.version).is_none() {
+        return Err(UpstreamEffectManifestError::InvalidSourceVersion(
+            source.version,
+        ));
+    }
+    if !is_lower_hex_sha(&source.reviewed_source_sha) {
+        return Err(UpstreamEffectManifestError::InvalidSourceSha(
+            source.reviewed_source_sha,
+        ));
+    }
+
+    Ok(UpstreamEffectManifestSource {
+        repository: source.repository,
+        version: source.version,
+        reviewed_source_sha: source.reviewed_source_sha,
+    })
+}
+
+fn parse_tools(
+    raw_tools: Vec<RawTool>,
+) -> Result<BTreeMap<String, ReviewedToolEffectFacts>, UpstreamEffectManifestError> {
+    if raw_tools.is_empty() {
+        return Err(UpstreamEffectManifestError::EmptyManifest);
+    }
+
+    let mut tools = BTreeMap::new();
+    for raw_tool in raw_tools {
+        let (name, facts) = parse_tool(raw_tool)?;
+        if tools.insert(name.clone(), facts).is_some() {
+            return Err(UpstreamEffectManifestError::DuplicateTool(name));
+        }
+    }
+    Ok(tools)
+}
+
+fn parse_tool(
+    raw_tool: RawTool,
+) -> Result<(String, ReviewedToolEffectFacts), UpstreamEffectManifestError> {
+    let RawTool {
+        name,
+        arguments,
+        effects,
+        path_arguments,
+        destructive,
+        idempotent,
+        supports_dry_run,
+        supports_rollback,
+        transaction_support,
+        verification_requirements,
+        reviewed_source_paths,
+    } = raw_tool;
+
+    validate_tool_name(&name)?;
+    reject_duplicates(&name, "arguments", &arguments)?;
+    reject_duplicates(&name, "effects", &effects)?;
+
+    let (verification_requirements, reviewed_source_paths) =
+        parse_review_evidence(&name, verification_requirements, reviewed_source_paths)?;
+    let (path_arguments, path_changes_state) = parse_path_arguments(&name, path_arguments)?;
+    let changes_state = effects.iter().any(is_mutating_effect) || path_changes_state;
+    if destructive != changes_state {
+        return Err(UpstreamEffectManifestError::InconsistentDestructive { tool: name });
+    }
+
+    let contract =
+        ToolEffectContract::new(arguments, effects, path_arguments).map_err(|error| {
+            UpstreamEffectManifestError::InvalidEffectContract {
+                tool: name.clone(),
+                message: error.to_string(),
+            }
+        })?;
+
+    let facts = ReviewedToolEffectFacts {
+        contract,
+        destructive,
+        idempotent,
+        supports_dry_run,
+        supports_rollback,
+        transaction_support,
+        verification_requirements,
+        reviewed_source_paths,
+    };
+    Ok((name, facts))
+}
+
+fn parse_review_evidence(
+    tool: &str,
+    requirements: Vec<EffectVerificationRequirement>,
+    source_paths: Vec<String>,
+) -> Result<(BTreeSet<EffectVerificationRequirement>, Vec<String>), UpstreamEffectManifestError> {
+    reject_duplicates(tool, "verification requirements", &requirements)?;
+    reject_duplicates(tool, "reviewed source paths", &source_paths)?;
+
+    let requirements = requirements.into_iter().collect::<BTreeSet<_>>();
+    if !requirements.contains(&EffectVerificationRequirement::SourceReview)
+        || !requirements.contains(&EffectVerificationRequirement::InputSchemaMatch)
+        || source_paths.is_empty()
+    {
+        return Err(UpstreamEffectManifestError::MissingReviewEvidence {
+            tool: tool.to_string(),
+        });
+    }
+
+    for source_path in &source_paths {
+        if !is_safe_source_path(source_path) {
+            return Err(UpstreamEffectManifestError::InvalidReviewedSourcePath {
+                tool: tool.to_string(),
+                path: source_path.clone(),
+            });
+        }
+    }
+    Ok((requirements, source_paths))
+}
+
+fn parse_path_arguments(
+    tool: &str,
+    raw_paths: Vec<RawPathArgument>,
+) -> Result<(Vec<PathArgumentContract>, bool), UpstreamEffectManifestError> {
+    let mut path_arguments = Vec::with_capacity(raw_paths.len());
+    let mut path_names = BTreeSet::new();
+    let mut changes_state = false;
+
+    for path in raw_paths {
+        if !path_names.insert(path.argument.clone()) {
+            return Err(UpstreamEffectManifestError::DuplicateFact {
+                tool: tool.to_string(),
+                field: "path arguments",
+            });
+        }
+        reject_duplicates(tool, "path effects", &path.effects)?;
+        if path.required && path.default.is_some() {
+            return Err(UpstreamEffectManifestError::InvalidPathContract {
+                tool: tool.to_string(),
+                message: format!(
+                    "required path argument '{}' must not declare a default",
+                    path.argument
+                ),
+            });
+        }
+
+        changes_state |= path.effects.iter().any(is_mutating_effect);
+        let contract = PathArgumentContract::new(
+            path.argument,
+            path.effects,
+            path.required,
+            path.default,
+            path.base_argument,
+        )
+        .map_err(|error| UpstreamEffectManifestError::InvalidPathContract {
+            tool: tool.to_string(),
+            message: error.to_string(),
+        })?;
+        path_arguments.push(contract);
+    }
+
+    Ok((path_arguments, changes_state))
 }
 
 fn strict_semver_major(value: &str) -> Option<u64> {
