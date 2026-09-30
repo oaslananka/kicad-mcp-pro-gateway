@@ -778,9 +778,13 @@ mod device_binding_tests {
     use std::sync::Arc;
 
     use companion_core::config::{self, CliOverrides};
-    use companion_core::{CapabilityProfile, DeviceId, OperationId, OperationRequest, Session};
+    use companion_core::{
+        CapabilityProfile, DeviceId, OperationId, OperationRequest, PrincipalVerificationSource,
+        Session, VerifiedPrincipal,
+    };
     use companion_core_bridge::MockMcpServer;
     use companion_identity::InMemorySecretStore;
+    use companion_sessions::{AuthorizationEvent, GrantTransition};
     use companion_transport::{MockTransport, Transport};
     use companion_workspace::WorkspaceAuthorization;
     use serde_json::json;
@@ -901,6 +905,18 @@ risk = "critical"
         }
     }
 
+    fn verified_actor(binding: &str) -> VerifiedPrincipal {
+        VerifiedPrincipal {
+            issuer: "https://issuer.example".into(),
+            subject: "actor-123".into(),
+            account_or_tenant: Some("tenant-7".into()),
+            client_or_agent: Some("agent-9".into()),
+            authentication_strength: "phishing_resistant".into(),
+            verification_source: PrincipalVerificationSource::AuthenticatedTransport,
+            transport_binding: binding.into(),
+        }
+    }
+
     #[tokio::test]
     async fn session_request_requires_persistent_local_device_id() {
         let state = build_test_state("http://127.0.0.1:9/mcp".into());
@@ -977,6 +993,99 @@ risk = "critical"
                 .format(&time::format_description::well_known::Rfc3339)
                 .unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn authenticated_session_request_persists_verified_principal_binding() {
+        let state = build_test_state("http://127.0.0.1:9/mcp".into());
+        let identity = state.identity_store.create("test-device").unwrap();
+        let workspace_id = authorize_workspace(&state);
+        let actor = verified_actor("binding-A");
+
+        handle_session_request_with_principal(
+            &state,
+            session_request(workspace_id).with_device_id(identity.device_id),
+            Some(actor.clone()),
+        )
+        .await;
+
+        let session = state.session_repo.list_all().unwrap().pop().unwrap();
+        let grant = state
+            .authorization_repo
+            .load_grant_for_subject(session.session_id)
+            .unwrap()
+            .expect("verified grant persists");
+        assert_eq!(grant.principal.name, "agent:test");
+        assert_eq!(grant.principal.verified_principal(), Some(&actor));
+        assert!(grant.principal.is_verified());
+    }
+
+    #[tokio::test]
+    async fn verified_grant_rejects_missing_or_substituted_transport_binding() {
+        let fake_kicad = MockMcpServer::start().await;
+        let state = build_test_state(fake_kicad.endpoint().to_string());
+        let identity = state.identity_store.create("test-device").unwrap();
+        let workspace_id = authorize_workspace(&state);
+        let actor = verified_actor("binding-A");
+
+        handle_session_request_with_principal(
+            &state,
+            session_request(workspace_id).with_device_id(identity.device_id),
+            Some(actor.clone()),
+        )
+        .await;
+        let session = state.session_repo.list_all().unwrap().pop().unwrap();
+        let grant = state
+            .authorization_repo
+            .load_grant_for_subject(session.session_id)
+            .unwrap()
+            .unwrap()
+            .transition(&AuthorizationEvent::Approve, state.clock.as_ref())
+            .unwrap();
+        state.authorization_repo.save_grant(&grant).unwrap();
+
+        let relay = Arc::new(MockTransport::new());
+        relay.connect().await.unwrap();
+        let transport: Arc<dyn Transport> = relay.clone();
+
+        for current in [None, Some(verified_actor("binding-B"))] {
+            let request = low_risk_operation(&session, workspace_id);
+            handle_operation_request_with_principal(
+                &state,
+                transport.as_ref(),
+                Envelope::new(
+                    MessageType::OperationRequest,
+                    serde_json::to_value(&request).unwrap(),
+                )
+                .with_device_id(identity.device_id),
+                current,
+            )
+            .await;
+        }
+        assert_eq!(
+            fake_kicad.tool_call_count(),
+            0,
+            "missing or substituted binding must fail before core execution"
+        );
+
+        let request = low_risk_operation(&session, workspace_id);
+        handle_operation_request_with_principal(
+            &state,
+            transport.as_ref(),
+            Envelope::new(
+                MessageType::OperationRequest,
+                serde_json::to_value(&request).unwrap(),
+            )
+            .with_device_id(identity.device_id),
+            Some(actor),
+        )
+        .await;
+        assert_eq!(
+            fake_kicad.tool_call_count(),
+            1,
+            "the exact authenticated actor/binding may exercise its locally approved grant"
+        );
+        fake_kicad.stop();
     }
 
     #[tokio::test]
