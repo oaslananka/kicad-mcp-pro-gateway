@@ -535,7 +535,7 @@ mod tests {
 
     use companion_core::{
         AuthorizationStatus, CapabilityProfile, Clock, DeviceId, FakeClock, GrantRequest,
-        LeaseRequest, SessionId, WorkspaceId,
+        LeaseRequest, PrincipalVerificationSource, SessionId, VerifiedPrincipal, WorkspaceId,
     };
     use companion_storage::Storage;
     use time::Duration;
@@ -558,6 +558,18 @@ mod tests {
             task_scope: "round trip".into(),
             kind,
             lifetime: Duration::hours(1),
+        }
+    }
+
+    fn verified_actor(binding: &str) -> VerifiedPrincipal {
+        VerifiedPrincipal {
+            issuer: "https://issuer.example".into(),
+            subject: "actor-123".into(),
+            account_or_tenant: Some("tenant-7".into()),
+            client_or_agent: Some("agent-9".into()),
+            authentication_strength: "phishing_resistant".into(),
+            verification_source: PrincipalVerificationSource::AuthenticatedTransport,
+            transport_binding: binding.into(),
         }
     }
 
@@ -589,6 +601,47 @@ mod tests {
                 .load_grant_for_subject(subject_session_id)
                 .unwrap(),
             Some(grant)
+        );
+    }
+
+    #[test]
+    fn verified_principal_round_trips_on_grant_and_lease() {
+        let repository = repo();
+        let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+        let mut request = grant_request(SessionId::new(), GrantKind::Standing);
+        request.principal =
+            AuthorizationPrincipal::verified("display:claim", verified_actor("binding-A"));
+        let grant = AccessGrant::requested(request, clock.now())
+            .transition(&AuthorizationEvent::Approve, &clock)
+            .unwrap();
+        repository.save_grant(&grant).unwrap();
+
+        let loaded = repository.load_grant(grant.grant_id).unwrap().unwrap();
+        assert_eq!(loaded.principal, grant.principal);
+        assert_eq!(
+            loaded
+                .principal
+                .verified_principal()
+                .expect("verified metadata persists")
+                .transport_binding,
+            "binding-A"
+        );
+
+        let (grant, lease) = issue_lease(
+            &grant,
+            LeaseRequest {
+                workspace_ids: grant.workspace_ids.clone(),
+                capabilities: grant.effective_capabilities.clone(),
+                lifetime: Duration::minutes(5),
+            },
+            clock.now(),
+        )
+        .unwrap();
+        repository.save_grant(&grant).unwrap();
+        repository.save_lease(&lease).unwrap();
+        assert_eq!(
+            repository.load_lease(lease.lease_id).unwrap().unwrap().principal,
+            lease.principal
         );
     }
 
@@ -702,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stored_assurance_this_build_does_not_know_fails_closed() {
+    fn verified_assurance_without_verified_metadata_fails_closed() {
         let repository = repo();
         let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
         let grant = AccessGrant::requested(
@@ -724,7 +777,7 @@ mod tests {
         let loaded = repository.load_grant(grant.grant_id);
         assert!(
             matches!(loaded, Err(GrantError::Storage(_))),
-            "an unknown assurance claim must not be downgraded into a weaker one"
+            "a verified assurance claim without its binding metadata must fail closed"
         );
     }
 }
