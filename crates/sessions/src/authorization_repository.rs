@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use companion_core::{
     AccessGrant, AuthorizationLease, AuthorizationPrincipal, GrantId, GrantKind, LeaseId,
-    PrincipalAssurance, SessionId,
+    PrincipalAssurance, SessionId, VerifiedPrincipal,
 };
 use companion_storage::Storage;
 use time::OffsetDateTime;
@@ -46,16 +46,17 @@ impl AuthorizationRepository {
         conn.execute(
             "INSERT INTO access_grants (
                 grant_id, subject_session_id, device_id, remote_principal, principal_assurance,
-                workspace_ids, capability_profile, effective_capabilities, task_scope, grant_kind,
+                verified_principal, workspace_ids, capability_profile, effective_capabilities, task_scope, grant_kind,
                 issued_at, approved_at, expires_at, revoked_at, revocation_reason, consumed_at,
                 issued_lease_id, risk_policy_version, approval_policy, status,
                 migrated_from_session_id, migration_note
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
              ON CONFLICT(grant_id) DO UPDATE SET
                 subject_session_id = excluded.subject_session_id,
                 device_id = excluded.device_id,
                 remote_principal = excluded.remote_principal,
                 principal_assurance = excluded.principal_assurance,
+                verified_principal = excluded.verified_principal,
                 workspace_ids = excluded.workspace_ids,
                 capability_profile = excluded.capability_profile,
                 effective_capabilities = excluded.effective_capabilities,
@@ -77,6 +78,7 @@ impl AuthorizationRepository {
                 grant.device_id.to_string(),
                 grant.principal.name,
                 to_json(&grant.principal.assurance)?,
+                grant.principal.verified.as_ref().map(to_json).transpose()?,
                 to_json(&grant.workspace_ids)?,
                 to_json(&grant.capability_profile)?,
                 to_json(&grant.effective_capabilities)?,
@@ -221,9 +223,9 @@ impl AuthorizationRepository {
         conn.execute(
             "INSERT INTO authorization_leases (
                 lease_id, grant_id, subject_session_id, device_id, remote_principal,
-                principal_assurance, workspace_ids, capabilities, task_scope, issued_at,
+                principal_assurance, verified_principal, workspace_ids, capabilities, task_scope, issued_at,
                 expires_at, consumed_at, consumed_by_operation
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(lease_id) DO UPDATE SET
                 expires_at = excluded.expires_at,
                 consumed_at = excluded.consumed_at,
@@ -235,6 +237,7 @@ impl AuthorizationRepository {
                 lease.device_id.to_string(),
                 lease.principal.name,
                 to_json(&lease.principal.assurance)?,
+                lease.principal.verified.as_ref().map(to_json).transpose()?,
                 to_json(&lease.workspace_ids)?,
                 to_json(&lease.capabilities)?,
                 lease.task_scope,
@@ -280,12 +283,12 @@ impl AuthorizationRepository {
 }
 
 const SELECT_GRANT_COLUMNS: &str = "SELECT grant_id, subject_session_id, device_id, remote_principal, \
-     principal_assurance, workspace_ids, capability_profile, effective_capabilities, task_scope, grant_kind, \
+     principal_assurance, verified_principal, workspace_ids, capability_profile, effective_capabilities, task_scope, grant_kind, \
      issued_at, approved_at, expires_at, revoked_at, revocation_reason, consumed_at, issued_lease_id, \
      risk_policy_version, approval_policy, status, migrated_from_session_id, migration_note FROM access_grants";
 
 const SELECT_LEASE_COLUMNS: &str = "SELECT lease_id, grant_id, subject_session_id, device_id, remote_principal, \
-     principal_assurance, workspace_ids, capabilities, task_scope, issued_at, expires_at, consumed_at, \
+     principal_assurance, verified_principal, workspace_ids, capabilities, task_scope, issued_at, expires_at, consumed_at, \
      consumed_by_operation FROM authorization_leases";
 
 fn collect_grants(
@@ -305,6 +308,7 @@ struct RawGrantRow {
     device_id: String,
     remote_principal: String,
     principal_assurance: String,
+    verified_principal: Option<String>,
     workspace_ids: String,
     capability_profile: String,
     effective_capabilities: String,
@@ -331,23 +335,24 @@ fn raw_grant(row: &rusqlite::Row) -> rusqlite::Result<RawGrantRow> {
         device_id: row.get(2)?,
         remote_principal: row.get(3)?,
         principal_assurance: row.get(4)?,
-        workspace_ids: row.get(5)?,
-        capability_profile: row.get(6)?,
-        effective_capabilities: row.get(7)?,
-        task_scope: row.get(8)?,
-        grant_kind: row.get(9)?,
-        issued_at: row.get(10)?,
-        approved_at: row.get(11)?,
-        expires_at: row.get(12)?,
-        revoked_at: row.get(13)?,
-        revocation_reason: row.get(14)?,
-        consumed_at: row.get(15)?,
-        issued_lease_id: row.get(16)?,
-        risk_policy_version: row.get(17)?,
-        approval_policy: row.get(18)?,
-        status: row.get(19)?,
-        migrated_from_session_id: row.get(20)?,
-        migration_note: row.get(21)?,
+        verified_principal: row.get(5)?,
+        workspace_ids: row.get(6)?,
+        capability_profile: row.get(7)?,
+        effective_capabilities: row.get(8)?,
+        task_scope: row.get(9)?,
+        grant_kind: row.get(10)?,
+        issued_at: row.get(11)?,
+        approved_at: row.get(12)?,
+        expires_at: row.get(13)?,
+        revoked_at: row.get(14)?,
+        revocation_reason: row.get(15)?,
+        consumed_at: row.get(16)?,
+        issued_lease_id: row.get(17)?,
+        risk_policy_version: row.get(18)?,
+        approval_policy: row.get(19)?,
+        status: row.get(20)?,
+        migrated_from_session_id: row.get(21)?,
+        migration_note: row.get(22)?,
     })
 }
 
@@ -367,10 +372,11 @@ fn parse_grant(raw: RawGrantRow) -> Result<AccessGrant, GrantError> {
             .device_id
             .parse()
             .map_err(|e| GrantError::Storage(format!("{e:?}")))?,
-        principal: AuthorizationPrincipal {
-            name: raw.remote_principal,
-            assurance: parse_assurance(&raw.principal_assurance)?,
-        },
+        principal: parse_principal(
+            raw.remote_principal,
+            &raw.principal_assurance,
+            raw.verified_principal.as_deref(),
+        )?,
         workspace_ids: from_json(&raw.workspace_ids)?,
         capability_profile: from_json(&raw.capability_profile)?,
         effective_capabilities: from_json(&raw.effective_capabilities)?,
@@ -408,6 +414,7 @@ struct RawLeaseRow {
     device_id: String,
     remote_principal: String,
     principal_assurance: String,
+    verified_principal: Option<String>,
     workspace_ids: String,
     capabilities: String,
     task_scope: String,
@@ -425,13 +432,14 @@ fn raw_lease(row: &rusqlite::Row) -> rusqlite::Result<RawLeaseRow> {
         device_id: row.get(3)?,
         remote_principal: row.get(4)?,
         principal_assurance: row.get(5)?,
-        workspace_ids: row.get(6)?,
-        capabilities: row.get(7)?,
-        task_scope: row.get(8)?,
-        issued_at: row.get(9)?,
-        expires_at: row.get(10)?,
-        consumed_at: row.get(11)?,
-        consumed_by_operation: row.get(12)?,
+        verified_principal: row.get(6)?,
+        workspace_ids: row.get(7)?,
+        capabilities: row.get(8)?,
+        task_scope: row.get(9)?,
+        issued_at: row.get(10)?,
+        expires_at: row.get(11)?,
+        consumed_at: row.get(12)?,
+        consumed_by_operation: row.get(13)?,
     })
 }
 
@@ -453,10 +461,11 @@ fn parse_lease(raw: RawLeaseRow) -> Result<AuthorizationLease, GrantError> {
             .device_id
             .parse()
             .map_err(|e| GrantError::Storage(format!("{e:?}")))?,
-        principal: AuthorizationPrincipal {
-            name: raw.remote_principal,
-            assurance: parse_assurance(&raw.principal_assurance)?,
-        },
+        principal: parse_principal(
+            raw.remote_principal,
+            &raw.principal_assurance,
+            raw.verified_principal.as_deref(),
+        )?,
         workspace_ids: from_json(&raw.workspace_ids)?,
         capabilities: from_json(&raw.capabilities)?,
         task_scope: raw.task_scope,
@@ -476,6 +485,30 @@ fn parse_lease(raw: RawLeaseRow) -> Result<AuthorizationLease, GrantError> {
 /// value must never be downgraded into a weaker (or invented) claim.
 fn parse_assurance(raw: &str) -> Result<PrincipalAssurance, GrantError> {
     from_json(raw).map_err(|_| GrantError::Storage(format!("unknown principal assurance: {raw}")))
+}
+
+fn parse_principal(
+    name: String,
+    assurance_json: &str,
+    verified_json: Option<&str>,
+) -> Result<AuthorizationPrincipal, GrantError> {
+    let assurance = parse_assurance(assurance_json)?;
+    let verified = verified_json
+        .map(from_json::<VerifiedPrincipal>)
+        .transpose()?;
+
+    match (assurance, verified) {
+        (PrincipalAssurance::Unverified, None) => Ok(AuthorizationPrincipal::unverified(name)),
+        (PrincipalAssurance::Verified, Some(verified)) => {
+            Ok(AuthorizationPrincipal::verified(name, verified))
+        }
+        (PrincipalAssurance::Unverified, Some(_)) => Err(GrantError::Storage(
+            "unverified principal row unexpectedly contains verified metadata".into(),
+        )),
+        (PrincipalAssurance::Verified, None) => Err(GrantError::Storage(
+            "verified principal row is missing verified metadata".into(),
+        )),
+    }
 }
 
 fn to_json<T: serde::Serialize>(value: &T) -> Result<String, GrantError> {
