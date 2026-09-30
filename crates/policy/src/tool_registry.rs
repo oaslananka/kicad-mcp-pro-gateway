@@ -482,4 +482,168 @@ mod tests {
         );
         assert!(matches!(result, Err(ToolRegistryError::DuplicateTool(_))));
     }
+
+
+    fn pinned_effectful_tool(rule: &str, arguments: &str, effects: &str, risk: &str) -> String {
+        let snapshot = ToolCatalogSnapshot::embedded();
+        format!(
+            "contract_version = {TOOL_EFFECT_CONTRACT_VERSION}\n\
+             source_repository = \"{}\"\n\
+             source_ref = \"{}\"\n\
+             source_sha = \"{}\"\n\n\
+             [[tool]]\n\
+             name = \"pcb_delete_items\"\n\
+             capability = \"pcb.write\"\n\
+             risk = \"{risk}\"\n\
+             arguments = {arguments}\n\
+             effects = {effects}\n\
+             {rule}",
+            snapshot.source_repository, snapshot.source_ref, snapshot.source_sha,
+        )
+    }
+
+    const CARDINALITY_RULE: &str = "[[tool.risk_rules]]\n\
+        kind = \"argument_cardinality\"\n\
+        argument = \"item_ids\"\n\
+        minimum_count = 2\n\
+        requires_effect = \"delete\"\n\
+        escalate_to = \"high\"\n";
+
+    #[test]
+    fn parses_reviewed_argument_cardinality_risk_rule() {
+        let source = pinned_effectful_tool(
+            CARDINALITY_RULE,
+            "[\"item_ids\"]",
+            "[\"read\", \"delete\"]",
+            "normal",
+        );
+        let registry = TomlToolRegistry::from_toml_str(&source).unwrap();
+
+        assert_eq!(
+            registry.risk_rules("pcb_delete_items"),
+            &[RiskRule::ArgumentCardinality {
+                argument: "item_ids".into(),
+                minimum_count: 2,
+                requires_effect: OperationEffect::Delete,
+                escalate_to: RiskLevel::High,
+            }]
+        );
+    }
+
+    #[test]
+    fn risk_rule_with_unknown_field_is_rejected() {
+        let source = pinned_effectful_tool(
+            &format!("{CARDINALITY_RULE}unexpected = true\n"),
+            "[\"item_ids\"]",
+            "[\"read\", \"delete\"]",
+            "normal",
+        );
+        assert!(TomlToolRegistry::from_toml_str(&source).is_err());
+    }
+
+    #[test]
+    fn risk_rule_with_unknown_kind_is_rejected() {
+        let rule = CARDINALITY_RULE.replace("argument_cardinality", "argument_volume");
+        let source = pinned_effectful_tool(
+            &rule,
+            "[\"item_ids\"]",
+            "[\"read\", \"delete\"]",
+            "normal",
+        );
+        assert!(TomlToolRegistry::from_toml_str(&source).is_err());
+    }
+
+    #[test]
+    fn risk_rule_cannot_reference_an_unknown_argument() {
+        let rule = CARDINALITY_RULE.replace("item_ids", "missing_ids");
+        let source = pinned_effectful_tool(
+            &rule,
+            "[\"item_ids\"]",
+            "[\"read\", \"delete\"]",
+            "normal",
+        );
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn risk_rule_requires_its_reviewed_effect() {
+        let source = pinned_effectful_tool(
+            CARDINALITY_RULE,
+            "[\"item_ids\"]",
+            "[\"read\"]",
+            "normal",
+        );
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn argument_cardinality_threshold_must_be_at_least_two() {
+        let rule = CARDINALITY_RULE.replace("minimum_count = 2", "minimum_count = 1");
+        let source = pinned_effectful_tool(
+            &rule,
+            "[\"item_ids\"]",
+            "[\"read\", \"delete\"]",
+            "normal",
+        );
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn risk_rule_must_strictly_raise_base_risk() {
+        let rule = CARDINALITY_RULE.replace("escalate_to = \"high\"", "escalate_to = \"normal\"");
+        let source = pinned_effectful_tool(
+            &rule,
+            "[\"item_ids\"]",
+            "[\"read\", \"delete\"]",
+            "normal",
+        );
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn duplicate_equivalent_risk_rules_are_rejected() {
+        let source = pinned_effectful_tool(
+            &format!("{CARDINALITY_RULE}{CARDINALITY_RULE}"),
+            "[\"item_ids\"]",
+            "[\"read\", \"delete\"]",
+            "normal",
+        );
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn risk_rule_requires_a_reviewed_effect_contract() {
+        let snapshot = ToolCatalogSnapshot::embedded();
+        let source = format!(
+            "contract_version = {TOOL_EFFECT_CONTRACT_VERSION}\n\
+             source_repository = \"{}\"\n\
+             source_ref = \"{}\"\n\
+             source_sha = \"{}\"\n\n\
+             [[tool]]\n\
+             name = \"pcb_delete_items\"\n\
+             capability = \"pcb.write\"\n\
+             risk = \"normal\"\n\
+             {CARDINALITY_RULE}",
+            snapshot.source_repository, snapshot.source_ref, snapshot.source_sha,
+        );
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
 }
