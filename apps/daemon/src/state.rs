@@ -5,7 +5,9 @@ use tokio::sync::watch;
 
 use companion_audit::AuditRepository;
 use companion_checkpoints::FilesystemCheckpointStore;
-use companion_core::{Capability, Clock, OperationId, OperationRequest, RiskLevel, TransportState};
+use companion_core::{
+    Capability, Clock, OperationId, OperationRequest, RiskAssessment, TransportState,
+};
 use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig};
 use companion_identity::DeviceIdentityStore;
 use companion_policy::{PolicyEngine, TomlToolRegistry};
@@ -60,7 +62,7 @@ impl Default for ShutdownSignal {
 pub struct PendingOperation {
     pub request: OperationRequest,
     pub capability: Capability,
-    pub risk: RiskLevel,
+    pub risk: RiskAssessment,
 }
 
 /// The daemon's shared, authoritative state. Every privileged decision the

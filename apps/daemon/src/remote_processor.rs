@@ -11,7 +11,7 @@ use std::time::Duration;
 use companion_core::{
     AccessGrant, ApprovalDecisionKind, AuditEvent, AuthorizationPrincipal, CapabilityProfile,
     CompanionError, DeviceId, ExecutionStatus, GrantKind, GrantRequest, OperationId,
-    OperationRequest, PolicyResultKind, PrincipalAssurance, RiskLevel, Session, SessionId,
+    OperationRequest, PolicyResultKind, PrincipalAssurance, RiskAssessment, Session, SessionId,
     VerifiedPrincipal, WorkspaceId,
 };
 use companion_policy::{PolicyDecision, OPERATION_RISK_POLICY_VERSION};
@@ -339,7 +339,7 @@ async fn handle_operation_request_with_principal(
                     PendingOperation {
                         request,
                         capability,
-                        risk: risk.effective_risk,
+                        risk,
                     },
                 );
         }
@@ -602,7 +602,7 @@ pub async fn approve_pending_operation(
     let still_authorized = matches!(
         current_decision,
         PolicyDecision::RequireApproval { capability, risk, .. }
-            if capability == pending.capability && risk.effective_risk == pending.risk
+            if capability == pending.capability && risk == pending.risk
     );
 
     if let Err(audit_error) = state
@@ -789,7 +789,7 @@ pub struct PendingSummary {
     pub session_id: SessionId,
     pub workspace_id: WorkspaceId,
     pub tool_name: String,
-    pub risk: RiskLevel,
+    pub risk: RiskAssessment,
 }
 
 pub fn list_pending_operations(state: &Arc<DaemonState>) -> Vec<PendingSummary> {
@@ -803,7 +803,7 @@ pub fn list_pending_operations(state: &Arc<DaemonState>) -> Vec<PendingSummary> 
             session_id: p.request.session_id,
             workspace_id: p.request.workspace_id,
             tool_name: p.request.tool_name.clone(),
-            risk: p.risk,
+            risk: p.risk.clone(),
         })
         .collect()
 }

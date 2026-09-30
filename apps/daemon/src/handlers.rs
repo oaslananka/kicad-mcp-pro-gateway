@@ -9,15 +9,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use companion_core::{
-    AccessGrant, AuthorizationLease, AuthorizationStatus, GrantId, OperationId, Session, SessionId,
-    WorkspaceId,
+    AccessGrant, AuthorizationLease, AuthorizationStatus, GrantId, OperationId, RiskFactor,
+    RiskFactorCode, Session, SessionId, WorkspaceId,
 };
 use companion_core_bridge::CoreBridgeClient;
 use companion_protocol::{
     AccessGrantView, AuditSummaryView, AuthorizationLeaseView, DaemonIdentityView,
     DaemonStatusView, IpcRequest, IpcResponse, PairingBegunView, PairingStatusView,
-    PendingApprovalView, SessionView, VerifiedIdentityView, WorkspaceInfo, WorkspaceView,
-    DAEMON_PRODUCT_ID, LOCAL_IPC_PROTOCOL_VERSION,
+    PendingApprovalView, RiskFactorView, SessionView, VerifiedIdentityView, WorkspaceInfo,
+    WorkspaceView, DAEMON_PRODUCT_ID, LOCAL_IPC_PROTOCOL_VERSION,
 };
 use companion_sessions::{
     authorization_event_for, GrantTransition, SessionEvent, SessionTransition,
@@ -104,6 +104,19 @@ fn workspace_infos(
 fn format_timestamp(t: time::OffsetDateTime) -> String {
     t.format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "invalid-timestamp".into())
+}
+
+fn risk_factor_view(factor: RiskFactor) -> RiskFactorView {
+    let code = match factor.code {
+        RiskFactorCode::BulkArgumentCardinality => "bulk_argument_cardinality",
+    };
+    RiskFactorView {
+        code: code.to_string(),
+        subject: factor.subject,
+        observed_count: factor.observed_count,
+        threshold: factor.threshold,
+        escalated_to: format!("{:?}", factor.escalated_to),
+    }
 }
 
 /// A transport-era subject record plus, next to it, the authorization state
@@ -546,7 +559,15 @@ async fn list_pending_approvals(state: &Arc<DaemonState>) -> IpcResponse {
                     workspace_id: s.workspace_id,
                     workspace,
                     tool_name: s.tool_name,
-                    risk: format!("{:?}", s.risk),
+                    risk: format!("{:?}", s.risk.effective_risk),
+                    base_risk: format!("{:?}", s.risk.base_risk),
+                    risk_policy_version: s.risk.policy_version,
+                    risk_factors: s
+                        .risk
+                        .factors
+                        .into_iter()
+                        .map(risk_factor_view)
+                        .collect(),
                 })
             })
             .collect::<Result<Vec<_>, DaemonError>>()
