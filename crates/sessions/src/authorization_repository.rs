@@ -500,6 +500,11 @@ fn parse_principal(
     match (assurance, verified) {
         (PrincipalAssurance::Unverified, None) => Ok(AuthorizationPrincipal::unverified(name)),
         (PrincipalAssurance::Verified, Some(verified)) => {
+            if !verified.has_required_binding_fields() {
+                return Err(GrantError::Storage(
+                    "verified principal row has empty mandatory identity/binding fields".into(),
+                ));
+            }
             Ok(AuthorizationPrincipal::verified(name, verified))
         }
         (PrincipalAssurance::Unverified, Some(_)) => Err(GrantError::Storage(
@@ -759,6 +764,23 @@ mod tests {
     }
 
     #[test]
+    fn verified_assurance_with_empty_transport_binding_fails_closed() {
+        let repository = repo();
+        let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+        let mut request = grant_request(SessionId::new(), GrantKind::Standing);
+        request.principal =
+            AuthorizationPrincipal::verified("display:claim", verified_actor(""));
+        let grant = AccessGrant::requested(request, clock.now());
+        // Deliberately persist malformed but syntactically valid JSON to
+        // exercise the repository's defensive decoding path.
+        repository.save_grant(&grant).unwrap();
+        assert!(matches!(
+            repository.load_grant(grant.grant_id),
+            Err(GrantError::Storage(_))
+        ));
+    }
+
+    #[test]
     fn verified_assurance_without_verified_metadata_fails_closed() {
         let repository = repo();
         let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
@@ -773,7 +795,7 @@ mod tests {
             .lock()
             .unwrap()
             .execute(
-                "UPDATE access_grants SET principal_assurance = 'verified'",
+                "UPDATE access_grants SET principal_assurance = '\"verified\"'",
                 [],
             )
             .unwrap();
