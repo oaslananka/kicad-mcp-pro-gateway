@@ -43,8 +43,13 @@ any of its three live tests** (`0 passed; 3 ignored`): the tests were individual
 
 The corrected workflow invokes ignored tests explicitly and rejects zero-test
 success. Its first substantive run on 2026-09-30 executed 3 tests: **2 passed
-and 1 failed** because its fixture path was relative to the daemon crate's
-working directory; a workflow fixture path correction is under validation.
+and 1 failed** due to a relative fixture path. After fixing that path, the
+next run again executed **2 passed, 1 failed**: the live read and audit
+succeeded, while `sch_add_symbol` correctly failed closed with
+`UnmodelledToolContract` (no reviewed effects). PR #57's updated scenario
+now asserts that deny/audit behavior instead of requesting a new grant;
+the high-risk approval, revocation, and reconnect stages still require
+fresh passing test evidence.
 Until an exact-head run passes all 3 executed tests, **Ubuntu live E2E
 qualification is unverified**. Earlier green workflow statuses cannot be
 used to demonstrate compatibility. This correction applies prospectively
@@ -70,7 +75,7 @@ This document records a dated **conditional V1 stable-release readiness assessme
 | Fail-Closed Audit Persistence | #36 / PR #36 | ✅ **CLOSED** | Durable append-only audit store; `AuditPersistence` error on write failure; zero upstream calls when audit unavailable |
 | Release Candidate Pipeline | #41 / PR #41 | ✅ **CLOSED** | Fail-closed tag-triggered pipeline with SBOM, provenance, SBOM attestations, draft-prerelease-only publication |
 | Signed Desktop Installers | #40 / PR #40 | ✅ **CLOSED** | `.deb` (Linux, validated via provenance), `.dmg` (macOS Developer ID + notarization), `.msi` (Windows Authenticode + timestamp) |
-| Live E2E Release Gate | #38 / PR #38 | ✅ **IMPLEMENTATION CLOSED; EXECUTION NOT YET QUALIFIED** | Workflow exists against pinned baseline, but pre-fix green runs executed 0 tests; PR #57 repairs test execution, first substantive run failed fixture discovery. |
+| Live E2E Release Gate | #38 / PR #38 | ✅ **IMPLEMENTATION CLOSED; EXECUTION NOT YET QUALIFIED** | Workflow exists against pinned baseline, but pre-fix green runs executed 0 tests; PR #57 repairs test execution, subsequent actual run reached a correctly denied unmodelled write; full suite not yet green. |
 | Desktop Security-Critical UX | #39 / PR #39 | ✅ **CLOSED** | Comprehensive UI tests for offline/failure states; Vitest + React Testing Library in CI |
 | Update/Upgrade/Rollback Strategy | #42 / PR #42 | ✅ **CLOSED** | Documented in `docs/upgrade-v1.md`; tested in CI matrix |
 | Compatibility Matrix Baseline | #32 / PR #32 | ✅ **CLOSED** | Canonical matrix in `docs/architecture/compatibility-matrix.md` for Ubuntu 24.04 x86_64, macOS Apple Silicon, Windows 11 x86_64 |
@@ -170,7 +175,7 @@ This document records a dated **conditional V1 stable-release readiness assessme
 
 | Test | Status | Details |
 |------|--------|---------|
-| Automated live E2E on Ubuntu | ⚠️ **RUNNER IMPLEMENTED; PASSING TEST EVIDENCE PENDING** | Earlier green runs skipped all 3 tests; PR #57 adds `--include-ignored` and rejects zero-test success. First real run: 2 passed, 1 failed (fixture path), fix being validated. |
+| Automated live E2E on Ubuntu | ⚠️ **RUNNER IMPLEMENTED; PASSING TEST EVIDENCE PENDING** | Earlier green runs skipped all 3 tests; PR #57 adds `--include-ignored` and rejects zero-test success. First two real runs: 2 passed/1 failed (fixture path, then correctly denied unmodelled write); revised test pending validation. |
 | Live reconciliation test | ✅ **EXECUTED ONCE; PASSED** | `cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --include-ignored --nocapture` executed 3 tests; tool reconciliation and health check passed, full vertical slice failed. |
 | macOS live E2E | ❌ **NOT CONFIGURED** | No macOS runner in matrix (only Ubuntu) |
 | Windows live E2E | ❌ **NOT CONFIGURED** | No Windows runner in matrix (only Ubuntu) |
