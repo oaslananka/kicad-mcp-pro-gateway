@@ -73,5 +73,8 @@ Rust 1.88 as its minimum supported Rust version and verifies that floor in CI.
 
 SQLite holds everything else: device metadata (public fields only), pairing
 metadata, authorized workspaces, sessions, approvals, audit events,
-settings, checkpoint metadata. See [`crates/storage`](../../crates/storage)
-for the schema and migrations.
+settings, checkpoint metadata. Verified-principal audit provenance is limited to
+safe metadata (assurance, issuer, subject, verification source and
+authentication-strength descriptor); credentials, proof/signature bytes,
+certificates, tokens and transport bindings are never audit columns. See
+[`crates/storage`](../../crates/storage) for the schema and migrations.

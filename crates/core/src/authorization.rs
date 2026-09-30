@@ -46,6 +46,14 @@ impl PrincipalAssurance {
             Self::Verified => "verified",
         }
     }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "unverified" => Some(Self::Unverified),
+            "verified" => Some(Self::Verified),
+            _ => None,
+        }
+    }
 }
 
 /// Which trusted boundary produced a verified remote actor.
@@ -63,6 +71,13 @@ impl PrincipalVerificationSource {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::AuthenticatedTransport => "authenticated_transport",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "authenticated_transport" => Some(Self::AuthenticatedTransport),
+            _ => None,
         }
     }
 }
