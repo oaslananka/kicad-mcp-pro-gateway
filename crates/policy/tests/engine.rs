@@ -689,11 +689,7 @@ fn larger_bulk_delete_preserves_observed_count_without_raising_above_high() {
     let engine = PolicyEngine::new(registry());
 
     let decision = engine.evaluate_with_grant(
-        &delete_request(
-            subject,
-            ws.workspace_id,
-            serde_json::json!(["a", "b", "c"]),
-        ),
+        &delete_request(subject, ws.workspace_id, serde_json::json!(["a", "b", "c"])),
         &grant,
         &ws,
         &clock,
