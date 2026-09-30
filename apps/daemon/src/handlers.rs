@@ -16,8 +16,8 @@ use companion_core_bridge::CoreBridgeClient;
 use companion_protocol::{
     AccessGrantView, AuditSummaryView, AuthorizationLeaseView, DaemonIdentityView,
     DaemonStatusView, IpcRequest, IpcResponse, PairingBegunView, PairingStatusView,
-    PendingApprovalView, SessionView, WorkspaceInfo, WorkspaceView, DAEMON_PRODUCT_ID,
-    LOCAL_IPC_PROTOCOL_VERSION,
+    PendingApprovalView, SessionView, VerifiedIdentityView, WorkspaceInfo, WorkspaceView,
+    DAEMON_PRODUCT_ID, LOCAL_IPC_PROTOCOL_VERSION,
 };
 use companion_sessions::{
     authorization_event_for, GrantTransition, SessionEvent, SessionTransition,
@@ -110,17 +110,42 @@ fn format_timestamp(t: time::OffsetDateTime) -> String {
 /// and the transport state — reported as three separate facts so a client
 /// cannot read a healthy pipe as an approval, or a revoked grant as a
 /// disconnect.
+fn verified_identity_view(grant: &AccessGrant) -> Option<VerifiedIdentityView> {
+    // Never promote caller-supplied display text or malformed evidence to
+    // verified identity. Do not expose the opaque transport binding through IPC.
+    if !grant.principal.is_verified() {
+        return None;
+    }
+    grant
+        .principal
+        .verified_principal()
+        .map(|identity| VerifiedIdentityView {
+            issuer: identity.issuer.clone(),
+            subject: identity.subject.clone(),
+            verification_source: identity.verification_source.as_str().to_string(),
+            authentication_strength: identity.authentication_strength.clone(),
+        })
+}
+
 fn to_session_view(
     session: &Session,
-    authorization_status: &str,
+    grant: Option<&AccessGrant>,
     transport_state: &str,
     workspace_repo: &WorkspaceRepository,
 ) -> SessionView {
     SessionView {
         session_id: session.session_id,
         remote_principal: session.remote_principal.clone(),
+        principal_assurance: grant
+            .filter(|grant| grant.principal.is_verified())
+            .map_or("unverified", |_| "verified")
+            .to_string(),
+        verified_identity: grant.and_then(verified_identity_view),
         status: format!("{:?}", session.status),
-        authorization_status: authorization_status.to_string(),
+        authorization_status: grant
+            .map(|grant| grant.status.as_str())
+            .unwrap_or("none")
+            .to_string(),
         transport_state: transport_state.to_string(),
         capability_profile: format!("{:?}", session.capability_profile),
         task_scope: session.task_scope.clone(),
@@ -142,7 +167,13 @@ fn to_grant_view(
         remote_principal: grant.principal.name.clone(),
         // The authorization spellings come from the domain's own accessors,
         // so a client sees exactly the `snake_case` form the model persists.
-        principal_assurance: grant.principal.assurance.as_str().to_string(),
+        principal_assurance: if grant.principal.is_verified() {
+            "verified"
+        } else {
+            "unverified"
+        }
+        .to_string(),
+        verified_identity: verified_identity_view(grant),
         authorization_status: grant.status.as_str().to_string(),
         grant_kind: grant.kind.as_str().to_string(),
         capability_profile: format!("{:?}", grant.capability_profile),
@@ -314,11 +345,11 @@ async fn list_sessions(state: &Arc<DaemonState>) -> IpcResponse {
         // Keyed lookup, not a scan per session: correlating N sessions with M
         // grants must stay linear, because this runs on every status/list
         // request and both counts are attacker-influenceable over time.
-        let statuses: HashMap<SessionId, AuthorizationStatus> = grants
+        let by_subject: HashMap<SessionId, AccessGrant> = grants
             .into_iter()
-            .map(|grant| (grant.subject_session_id, grant.status))
+            .map(|grant| (grant.subject_session_id, grant))
             .collect();
-        Ok::<_, DaemonError>((state.session_repo.list_all()?, statuses))
+        Ok::<_, DaemonError>((state.session_repo.list_all()?, by_subject))
     })
     .await;
     match result {
@@ -326,13 +357,9 @@ async fn list_sessions(state: &Arc<DaemonState>) -> IpcResponse {
             sessions
                 .iter()
                 .map(|session| {
-                    let authorization_status = grants
-                        .get(&session.session_id)
-                        .map(|status| status.as_str().to_string())
-                        .unwrap_or_else(|| "none".to_string());
                     to_session_view(
                         session,
-                        &authorization_status,
+                        grants.get(&session.session_id),
                         &transport_state,
                         &workspace_repo,
                     )
@@ -530,6 +557,77 @@ async fn list_pending_approvals(state: &Arc<DaemonState>) -> IpcResponse {
         Ok(Ok(approvals)) => IpcResponse::PendingApprovals(approvals),
         Ok(Err(e)) => error_response(e),
         Err(_) => join_error("list_pending_approvals"),
+    }
+}
+
+#[cfg(test)]
+mod principal_view_tests {
+    use super::*;
+    use companion_core::{
+        AuthorizationPrincipal, CapabilityProfile, DeviceId, GrantKind, GrantRequest,
+        PrincipalVerificationSource, VerifiedPrincipal,
+    };
+    use std::collections::BTreeSet;
+
+    fn grant(principal: AuthorizationPrincipal) -> AccessGrant {
+        AccessGrant::requested(
+            GrantRequest {
+                subject_session_id: SessionId::new(),
+                device_id: DeviceId::new(),
+                principal,
+                workspace_ids: BTreeSet::from([WorkspaceId::new()]),
+                capability_profile: CapabilityProfile::Inspect,
+                task_scope: "read schematic".into(),
+                kind: GrantKind::Standing,
+                lifetime: time::Duration::minutes(15),
+            },
+            time::OffsetDateTime::now_utc(),
+        )
+    }
+
+    fn identity() -> VerifiedPrincipal {
+        VerifiedPrincipal {
+            issuer: "trusted-issuer".into(),
+            subject: "trusted-subject".into(),
+            account_or_tenant: None,
+            client_or_agent: None,
+            authentication_strength: "mfa".into(),
+            verification_source: PrincipalVerificationSource::AuthenticatedTransport,
+            transport_binding: "opaque-nonsecret-binding".into(),
+        }
+    }
+
+    #[test]
+    fn caller_supplied_label_does_not_create_verified_ipc_identity() {
+        let record = grant(AuthorizationPrincipal::unverified("trusted-subject"));
+        assert!(!record.principal.is_verified());
+        assert!(verified_identity_view(&record).is_none());
+    }
+
+    #[test]
+    fn trusted_grant_surfaces_source_and_strength_but_not_binding() {
+        let record = grant(AuthorizationPrincipal::verified(
+            "attacker-claimed-name",
+            identity(),
+        ));
+        let view = verified_identity_view(&record).expect("verified transport evidence");
+        assert_eq!(view.issuer, "trusted-issuer");
+        assert_eq!(view.subject, "trusted-subject");
+        assert_eq!(view.verification_source, "authenticated_transport");
+        assert_eq!(view.authentication_strength, "mfa");
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(!json.contains("opaque-nonsecret-binding"));
+        assert!(!json.contains("transport_binding"));
+        assert!(!json.contains("attacker-claimed-name"));
+    }
+
+    #[test]
+    fn malformed_verified_metadata_is_never_rendered_as_verified() {
+        let mut actor = identity();
+        actor.transport_binding = " ".into();
+        let record = grant(AuthorizationPrincipal::verified("trusted-subject", actor));
+        assert!(!record.principal.is_verified());
+        assert!(verified_identity_view(&record).is_none());
     }
 }
 
