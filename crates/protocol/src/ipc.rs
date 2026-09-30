@@ -342,8 +342,8 @@ mod tests {
     #[test]
     fn a_changed_local_ipc_contract_bumps_the_version_it_is_checked_against() {
         assert_eq!(
-            LOCAL_IPC_PROTOCOL_VERSION, 3,
-            "3 = identity source is separate from claims; bump this test, \
+            LOCAL_IPC_PROTOCOL_VERSION, 4,
+            "4 = pending approvals expose structured dynamic-risk evidence; bump this test, \
              whenever a request/response variant or a client-relevant field changes"
         );
         let previous_contract = DaemonIdentityView {

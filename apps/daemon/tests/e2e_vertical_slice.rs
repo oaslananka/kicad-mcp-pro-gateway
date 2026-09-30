@@ -216,6 +216,92 @@ async fn full_vertical_slice_from_pairing_through_revocation() {
         companion_core::ExecutionStatus::Success
     );
 
+
+    // Dynamic-risk regression: the same statically-Normal destructive tool is
+    // escalated when two reviewed item ids are supplied. The ids themselves
+    // must never cross the local risk-explanation surface.
+    let bulk_delete_op_id = companion_core::OperationId::new();
+    let raw_item_ids = [
+        "00000000-0000-0000-0000-0000000000a1",
+        "00000000-0000-0000-0000-0000000000b2",
+    ];
+    mock_relay.push_incoming(
+        Envelope::new(
+            MessageType::OperationRequest,
+            serde_json::to_value(companion_core::OperationRequest {
+                operation_id: bulk_delete_op_id,
+                session_id,
+                workspace_id,
+                tool_name: "pcb_delete_items".into(),
+                arguments: [("item_ids".into(), json!(raw_item_ids))]
+                    .into_iter()
+                    .collect(),
+                target_path: None,
+                requested_at: time::OffsetDateTime::now_utc(),
+            })
+            .unwrap(),
+        )
+        .with_device_id(device_id),
+    );
+
+    wait_until(
+        || {
+            remote_processor::list_pending_operations(&state)
+                .iter()
+                .any(|p| p.operation_id == bulk_delete_op_id)
+        },
+        Duration::from_secs(2),
+        "bulk delete to become pending approval",
+    )
+    .await;
+
+    assert_eq!(
+        fake_kicad.tool_call_count(),
+        1,
+        "argument-aware High risk must block core execution before approval"
+    );
+
+    let response = send_request(&data_dir, IpcRequest::ListPendingApprovals).await;
+    let serialized = serde_json::to_string(&response).unwrap();
+    let pending = match &response {
+        IpcResponse::PendingApprovals(list) => list
+            .iter()
+            .find(|p| p.operation_id == bulk_delete_op_id)
+            .expect("bulk delete must be visible over IPC"),
+        other => panic!("unexpected pending approval response: {other:?}"),
+    };
+    assert_eq!(pending.risk, "High");
+    assert_eq!(pending.base_risk, "Normal");
+    assert_eq!(pending.risk_policy_version, 2);
+    assert_eq!(pending.risk_factors.len(), 1);
+    let factor = &pending.risk_factors[0];
+    assert_eq!(factor.code, "bulk_argument_cardinality");
+    assert_eq!(factor.subject, "item_ids");
+    assert_eq!(factor.observed_count, 2);
+    assert_eq!(factor.threshold, 2);
+    assert_eq!(factor.escalated_to, "High");
+    for raw_id in raw_item_ids {
+        assert!(
+            !serialized.contains(raw_id),
+            "raw item ids must not appear in pending approval IPC"
+        );
+    }
+
+    let response = send_request(
+        &data_dir,
+        IpcRequest::DenyOperation {
+            operation_id: bulk_delete_op_id,
+            reason: Some("dynamic-risk regression cleanup".into()),
+        },
+    )
+    .await;
+    assert!(matches!(response, IpcResponse::Ack), "{response:?}");
+    assert_eq!(
+        fake_kicad.tool_call_count(),
+        1,
+        "denying the pending bulk delete must never call the core bridge"
+    );
+
     // 14. Mock remote requests a high-risk operation (pcb_auto_place_by_schematic: pcb.write/High, which the Design profile does hold).
     let high_risk_op_id = companion_core::OperationId::new();
     mock_relay.push_incoming(
