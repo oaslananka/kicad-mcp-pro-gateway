@@ -32,6 +32,9 @@ pub enum DenyReason {
     /// the request names — including a legacy row that never carried
     /// authority or that this build refuses to interpret.
     AuthorizationNotEstablished,
+    /// The grant is bound to a verified remote actor, but the current inbound
+    /// transport did not present the same authenticated principal/binding.
+    PrincipalBindingMismatch,
     WorkspaceNotAuthorized,
     PathEscapesWorkspace,
     UnknownTool,

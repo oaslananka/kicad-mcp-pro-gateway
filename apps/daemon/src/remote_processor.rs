@@ -11,12 +11,13 @@ use std::time::Duration;
 use companion_core::{
     AccessGrant, ApprovalDecisionKind, AuditEvent, AuthorizationPrincipal, CapabilityProfile,
     CompanionError, DeviceId, ExecutionStatus, GrantKind, GrantRequest, OperationId,
-    OperationRequest, PolicyResultKind, RiskLevel, Session, SessionId, WorkspaceId,
+    OperationRequest, PolicyResultKind, RiskLevel, Session, SessionId, VerifiedPrincipal,
+    WorkspaceId,
 };
 use companion_policy::PolicyDecision;
 use companion_protocol::{Envelope, MessageType};
 use companion_sessions::{new_unpaired_session, SessionEvent, SessionTransition};
-use companion_transport::{Transport, TransportError};
+use companion_transport::{InboundEnvelope, Transport, TransportError};
 use serde::Deserialize;
 use time::OffsetDateTime;
 
@@ -50,7 +51,7 @@ pub async fn run_remote_processor(
         tokio::select! {
             received = transport.receive() => {
                 match received {
-                    Ok(envelope) => handle_envelope(&state, transport.as_ref(), envelope).await,
+                    Ok(inbound) => handle_inbound_envelope(&state, transport.as_ref(), inbound).await,
                     Err(TransportError::NoMessage) => {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -75,18 +76,55 @@ pub async fn handle_envelope(
     transport: &dyn Transport,
     envelope: Envelope,
 ) {
+    handle_inbound_envelope(state, transport, envelope.into()).await;
+}
+
+async fn handle_inbound_envelope(
+    state: &Arc<DaemonState>,
+    transport: &dyn Transport,
+    inbound: InboundEnvelope,
+) {
+    let InboundEnvelope {
+        envelope,
+        verified_principal,
+    } = inbound;
     if envelope.check_protocol_version().is_err() {
         tracing::warn!("dropping envelope with incompatible protocol version");
         return;
     }
     match envelope.message_type {
-        MessageType::SessionRequest => handle_session_request(state, envelope).await,
-        MessageType::OperationRequest => handle_operation_request(state, transport, envelope).await,
+        MessageType::SessionRequest => {
+            handle_session_request_with_principal(state, envelope, verified_principal).await
+        }
+        MessageType::OperationRequest => {
+            handle_operation_request_with_principal(state, transport, envelope, verified_principal)
+                .await
+        }
         _ => {}
     }
 }
 
+#[cfg(test)]
 async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
+    handle_session_request_with_principal(state, envelope, None).await;
+}
+
+async fn handle_session_request_with_principal(
+    state: &Arc<DaemonState>,
+    envelope: Envelope,
+    verified_principal: Option<VerifiedPrincipal>,
+) {
+    // Do not persist a pending grant whose "verified" transport actor is
+    // structurally incomplete. Absence of evidence is distinct from a
+    // malformed claim that purports to carry authenticated evidence.
+    if verified_principal
+        .as_ref()
+        .is_some_and(|actor| !actor.has_required_binding_fields())
+    {
+        tracing::warn!("session request rejected: incomplete authenticated actor metadata");
+        return;
+    }
+
     let claimed_device_id = envelope.device_id;
     let payload: SessionRequestPayload = match serde_json::from_value(envelope.payload) {
         Ok(p) => p,
@@ -137,7 +175,12 @@ async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
             GrantRequest {
                 subject_session_id: session.session_id,
                 device_id,
-                principal: AuthorizationPrincipal::unverified(payload.remote_principal),
+                principal: match verified_principal {
+                    Some(verified) => {
+                        AuthorizationPrincipal::verified(payload.remote_principal, verified)
+                    }
+                    None => AuthorizationPrincipal::unverified(payload.remote_principal),
+                },
                 workspace_ids,
                 capability_profile: payload.capability_profile,
                 task_scope: payload.task_scope,
@@ -180,10 +223,20 @@ async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
     }
 }
 
+#[cfg(test)]
 async fn handle_operation_request(
     state: &Arc<DaemonState>,
     transport: &dyn Transport,
     envelope: Envelope,
+) {
+    handle_operation_request_with_principal(state, transport, envelope, None).await;
+}
+
+async fn handle_operation_request_with_principal(
+    state: &Arc<DaemonState>,
+    transport: &dyn Transport,
+    envelope: Envelope,
+    verified_principal: Option<VerifiedPrincipal>,
 ) {
     let claimed_device_id = envelope.device_id;
     let state_for_binding = Arc::clone(state);
@@ -211,7 +264,7 @@ async fn handle_operation_request(
     })
     .await;
 
-    let Ok((decision, grant, session)) = eval else {
+    let Ok((mut decision, grant, session)) = eval else {
         tracing::warn!("policy evaluation task panicked");
         return;
     };
@@ -227,6 +280,18 @@ async fn handle_operation_request(
         // turn a log line into a usable capability identifier.
         tracing::warn!("operation request device binding rejected");
         return;
+    }
+
+    if let Some(grant) = grant.as_ref() {
+        if !grant
+            .principal
+            .accepts_transport_principal(verified_principal.as_ref())
+        {
+            tracing::warn!("operation request verified-principal transport binding rejected");
+            decision = PolicyDecision::Deny {
+                reason: companion_policy::DenyReason::PrincipalBindingMismatch,
+            };
+        }
     }
 
     let audit_event = build_audit_event(&request, grant.as_ref(), session.as_ref(), &decision);
@@ -720,9 +785,13 @@ mod device_binding_tests {
     use std::sync::Arc;
 
     use companion_core::config::{self, CliOverrides};
-    use companion_core::{CapabilityProfile, DeviceId, OperationId, OperationRequest, Session};
+    use companion_core::{
+        CapabilityProfile, DeviceId, OperationId, OperationRequest, PrincipalVerificationSource,
+        Session, VerifiedPrincipal,
+    };
     use companion_core_bridge::MockMcpServer;
     use companion_identity::InMemorySecretStore;
+    use companion_sessions::{AuthorizationEvent, GrantTransition};
     use companion_transport::{MockTransport, Transport};
     use companion_workspace::WorkspaceAuthorization;
     use serde_json::json;
@@ -843,6 +912,18 @@ risk = "critical"
         }
     }
 
+    fn verified_actor(binding: &str) -> VerifiedPrincipal {
+        VerifiedPrincipal {
+            issuer: "https://issuer.example".into(),
+            subject: "actor-123".into(),
+            account_or_tenant: Some("tenant-7".into()),
+            client_or_agent: Some("agent-9".into()),
+            authentication_strength: "phishing_resistant".into(),
+            verification_source: PrincipalVerificationSource::AuthenticatedTransport,
+            transport_binding: binding.into(),
+        }
+    }
+
     #[tokio::test]
     async fn session_request_requires_persistent_local_device_id() {
         let state = build_test_state("http://127.0.0.1:9/mcp".into());
@@ -919,6 +1000,122 @@ risk = "critical"
                 .format(&time::format_description::well_known::Rfc3339)
                 .unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn authenticated_session_request_persists_verified_principal_binding() {
+        let state = build_test_state("http://127.0.0.1:9/mcp".into());
+        let identity = state.identity_store.create("test-device").unwrap();
+        let workspace_id = authorize_workspace(&state);
+        let actor = verified_actor("binding-A");
+
+        handle_session_request_with_principal(
+            &state,
+            session_request(workspace_id).with_device_id(identity.device_id),
+            Some(actor.clone()),
+        )
+        .await;
+
+        let session = state.session_repo.list_all().unwrap().pop().unwrap();
+        let grant = state
+            .authorization_repo
+            .load_grant_for_subject(session.session_id)
+            .unwrap()
+            .expect("verified grant persists");
+        assert_eq!(grant.principal.name, "agent:test");
+        assert_eq!(grant.principal.verified_principal(), Some(&actor));
+        assert!(grant.principal.is_verified());
+    }
+
+    #[tokio::test]
+    async fn malformed_authenticated_actor_never_creates_a_pending_grant() {
+        let state = build_test_state("http://127.0.0.1:9/mcp".into());
+        let identity = state.identity_store.create("test-device").unwrap();
+        let workspace_id = authorize_workspace(&state);
+        let mut actor = verified_actor("binding-A");
+        actor.transport_binding.clear();
+
+        handle_session_request_with_principal(
+            &state,
+            session_request(workspace_id).with_device_id(identity.device_id),
+            Some(actor),
+        )
+        .await;
+
+        assert!(state.session_repo.list_all().unwrap().is_empty());
+        assert!(state
+            .authorization_repo
+            .list_all_grants()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn verified_grant_rejects_missing_or_substituted_transport_binding() {
+        let fake_kicad = MockMcpServer::start().await;
+        let state = build_test_state(fake_kicad.endpoint().to_string());
+        let identity = state.identity_store.create("test-device").unwrap();
+        let workspace_id = authorize_workspace(&state);
+        let actor = verified_actor("binding-A");
+
+        handle_session_request_with_principal(
+            &state,
+            session_request(workspace_id).with_device_id(identity.device_id),
+            Some(actor.clone()),
+        )
+        .await;
+        let session = state.session_repo.list_all().unwrap().pop().unwrap();
+        let grant = state
+            .authorization_repo
+            .load_grant_for_subject(session.session_id)
+            .unwrap()
+            .unwrap()
+            .transition(&AuthorizationEvent::Approve, state.clock.as_ref())
+            .unwrap();
+        state.authorization_repo.save_grant(&grant).unwrap();
+
+        let relay = Arc::new(MockTransport::new());
+        relay.connect().await.unwrap();
+        let transport: Arc<dyn Transport> = relay.clone();
+
+        for current in [None, Some(verified_actor("binding-B"))] {
+            let request = low_risk_operation(&session, workspace_id);
+            handle_operation_request_with_principal(
+                &state,
+                transport.as_ref(),
+                Envelope::new(
+                    MessageType::OperationRequest,
+                    serde_json::to_value(&request).unwrap(),
+                )
+                .with_device_id(identity.device_id),
+                current,
+            )
+            .await;
+        }
+        assert_eq!(
+            fake_kicad.tool_call_count(),
+            0,
+            "missing or substituted binding must fail before core execution"
+        );
+
+        let request = low_risk_operation(&session, workspace_id);
+        handle_operation_request_with_principal(
+            &state,
+            transport.as_ref(),
+            Envelope::new(
+                MessageType::OperationRequest,
+                serde_json::to_value(&request).unwrap(),
+            )
+            .with_device_id(identity.device_id),
+            Some(actor),
+        )
+        .await;
+        assert_eq!(
+            fake_kicad.tool_call_count(),
+            1,
+            "the exact authenticated actor/binding may exercise its locally approved grant"
+        );
+        fake_kicad.stop();
     }
 
     #[tokio::test]

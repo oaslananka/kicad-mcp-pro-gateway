@@ -25,20 +25,17 @@ use crate::session::{ApprovalPolicy, Session, SessionStatus};
 
 /// How much the Gateway can vouch for the identity behind a grant's
 /// principal.
-///
-/// `Verified` deliberately does not exist yet: nothing in this repository
-/// performs a remote-principal verification handshake, so a grant may only
-/// ever claim [`PrincipalAssurance::Unverified`]. Adding a verified tier is
-/// the subject of the remote-identity work tracked separately, and inventing
-/// it here would let an unverified principal string be treated as a proven
-/// identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrincipalAssurance {
-    /// The principal string arrived over an untrusted transport and has not
-    /// been verified. Authority decisions may still use it, but only together
-    /// with the device binding and the approver's explicit consent.
+    /// The display claim arrived over the remote transport but was not bound
+    /// to authenticated remote-actor evidence. Local approval can still
+    /// authorize the grant in the current mock/V1 lane, but callers that
+    /// require authenticated remote identity must reject it.
     Unverified,
+    /// The remote actor was derived from authenticated transport/session
+    /// evidence rather than from the user-controlled display claim.
+    Verified,
 }
 
 impl PrincipalAssurance {
@@ -46,29 +43,127 @@ impl PrincipalAssurance {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Unverified => "unverified",
+            Self::Verified => "verified",
         }
     }
 }
 
+/// Which trusted boundary produced a verified remote actor.
+///
+/// Provider-specific credential/token/certificate details stay behind the
+/// transport implementation. The authorization model records only safe
+/// verification metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrincipalVerificationSource {
+    AuthenticatedTransport,
+}
+
+impl PrincipalVerificationSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::AuthenticatedTransport => "authenticated_transport",
+        }
+    }
+}
+
+/// Safe metadata for an authenticated remote actor.
+///
+/// `transport_binding` is an opaque, non-secret identifier produced by the
+/// trusted transport verifier from cryptographically authenticated evidence
+/// (for example a confirmation-key thumbprint or equivalent channel/session
+/// binding). It is deliberately not a raw token, certificate, signature, or
+/// credential. Equality includes this binding so captured principal metadata
+/// cannot be transplanted onto a differently authenticated transport.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifiedPrincipal {
+    pub issuer: String,
+    pub subject: String,
+    pub account_or_tenant: Option<String>,
+    pub client_or_agent: Option<String>,
+    pub authentication_strength: String,
+    pub verification_source: PrincipalVerificationSource,
+    pub transport_binding: String,
+}
+
+impl VerifiedPrincipal {
+    /// Structural sanity only; the transport must still authenticate proof.
+    /// Blank mandatory claims cannot establish an identity/binding.
+    pub fn has_required_binding_fields(&self) -> bool {
+        !self.issuer.trim().is_empty()
+            && !self.subject.trim().is_empty()
+            && !self.authentication_strength.trim().is_empty()
+            && !self.transport_binding.trim().is_empty()
+    }
+}
+
 /// The remote principal a grant is issued to.
+///
+/// `name` is always the remote-supplied display claim. A verified identity,
+/// when present, is kept separately so no UI/policy/audit path has to infer
+/// authentication from a label.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthorizationPrincipal {
     pub name: String,
     pub assurance: PrincipalAssurance,
+    pub verified: Option<VerifiedPrincipal>,
 }
 
 impl AuthorizationPrincipal {
-    /// Builds the only principal this build is able to assert: an
-    /// unverified, transport-supplied name.
+    /// Builds an unverified, transport-supplied display claim.
     pub fn unverified(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             assurance: PrincipalAssurance::Unverified,
+            verified: None,
+        }
+    }
+
+    /// Binds a display claim to already-authenticated transport evidence.
+    ///
+    /// This constructor does not parse or verify provider credentials. Only a
+    /// trusted transport verifier may create the `VerifiedPrincipal` passed
+    /// here; remote envelope fields are never accepted as verification input.
+    pub fn verified(name: impl Into<String>, verified: VerifiedPrincipal) -> Self {
+        Self {
+            name: name.into(),
+            assurance: PrincipalAssurance::Verified,
+            verified: Some(verified),
         }
     }
 
     pub fn is_unverified(&self) -> bool {
         matches!(self.assurance, PrincipalAssurance::Unverified)
+    }
+
+    pub fn is_verified(&self) -> bool {
+        matches!(self.assurance, PrincipalAssurance::Verified)
+            && self
+                .verified
+                .as_ref()
+                .is_some_and(VerifiedPrincipal::has_required_binding_fields)
+    }
+
+    pub fn verified_principal(&self) -> Option<&VerifiedPrincipal> {
+        self.verified.as_ref()
+    }
+
+    /// Verified grants fail closed unless the *current* inbound transport
+    /// supplies the exact authenticated actor/binding that created the grant.
+    /// Unverified grants retain the existing V1/local-approval behavior.
+    pub fn accepts_transport_principal(&self, current: Option<&VerifiedPrincipal>) -> bool {
+        match self.assurance {
+            PrincipalAssurance::Unverified => self.verified.is_none(),
+            PrincipalAssurance::Verified => {
+                matches!(
+                    (self.verified.as_ref(), current),
+                    (Some(expected), Some(actual))
+                        if expected.has_required_binding_fields()
+                            && actual.has_required_binding_fields()
+                            && expected == actual
+                )
+            }
+        }
     }
 }
 
@@ -655,12 +750,13 @@ mod tests {
                 "the reported kind must be the persisted kind"
             );
         }
-        assert_eq!(
-            serde_json::to_string(&PrincipalAssurance::Unverified)
-                .expect("a unit variant always serializes"),
-            format!("\"{}\"", PrincipalAssurance::Unverified.as_str()),
-            "the reported assurance must be the persisted assurance"
-        );
+        for assurance in [PrincipalAssurance::Unverified, PrincipalAssurance::Verified] {
+            assert_eq!(
+                serde_json::to_string(&assurance).expect("a unit variant always serializes"),
+                format!("\"{}\"", assurance.as_str()),
+                "the reported assurance must be the persisted assurance"
+            );
+        }
     }
 
     fn now() -> OffsetDateTime {
@@ -703,11 +799,80 @@ mod tests {
         assert!(!grant.is_usable_at(now() - Duration::hours(1)));
     }
 
+    fn verified_actor(binding: &str) -> VerifiedPrincipal {
+        VerifiedPrincipal {
+            issuer: "https://issuer.example".into(),
+            subject: "actor-123".into(),
+            account_or_tenant: Some("tenant-7".into()),
+            client_or_agent: Some("agent-9".into()),
+            authentication_strength: "phishing_resistant".into(),
+            verification_source: PrincipalVerificationSource::AuthenticatedTransport,
+            transport_binding: binding.into(),
+        }
+    }
+
     #[test]
-    fn an_unverified_principal_is_all_this_build_can_assert() {
-        let principal = AuthorizationPrincipal::unverified("agent:test");
-        assert_eq!(principal.assurance, PrincipalAssurance::Unverified);
-        assert!(principal.is_unverified());
+    fn claimed_and_verified_principal_data_never_alias() {
+        let claimed = AuthorizationPrincipal::unverified("display:claim");
+        assert_eq!(claimed.assurance, PrincipalAssurance::Unverified);
+        assert!(claimed.is_unverified());
+        assert!(!claimed.is_verified());
+        assert!(claimed.verified_principal().is_none());
+
+        let verified = AuthorizationPrincipal::verified("display:claim", verified_actor("bind-A"));
+        assert_eq!(verified.assurance, PrincipalAssurance::Verified);
+        assert!(verified.is_verified());
+        assert_eq!(
+            verified
+                .verified_principal()
+                .expect("verified actor")
+                .subject,
+            "actor-123"
+        );
+        assert_eq!(verified.name, "display:claim");
+    }
+
+    #[test]
+    fn verified_principal_is_bound_to_the_current_authenticated_transport() {
+        let actor = verified_actor("bind-A");
+        let principal = AuthorizationPrincipal::verified("display:claim", actor.clone());
+
+        assert!(principal.accepts_transport_principal(Some(&actor)));
+        assert!(!principal.accepts_transport_principal(None));
+        assert!(!principal.accepts_transport_principal(Some(&verified_actor("bind-B"))));
+
+        let unverified = AuthorizationPrincipal::unverified("display:claim");
+        assert!(unverified.accepts_transport_principal(None));
+        assert!(unverified.accepts_transport_principal(Some(&actor)));
+    }
+
+    #[test]
+    fn missing_verified_metadata_never_matches_missing_transport_identity() {
+        // Metadata may be malformed in memory even if durable decoding rejects
+        // it. A missing expected identity must never equal a missing actual one.
+        let malformed = AuthorizationPrincipal {
+            name: "display:claim".into(),
+            assurance: PrincipalAssurance::Verified,
+            verified: None,
+        };
+        let actor = verified_actor("bind-A");
+        assert!(!malformed.accepts_transport_principal(None));
+        assert!(!malformed.accepts_transport_principal(Some(&actor)));
+    }
+
+    #[test]
+    fn empty_transport_binding_is_not_a_verified_identity() {
+        let mut actor = verified_actor("binding");
+        actor.transport_binding.clear();
+        let principal = AuthorizationPrincipal::verified("display:claim", actor.clone());
+        assert!(!principal.is_verified());
+        assert!(!principal.accepts_transport_principal(Some(&actor)));
+
+        actor.transport_binding = "binding".into();
+        actor.authentication_strength = "  ".into();
+        let principal = AuthorizationPrincipal::verified("display:claim", actor.clone());
+        assert!(!principal.is_verified());
+        assert!(!principal.accepts_transport_principal(Some(&actor)));
     }
 
     #[test]

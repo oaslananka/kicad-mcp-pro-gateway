@@ -5,7 +5,7 @@
 //!
 //! The test fixture is a minimal KiCad project in tests/fixtures/kicad-test-project.
 //!
-//! Run with: cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --nocapture
+//! Run with: cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --include-ignored --nocapture
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use companion_core::config::{self, CliOverrides};
 use companion_core::{CapabilityProfile, OperationId, SessionStatus};
-use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig};
+use companion_core_bridge::{CoreBridgeClient, CoreBridgeConfig, MCP_PROTOCOL_VERSION};
 use companion_identity::InMemorySecretStore;
 use companion_policy::{TomlToolRegistry, ToolCapabilityResolver};
 use companion_transport::{MockTransport, Transport};
@@ -258,8 +258,10 @@ async fn live_e2e_full_vertical_slice() {
     );
     println!("READ audit verified");
 
-    // 11. Test BOUNDED WRITE operation: sch_add_symbol (schematic.write, normal risk)
-    println!("Testing BOUNDED WRITE operation: sch_add_symbol");
+    // 11. Test fail-closed policy: sch_add_symbol is classified for
+    // schematic.write, but its upstream effect contract is NOT reviewed.
+    // A claimed write must never reach KiCad just because a capability exists.
+    println!("Testing UNMODELLED WRITE DENIAL: sch_add_symbol");
     let write_op_id = OperationId::new();
     mock_relay.push_incoming(
         companion_protocol::Envelope::new(
@@ -271,10 +273,15 @@ async fn live_e2e_full_vertical_slice() {
                 tool_name: "sch_add_symbol".into(),
                 arguments: {
                     let mut map = serde_json::Map::new();
-                    map.insert("lib_id".to_string(), json!("Device:R"));
+                    // Pinned kicad-mcp-pro 3.35.0 sch_add_symbol signature
+                    // accepts library, symbol_name, x_mm, y_mm (not
+                    // legacy lib_id / position tuple fields).
+                    map.insert("library".to_string(), json!("Device"));
+                    map.insert("symbol_name".to_string(), json!("R"));
+                    map.insert("x_mm".to_string(), json!(100.0));
+                    map.insert("y_mm".to_string(), json!(100.0));
                     map.insert("reference".to_string(), json!("R1"));
                     map.insert("value".to_string(), json!("10k"));
-                    map.insert("position".to_string(), json!([100, 100]));
                     map
                 },
                 target_path: None,
@@ -302,27 +309,32 @@ async fn live_e2e_full_vertical_slice() {
         .into_iter()
         .find(|e| e.correlation_id.as_deref() == Some(&write_op_id.to_string()))
         .expect("result for the WRITE operation");
-    println!("WRITE operation result: {:?}", write_result.payload);
-    // The operation may succeed or fail depending on the fixture, but it should not be a policy denial
-    assert_ne!(
+    println!("UNMODELLED WRITE denial result: {:?}", write_result.payload);
+    assert_eq!(
         write_result.payload["success"], false,
-        "WRITE operation must not be denied by policy"
+        "unmodelled write must fail closed: {:?}",
+        write_result.payload
+    );
+    assert_eq!(
+        write_result.payload["result"]["denied"], "UnmodelledToolContract",
+        "the write must be denied by the missing reviewed effect contract"
     );
 
-    // 12. Verify audit record for WRITE
+    // 12. Verify the policy denial was durably audited, with no execution.
     let audit_events = state.audit_repo.list_recent(50).unwrap();
     let write_audit = audit_events
         .iter()
         .find(|e| e.operation_id == write_op_id)
-        .expect("audit record for WRITE operation");
-    println!(
-        "WRITE audit: policy_result={:?}, execution_status={:?}",
-        write_audit.policy_result, write_audit.execution_status
-    );
+        .expect("audit record for denied WRITE operation");
     assert_eq!(
         write_audit.policy_result,
-        companion_core::PolicyResultKind::Allow
+        companion_core::PolicyResultKind::Deny
     );
+    assert_eq!(
+        write_audit.execution_status,
+        companion_core::ExecutionStatus::NotExecuted
+    );
+    println!("UNMODELLED WRITE denied and durably audited");
 
     // 13. Test HIGH-RISK operation: pcb_auto_place_by_schematic (pcb.write, high risk)
     println!("Testing HIGH-RISK operation: pcb_auto_place_by_schematic");
@@ -573,10 +585,12 @@ async fn live_core_health_check() {
         .await
         .expect("live kicad-mcp-pro server must be reachable");
 
-    assert_eq!(init_result["jsonrpc"], "2.0");
-    assert!(init_result["result"]["serverInfo"]["name"]
+    // CoreBridgeClient::initialize returns the JSON-RPC result payload,
+    // not the outer `{ jsonrpc, result }` envelope.
+    assert_eq!(init_result["protocolVersion"], MCP_PROTOCOL_VERSION);
+    assert!(init_result["serverInfo"]["name"]
         .as_str()
-        .unwrap()
+        .expect("initialized server must expose a name")
         .contains("kicad-mcp-pro"));
 
     let tools = bridge

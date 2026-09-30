@@ -24,7 +24,7 @@ pub use audit::{ApprovalDecisionKind, AuditEvent, ExecutionStatus, PolicyResultK
 pub use authorization::{
     grant_from_legacy_session, AccessGrant, AuthorizationError, AuthorizationLease,
     AuthorizationPrincipal, AuthorizationStatus, GrantKind, GrantRequest, LeaseRequest,
-    LegacySessionMappingError, PrincipalAssurance,
+    LegacySessionMappingError, PrincipalAssurance, PrincipalVerificationSource, VerifiedPrincipal,
 };
 pub use capability::{Capability, CapabilityProfile, CapabilitySet};
 pub use clock::{Clock, SystemClock};

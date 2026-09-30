@@ -41,8 +41,16 @@ fn a_fresh_database_reports_the_current_schema_version() {
     let storage = Storage::open(dir.path()).expect("fresh open succeeds");
     let conn = storage.connection().lock().unwrap();
     assert_eq!(schema_version(&conn).unwrap(), SCHEMA_VERSION);
+    for (table, column) in [
+        ("access_grants", "verified_principal"),
+        ("authorization_leases", "verified_principal"),
+    ] {
+        let sql = format!("SELECT {column} FROM {table} LIMIT 0");
+        conn.prepare(&sql)
+            .unwrap_or_else(|_| panic!("{table}.{column} must exist after migration"));
+    }
     assert_eq!(
-        SCHEMA_VERSION, 2,
+        SCHEMA_VERSION, 3,
         "one migration per schema version; bump this with the migration"
     );
 }

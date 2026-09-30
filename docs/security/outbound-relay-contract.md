@@ -32,7 +32,7 @@ The Gateway daemon initiates outbound connections to a relay (or cloud service) 
 - **Replay protection**: No production replay cache, durable dedupe store, or freshness-window enforcement exists yet. The envelope carries `message_id` and `timestamp` so the production transport can implement them.
 - **Ordering / idempotency**: No production sequencing or `correlation_id` dedupe engine exists yet. The envelope exposes the fields required by the normative contract below.
 - **Rate limiting / backpressure**: No production relay rate limiter exists yet.
-- **VerifiedPrincipal**: No `VerifiedPrincipal` type exists yet; current `remote_principal: String` values are unverified input and MUST NOT be treated as authenticated identity.
+- **VerifiedPrincipal binding foundation**: The domain model and transport boundary can carry a `VerifiedPrincipal` separately from the untrusted `remote_principal` display claim, persist its safe verification metadata, and require the exact authenticated transport binding when a verified grant is exercised. The current mock transport remains unauthenticated by default. No production credential verifier or production relay/TLS client exists yet, so ordinary current traffic still creates only unverified principals.
 
 ## Normative Production Contract
 
@@ -82,13 +82,15 @@ If the relay is compromised, the following are the limits of what the attacker c
   - Attempt replay or reordering of relay-originated state-changing messages; a compliant Gateway rejects stale/duplicate inputs and applies explicit sequencing rules where required.
   - Send messages with invalid `device_id` (which will be rejected by the Gateway).
 
-### Authentication Evidence and VerifiedPrincipal (Future Work)
+### Authentication Evidence and VerifiedPrincipal
 
 - The validated/pinned relay TLS identity authenticates the transport pipe and relay endpoint only. It is not the remote user/agent identity and is not a `VerifiedPrincipal`.
 - A `VerifiedPrincipal` represents the authenticated remote actor whose authorization grant or future `AuthorizationLease` is being exercised. Before the Gateway creates or binds one, it MUST locally verify principal evidence that is cryptographically bound to the session/request.
 - Principal evidence MUST identify a trusted issuer or trust root, a subject/principal identifier, the intended audience or local device binding, freshness/expiry, replay resistance, and integrity/proof. The exact future credential, token, or signature format is implementation-defined as long as those properties are testable.
 - The current `remote_principal: String` field is cloud/remote-supplied unverified input. It MUST NOT be treated as authenticated identity or used by itself to grant authority.
-- The `VerifiedPrincipal` type and principal-evidence mechanism do not yet exist in this repository.
+- The provider-neutral `VerifiedPrincipal` type and atomic envelope+authentication transport context exist. A future production transport is responsible for verifying provider-specific evidence before populating that context; the Gateway never promotes the envelope's display claim into verified identity.
+- Verified principal metadata records issuer, subject, optional account/tenant and client/agent identifiers, authentication strength, verification source, and an opaque non-secret transport binding. Raw credentials, signatures, tokens, and certificate material are not persisted.
+- A grant carrying verified identity fails closed when an operation arrives without the same verified actor/binding. This prevents a captured grant from being exercised through an unauthenticated or differently authenticated transport.
 
 ### Outbound-Only Connectivity and Failure Behavior
 

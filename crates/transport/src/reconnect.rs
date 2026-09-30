@@ -11,7 +11,7 @@ use companion_core::TransportState;
 use companion_protocol::Envelope;
 
 use crate::error::TransportError;
-use crate::transport::{Transport, TransportHealth};
+use crate::transport::{InboundEnvelope, Transport, TransportHealth};
 
 #[derive(Debug, Clone)]
 pub struct BackoffPolicy {
@@ -142,7 +142,7 @@ impl<T: Transport> Transport for ReconnectingTransport<T> {
         self.inner.send(envelope).await
     }
 
-    async fn receive(&self) -> Result<Envelope, TransportError> {
+    async fn receive(&self) -> Result<InboundEnvelope, TransportError> {
         self.inner.receive().await
     }
 

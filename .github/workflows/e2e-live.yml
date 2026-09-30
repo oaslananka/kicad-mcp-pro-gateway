@@ -170,15 +170,30 @@ jobs:
       - name: Run live E2E tests
         env:
           GATEWAY_CORE_BRIDGE_ENDPOINT: http://127.0.0.1:3334/mcp
+          # Use the checkout context directly (not a dynamically set env-context key).
+          # Cargo integration tests run with the daemon crate as cwd.
+          KICAD_TEST_FIXTURE_DIR: ${{ github.workspace }}/tests/fixtures/kicad-test-project
           GATEWAY_TRANSPORT_MODE: disabled
           GATEWAY_LOG_LEVEL: debug
         run: |
-          # Run the live E2E test suite
-          cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --nocapture 2>&1 | tee test-output.txt
+          # All live tests are #[ignore] for ordinary unit-test runs.
+          # --include-ignored exercises them against the provisioned real server.
+          # Preserve failing output in evidence even when cargo exits nonzero.
+          set +e
+          cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --include-ignored --nocapture 2>&1 | tee test-output.txt
           TEST_EXIT_CODE=${PIPESTATUS[0]}
-          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> $GITHUB_ENV
+          set -e
+
+          # A green cargo command with 0 executed (or ignored) tests is NOT
+          # valid release-gating evidence; require at least the 3 critical live
+          # tests, with no failures or ignored tests.
+          if [ "$TEST_EXIT_CODE" -eq 0 ] && ! grep -Eq 'test result: ok[.] ([3-9]|[1-9][0-9]+) passed; 0 failed; 0 ignored;' test-output.txt; then
+            echo "Live E2E gate rejected: no executed tests or ignored tests remain" | tee -a test-output.txt >&2
+            TEST_EXIT_CODE=1
+          fi
+          echo "TEST_EXIT_CODE=$TEST_EXIT_CODE" >> "$GITHUB_ENV"
           cat test-output.txt >> e2e-evidence.txt
-          exit $TEST_EXIT_CODE
+          exit "$TEST_EXIT_CODE"
 
       - name: Stop kicad-mcp-pro server
         if: always()
