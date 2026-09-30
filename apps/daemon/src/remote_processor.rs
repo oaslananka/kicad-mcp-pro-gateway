@@ -426,7 +426,7 @@ fn build_audit_event(
             PolicyResultKind::Allow,
             Some(*capability),
             Some(risk.effective_risk),
-        )
+        ),
         PolicyDecision::Deny { .. } => (PolicyResultKind::Deny, None, None),
         PolicyDecision::RequireApproval {
             capability, risk, ..
