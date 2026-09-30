@@ -177,7 +177,6 @@ fn reopening_a_v3_database_marks_existing_audit_rows_unverified_without_inventin
     assert_eq!(row.4, None);
 }
 
-
 #[test]
 fn reopening_a_v4_database_adds_dynamic_risk_columns_without_rewriting_history() {
     let dir = tempfile::tempdir().unwrap();
