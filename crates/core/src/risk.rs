@@ -27,6 +27,55 @@ impl RiskLevel {
     }
 }
 
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RiskFactorCode {
+    BulkArgumentCardinality,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RiskFactor {
+    pub code: RiskFactorCode,
+    pub subject: String,
+    pub observed_count: u64,
+    pub threshold: u64,
+    pub escalated_to: RiskLevel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RiskAssessment {
+    pub policy_version: u32,
+    pub base_risk: RiskLevel,
+    pub effective_risk: RiskLevel,
+    pub factors: Vec<RiskFactor>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum RiskAssessmentError {
+    #[error("effective risk cannot be below base risk")]
+    EffectiveRiskBelowBase,
+}
+
+impl RiskAssessment {
+    pub fn new(
+        policy_version: u32,
+        base_risk: RiskLevel,
+        effective_risk: RiskLevel,
+        factors: Vec<RiskFactor>,
+    ) -> Result<Self, RiskAssessmentError> {
+        if effective_risk < base_risk {
+            return Err(RiskAssessmentError::EffectiveRiskBelowBase);
+        }
+        Ok(Self {
+            policy_version,
+            base_risk,
+            effective_risk,
+            factors,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

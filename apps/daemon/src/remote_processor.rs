@@ -186,6 +186,7 @@ async fn handle_session_request_with_principal(
                 task_scope: payload.task_scope,
                 kind: GrantKind::Standing,
                 lifetime: ttl,
+                risk_policy_version: 1,
             },
             state.clock.as_ref().now(),
         );

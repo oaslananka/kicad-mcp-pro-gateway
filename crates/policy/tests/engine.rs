@@ -665,6 +665,7 @@ fn active_grant(
             task_scope: "test task".into(),
             kind: GrantKind::Standing,
             lifetime: time::Duration::hours(1),
+            risk_policy_version: 1,
         },
         clock.now(),
     );

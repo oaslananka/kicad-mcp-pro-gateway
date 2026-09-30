@@ -563,6 +563,7 @@ mod tests {
             task_scope: "round trip".into(),
             kind,
             lifetime: Duration::hours(1),
+            risk_policy_version: 1,
         }
     }
 

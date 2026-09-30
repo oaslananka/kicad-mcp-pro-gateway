@@ -90,6 +90,7 @@ fn active_grant(state: &Arc<DaemonState>, workspace_id: WorkspaceId) -> AccessGr
             task_scope: "boundary test".into(),
             kind: GrantKind::Standing,
             lifetime: Duration::hours(1),
+            risk_policy_version: 1,
         },
         state.clock.as_ref().now(),
     );

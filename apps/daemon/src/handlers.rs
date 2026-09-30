@@ -594,6 +594,7 @@ mod principal_view_tests {
                 task_scope: "read schematic".into(),
                 kind: GrantKind::Standing,
                 lifetime: time::Duration::minutes(15),
+                risk_policy_version: 1,
             },
             time::OffsetDateTime::now_utc(),
         )
