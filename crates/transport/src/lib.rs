@@ -10,4 +10,4 @@ pub mod transport;
 pub use error::TransportError;
 pub use mock::MockTransport;
 pub use reconnect::{jittered_delay, BackoffPolicy, ReconnectingTransport};
-pub use transport::{Transport, TransportHealth};
+pub use transport::{InboundEnvelope, Transport, TransportHealth};
