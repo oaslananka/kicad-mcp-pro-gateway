@@ -114,6 +114,17 @@ async fn handle_session_request_with_principal(
     envelope: Envelope,
     verified_principal: Option<VerifiedPrincipal>,
 ) {
+    // Do not persist a pending grant whose "verified" transport actor is
+    // structurally incomplete. Absence of evidence is distinct from a
+    // malformed claim that purports to carry authenticated evidence.
+    if verified_principal
+        .as_ref()
+        .is_some_and(|actor| !actor.has_required_binding_fields())
+    {
+        tracing::warn!("session request rejected: incomplete authenticated actor metadata");
+        return;
+    }
+
     let claimed_device_id = envelope.device_id;
     let payload: SessionRequestPayload = match serde_json::from_value(envelope.payload) {
         Ok(p) => p,
@@ -1014,6 +1025,25 @@ risk = "critical"
         assert_eq!(grant.principal.name, "agent:test");
         assert_eq!(grant.principal.verified_principal(), Some(&actor));
         assert!(grant.principal.is_verified());
+    }
+
+    #[tokio::test]
+    async fn malformed_authenticated_actor_never_creates_a_pending_grant() {
+        let state = build_test_state("http://127.0.0.1:9/mcp".into());
+        let identity = state.identity_store.create("test-device").unwrap();
+        let workspace_id = authorize_workspace(&state);
+        let mut actor = verified_actor("binding-A");
+        actor.transport_binding.clear();
+
+        handle_session_request_with_principal(
+            &state,
+            session_request(workspace_id).with_device_id(identity.device_id),
+            Some(actor),
+        )
+        .await;
+
+        assert!(state.session_repo.list_all().unwrap().is_empty());
+        assert!(state.authorization_repo.list_all_grants().unwrap().is_empty());
     }
 
     #[tokio::test]
