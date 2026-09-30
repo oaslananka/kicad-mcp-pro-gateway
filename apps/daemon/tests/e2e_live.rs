@@ -5,7 +5,7 @@
 //!
 //! The test fixture is a minimal KiCad project in tests/fixtures/kicad-test-project.
 //!
-//! Run with: cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --nocapture
+//! Run with: cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --include-ignored --nocapture
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
