@@ -768,8 +768,7 @@ mod tests {
         let repository = repo();
         let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
         let mut request = grant_request(SessionId::new(), GrantKind::Standing);
-        request.principal =
-            AuthorizationPrincipal::verified("display:claim", verified_actor(""));
+        request.principal = AuthorizationPrincipal::verified("display:claim", verified_actor(""));
         let grant = AccessGrant::requested(request, clock.now());
         // Deliberately persist malformed but syntactically valid JSON to
         // exercise the repository's defensive decoding path.
