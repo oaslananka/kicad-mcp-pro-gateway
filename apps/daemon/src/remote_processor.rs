@@ -421,41 +421,30 @@ fn build_audit_event(
     session: Option<&Session>,
     decision: &PolicyDecision,
 ) -> AuditEvent {
-    let (
-        policy_result,
-        capability,
-        risk,
-        risk_policy_version,
-        base_risk,
-        risk_factors,
-    ) = match decision {
-        PolicyDecision::Allow { capability, risk } => (
-            PolicyResultKind::Allow,
-            Some(*capability),
-            Some(risk.effective_risk),
-            Some(risk.policy_version),
-            Some(risk.base_risk),
-            risk.factors.clone(),
-        ),
-        PolicyDecision::Deny { .. } => (
-            PolicyResultKind::Deny,
-            None,
-            None,
-            None,
-            None,
-            Vec::new(),
-        ),
-        PolicyDecision::RequireApproval {
-            capability, risk, ..
-        } => (
-            PolicyResultKind::RequireApproval,
-            Some(*capability),
-            Some(risk.effective_risk),
-            Some(risk.policy_version),
-            Some(risk.base_risk),
-            risk.factors.clone(),
-        ),
-    };
+    let (policy_result, capability, risk, risk_policy_version, base_risk, risk_factors) =
+        match decision {
+            PolicyDecision::Allow { capability, risk } => (
+                PolicyResultKind::Allow,
+                Some(*capability),
+                Some(risk.effective_risk),
+                Some(risk.policy_version),
+                Some(risk.base_risk),
+                risk.factors.clone(),
+            ),
+            PolicyDecision::Deny { .. } => {
+                (PolicyResultKind::Deny, None, None, None, None, Vec::new())
+            }
+            PolicyDecision::RequireApproval {
+                capability, risk, ..
+            } => (
+                PolicyResultKind::RequireApproval,
+                Some(*capability),
+                Some(risk.effective_risk),
+                Some(risk.policy_version),
+                Some(risk.base_risk),
+                risk.factors.clone(),
+            ),
+        };
     let verified = grant
         .map(|grant| &grant.principal)
         .filter(|principal| principal.is_verified())
