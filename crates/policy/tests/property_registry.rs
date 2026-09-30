@@ -482,7 +482,6 @@ fn a_tool_that_can_mutate_a_project_is_never_classified_low_risk() {
     }
 }
 
-
 #[test]
 fn reviewed_bulk_delete_rule_is_exact_and_source_declared() {
     let registry = TomlToolRegistry::try_embedded().expect("reviewed registry loads");

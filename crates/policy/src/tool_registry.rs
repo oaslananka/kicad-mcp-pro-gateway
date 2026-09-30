@@ -483,7 +483,6 @@ mod tests {
         assert!(matches!(result, Err(ToolRegistryError::DuplicateTool(_))));
     }
 
-
     fn pinned_effectful_tool(rule: &str, arguments: &str, effects: &str, risk: &str) -> String {
         let snapshot = ToolCatalogSnapshot::embedded();
         format!(
@@ -544,24 +543,16 @@ mod tests {
     #[test]
     fn risk_rule_with_unknown_kind_is_rejected() {
         let rule = CARDINALITY_RULE.replace("argument_cardinality", "argument_volume");
-        let source = pinned_effectful_tool(
-            &rule,
-            "[\"item_ids\"]",
-            "[\"read\", \"delete\"]",
-            "normal",
-        );
+        let source =
+            pinned_effectful_tool(&rule, "[\"item_ids\"]", "[\"read\", \"delete\"]", "normal");
         assert!(TomlToolRegistry::from_toml_str(&source).is_err());
     }
 
     #[test]
     fn risk_rule_cannot_reference_an_unknown_argument() {
         let rule = CARDINALITY_RULE.replace("item_ids", "missing_ids");
-        let source = pinned_effectful_tool(
-            &rule,
-            "[\"item_ids\"]",
-            "[\"read\", \"delete\"]",
-            "normal",
-        );
+        let source =
+            pinned_effectful_tool(&rule, "[\"item_ids\"]", "[\"read\", \"delete\"]", "normal");
         assert!(matches!(
             TomlToolRegistry::from_toml_str(&source),
             Err(ToolRegistryError::InvalidRiskRule { .. })
@@ -570,12 +561,8 @@ mod tests {
 
     #[test]
     fn risk_rule_requires_its_reviewed_effect() {
-        let source = pinned_effectful_tool(
-            CARDINALITY_RULE,
-            "[\"item_ids\"]",
-            "[\"read\"]",
-            "normal",
-        );
+        let source =
+            pinned_effectful_tool(CARDINALITY_RULE, "[\"item_ids\"]", "[\"read\"]", "normal");
         assert!(matches!(
             TomlToolRegistry::from_toml_str(&source),
             Err(ToolRegistryError::InvalidRiskRule { .. })
@@ -585,12 +572,8 @@ mod tests {
     #[test]
     fn argument_cardinality_threshold_must_be_at_least_two() {
         let rule = CARDINALITY_RULE.replace("minimum_count = 2", "minimum_count = 1");
-        let source = pinned_effectful_tool(
-            &rule,
-            "[\"item_ids\"]",
-            "[\"read\", \"delete\"]",
-            "normal",
-        );
+        let source =
+            pinned_effectful_tool(&rule, "[\"item_ids\"]", "[\"read\", \"delete\"]", "normal");
         assert!(matches!(
             TomlToolRegistry::from_toml_str(&source),
             Err(ToolRegistryError::InvalidRiskRule { .. })
@@ -600,12 +583,8 @@ mod tests {
     #[test]
     fn risk_rule_must_strictly_raise_base_risk() {
         let rule = CARDINALITY_RULE.replace("escalate_to = \"high\"", "escalate_to = \"normal\"");
-        let source = pinned_effectful_tool(
-            &rule,
-            "[\"item_ids\"]",
-            "[\"read\", \"delete\"]",
-            "normal",
-        );
+        let source =
+            pinned_effectful_tool(&rule, "[\"item_ids\"]", "[\"read\", \"delete\"]", "normal");
         assert!(matches!(
             TomlToolRegistry::from_toml_str(&source),
             Err(ToolRegistryError::InvalidRiskRule { .. })
