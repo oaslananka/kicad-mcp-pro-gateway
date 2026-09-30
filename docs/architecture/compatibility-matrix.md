@@ -33,12 +33,15 @@ Gateway V1 does not install an OS service. Native IPC/restart tests and
 packaged `.deb` / `.dmg` / `.msi` sidecar verification are defined in the
 [daemon lifecycle evidence matrix](../development/daemon-lifecycle.md#automated-and-clean-machine-evidence).
 The ordinary CI package jobs intentionally build unsigned compile-test
-artifacts. A version tag instead runs the fail-closed release-candidate workflow,
-which requires and verifies macOS Developer ID/notarization and Windows
-Authenticode before creating a draft prerelease. Signing a CI package is not
-production evidence, and automated validation still does not cover a live KiCad
-or kicad-mcp-pro session. Exact-artifact clean-machine qualification remains a
-separate release gate; see [release.md](../development/release.md).
+artifacts. A separate `e2e-live.yml` workflow installs KiCad 10.0.6 and the
+pinned `kicad-mcp-pro 3.35.0` baseline and exercises the Gateway live E2E
+path on Ubuntu. That Ubuntu runner evidence does **not** substitute for
+exact-artifact clean-machine qualification, and this repository still has no
+equivalent automated live KiCad/MCP lane for macOS or Windows. A version tag
+runs the fail-closed release-candidate workflow, which requires and verifies
+macOS Developer ID/notarization and Windows Authenticode before creating a
+draft prerelease. Exact-artifact clean-machine qualification remains a separate
+release gate; see [release.md](../development/release.md).
 
 ## Core Protocol Lanes & Component Dependencies
 
@@ -54,20 +57,23 @@ separate release gate; see [release.md](../development/release.md).
 
 ## Live-Core Validation Status
 
-Gateway CI does not install KiCad or start a live kicad-mcp-pro server. The
-following baseline needs separate live evidence before it is described as
-live-validated.
+The repository has an automated live E2E lane on Ubuntu that installs KiCad
+10.0.6, installs the pinned `kicad-mcp-pro 3.35.0` package, starts the
+loopback MCP server, and runs the Gateway live E2E suite. macOS and Windows do
+not currently have equivalent automated live KiCad/MCP lanes. Exact release
+artifacts still require separate clean-machine qualification on every supported
+platform.
 
 | Combination | Current Status | Required Evidence |
 |---|---|---|
-| Linux `x86_64` + KiCad 10.0.x + pinned kicad-mcp-pro | Not live-validated by this repository | Run the ignored live reconciliation test against a real loopback MCP server and retain its output. |
-| macOS `aarch64` + KiCad 10.0.x + pinned kicad-mcp-pro | Not live-validated by this repository | Repeat the live probe and archive smoke test on a clean Apple Silicon machine. |
-| Windows `x86_64` + KiCad 10.0.x + pinned kicad-mcp-pro | Not live-validated by this repository | Repeat the live probe and archive smoke test on a clean Windows machine. |
+| Linux `x86_64` + KiCad 10.0.6 + pinned kicad-mcp-pro 3.35.0 | Automated live E2E exists in `.github/workflows/e2e-live.yml` on Ubuntu | Keep the pinned live lane green; separately qualify the exact tagged release artifact on a clean Ubuntu 24.04 machine before promotion. |
+| macOS `aarch64` + KiCad 10.0.x + pinned kicad-mcp-pro | Not live-validated by this repository | Run the live probe and exact-artifact smoke/clean-machine qualification on Apple Silicon and retain the evidence. |
+| Windows `x86_64` + KiCad 10.0.x + pinned kicad-mcp-pro | Not live-validated by this repository | Run the live probe and exact-artifact smoke/clean-machine qualification on Windows 11 and retain the evidence. |
 | KiCad 8.x, 9.x, or 11.x | Unsupported for Gateway release qualification | Do not promote a support claim; an explicit future compatibility review is required. |
 | An unpinned upstream `main` checkout | Not an accepted release baseline | Pin and review a release SHA before changing this document or the policy snapshot. |
 
-The live probe is intentionally opt-in because it needs a real local MCP
-endpoint:
+The separate reconciliation probe remains useful for manual/live compatibility
+evidence when a real local MCP endpoint is available:
 
 ```sh
 KICAD_MCP_LIVE_ENDPOINT=http://127.0.0.1:3334/mcp \
