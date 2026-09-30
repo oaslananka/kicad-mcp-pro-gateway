@@ -332,9 +332,7 @@ fn parse_rfc3339(s: &str) -> Result<OffsetDateTime, AuditError> {
 
 #[cfg(test)]
 mod tests {
-    use companion_core::{
-        OperationId, RiskFactor, RiskFactorCode, SessionId, WorkspaceId,
-    };
+    use companion_core::{OperationId, RiskFactor, RiskFactorCode, SessionId, WorkspaceId};
 
     use super::*;
 
@@ -483,7 +481,10 @@ mod tests {
             "00000000-0000-0000-0000-0000000000a1",
             "00000000-0000-0000-0000-0000000000b2",
         ] {
-            assert!(!raw.contains(raw_id), "raw item ids must never enter audit factors");
+            assert!(
+                !raw.contains(raw_id),
+                "raw item ids must never enter audit factors"
+            );
         }
     }
 
