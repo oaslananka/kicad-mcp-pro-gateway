@@ -7,6 +7,33 @@
 
 ---
 
+## Live Reconciliation — 2026-09-30
+
+This file is a **dated conditional-release readiness record**, not evidence that
+a stable release was published or that all manual qualification gates were
+completed.
+
+Live repository verification on 2026-09-30 found:
+
+- `main` had advanced from this record's original snapshot
+  (`25a008b`) to `dd4bc3c80fcb8b1e877651e1b773d122e8fd1a34`;
+- the workspace version was still `0.1.0`;
+- the release-candidate pipeline was implemented, but this record still
+  contained no evidence for an actual tagged `1.0.0-rc1` artifact set;
+- Ubuntu live KiCad/MCP E2E was automated in `.github/workflows/e2e-live.yml`,
+  while macOS and Windows live KiCad/MCP validation remained external/manual;
+- clean-machine qualification for Ubuntu, macOS, and Windows remained a
+  separate promotion gate;
+- human release-owner review/authorization remained required.
+
+Closing the implementation/sign-off issues therefore must not be interpreted as
+satisfying these external release gates. Before stable promotion, revalidate
+the exact candidate hashes, signing/provenance, clean-machine evidence,
+cross-platform live evidence, current security surfaces, and human approval
+against the then-current release commit.
+
+---
+
 ## Executive Summary
 
 This document records the final V1 stable-release sign-off for KiCad MCP Pro Gateway. The sign-off is based on direct evidence from the release candidate pipeline, automated verification workflows, and documented security/compatibility baselines.
@@ -34,9 +61,10 @@ This document records the final V1 stable-release sign-off for KiCad MCP Pro Gat
 
 ---
 
-## 2. Validated RC Commit / Artifact Hashes
+## 2. RC Pipeline Readiness Snapshot — No Tagged RC Yet
 
-**Current HEAD:** `25a008b` (Merge PR #42)
+**Snapshot HEAD (2026-09-25):** `25a008b` (Merge PR #42)
+**Live verification baseline (2026-09-30):** `dd4bc3c80fcb8b1e877651e1b773d122e8fd1a34`
 **Workspace Version:** `0.1.0` (pre-release; RC requires version bump to `1.0.0-rc1`)
 
 | Artifact | Expected Filename Pattern | Status |
@@ -67,7 +95,7 @@ This document records the final V1 stable-release sign-off for KiCad MCP Pro Gat
 
 **Upstream Baseline:** `kicad-mcp-pro@3.35.0` pinned to commit `f641a92596ab7adc1e134287578b1ae5ff9580ad` (387 tools reviewed)
 
-**Live-Core Validation Status:** Not live-validated by this repository (requires physical hardware per platform). The live probe command is documented for manual execution.
+**Live-Core Validation Status:** Ubuntu live E2E is automated in the repository against the pinned KiCad/`kicad-mcp-pro` baseline. macOS and Windows live validation, plus exact-artifact clean-machine qualification on all supported platforms, remain external promotion evidence.
 
 ---
 
@@ -165,9 +193,11 @@ This document records the final V1 stable-release sign-off for KiCad MCP Pro Gat
 
 | Exception | Status | Expiry | Notes |
 |-----------|--------|--------|-------|
-| No active release-blocking advisories | ✅ **CONFIRMED** | N/A | OSV scans pass; no open GH security advisories for this repo |
+| Available CI security evidence | ✅ **GREEN IN RECORDED RUNS** | N/A | OSV and other recorded security workflows passed for the reviewed state; this record is not a live inventory of GitHub Security alerts. |
 
-**No expired release-blocking advisory exceptions exist.**
+**No release-blocking advisory exception was identified in the recorded workflow evidence.**
+Before promotion, inspect the then-current Dependabot/code-scanning/secret-scanning
+surfaces directly rather than inferring a zero-alert state from CI alone.
 
 ---
 
