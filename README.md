@@ -11,7 +11,16 @@ authorized remote AI agents and cloud services to a user's local
 
 **Current Status:** Pre-alpha / Unreleased Local Vertical Slice.
 
-This codebase is under active development towards V1 Release Candidate readiness. There are currently no published production GitHub Releases or signed installers. All release management, security automation, and target architecture support matrices are documented in:
+The release-candidate engineering pipeline is implemented, but pipeline readiness is
+not evidence that an actual Gateway RC or stable release has been qualified.
+The current release record remains a **conditional go**: stable promotion still
+requires an exact tagged RC with signing/provenance evidence, clean-machine
+qualification on every supported platform, live macOS/Windows KiCad + MCP
+evidence, and human release-owner authorization. See
+[the V1 sign-off record](docs/development/v1-stable-signoff.md).
+
+Release management, security automation, and target architecture support are
+documented in:
 - [Compatibility Matrix](docs/architecture/compatibility-matrix.md)
 - [Security Automation & Governance](docs/development/security-automation.md)
 - [Release Architecture & Engineering](docs/development/release.md)

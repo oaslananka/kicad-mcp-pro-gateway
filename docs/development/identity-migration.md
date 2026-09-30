@@ -12,17 +12,18 @@ such rename and its rationale is recorded here.
 **The rename ships before any release exists, so it is migration-safe by
 construction.**
 
-The project is pre-alpha and unreleased: `main` has never published a GitHub
-Release, installer, or signed binary (see README "Project Status & Maturity"
-and [SECURITY.md](../../SECURITY.md) "Supported versions"). There is no
-installed population to migrate and no supported upgrade path to preserve,
-so all user-visible identity is renamed in one change instead of carrying a
-split Companion/Gateway identity into V1.
+At the time of the rename decision (2026-09-24), the project was pre-alpha
+and unreleased: no Gateway GitHub Release, installer, or signed binary had
+been published. There was therefore no installed supported population to
+migrate and no supported upgrade path to preserve, so all user-visible
+identity was renamed in one change instead of carrying a split
+Companion/Gateway identity into V1. This is historical migration evidence,
+not a perpetual claim about future release state.
 
 Consequences:
 
-- **No automatic migration is implemented, and none is required for any
-  supported install — there are none.**
+- **No automatic migration was implemented for the rename, because there
+  were no supported installs at migration time.**
 - A developer checkout created *before* this change keeps working only after
   a manual move (below), or by starting fresh.
 - If a stable release ever renames these surfaces again, that rename must
