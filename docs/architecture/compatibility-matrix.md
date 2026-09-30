@@ -68,10 +68,16 @@ installs pinned `kicad-mcp-pro 3.35.0`, starts the loopback MCP server, and
 invokes the Gateway suite. **Historic success conclusions before the PR #57
 repair are not test-passing evidence:** all three live tests were marked
 `#[ignore]` and the workflow did not enable them (`0 passed; 3 ignored`).
-On 2026-09-30, a first real run executed all 3 tests: 2 passed and the
-full vertical slice failed because the fixture path was relative to the
-Cargo crate directory. A fixture-environment fix is under validation.
-Treat Ubuntu live compatibility as **pending a successful executed run**.
+On 2026-09-30, the first real run executed all 3 tests (2 passed, 1
+failed) because the fixture was resolved relative to the Cargo crate
+directory. After fixing the fixture path, the next actual run again
+executed all 3 (2 passed, 1 failed): the live read and durable audit
+passed, but `sch_add_symbol` correctly failed closed with
+`UnmodelledToolContract` because no reviewed effect contract exists.
+PR #57 now tests this explicit deny/audit invariant and continues to
+the already-modelled high-risk approval, revocation, and reconnect
+stages. **The revised end-to-end test is not yet verified green**;
+retain a 3/3 successful executed run before claiming Ubuntu live qualification.
 macOS and Windows have no equivalent automated live KiCad/MCP lanes.
 Exact release artifacts still require separate clean-machine qualification
 on every supported platform.
