@@ -34,11 +34,31 @@ against the then-current release commit.
 
 ---
 
+## 2026-09-30 Live E2E Evidence Correction (Supersedes Prior Green Claims)
+
+A security/release-gate audit during [PR #57](https://github.com/oaslananka/kicad-mcp-pro-gateway/pull/57)
+found that the Ubuntu `e2e-live.yml` workflow **reported success without executing
+any of its three live tests** (`0 passed; 3 ignored`): the tests were individually
+`#[ignore]` but the CI invocation lacked `--include-ignored`.
+
+The corrected workflow invokes ignored tests explicitly and rejects zero-test
+success. Its first substantive run on 2026-09-30 executed 3 tests: **2 passed
+and 1 failed** because its fixture path was relative to the daemon crate's
+working directory; a workflow fixture path correction is under validation.
+Until an exact-head run passes all 3 executed tests, **Ubuntu live E2E
+qualification is unverified**. Earlier green workflow statuses cannot be
+used to demonstrate compatibility. This correction applies prospectively
+to release authorization; it does not alter the historical fact that
+implementation issue #38 closed or waive independent macOS/Windows live,
+clean-machine, signing, and human release-owner gates.
+
+---
+
 ## Executive Summary
 
 This document records a dated **conditional V1 stable-release readiness assessment** for KiCad MCP Pro Gateway. It is based on release-pipeline implementation, automated verification workflows, and documented security/compatibility baselines; it is not evidence that the external qualification and promotion steps were completed.
 
-**Decision:** **CONDITIONAL GO** — All automated evidence gates pass. Clean-machine qualification and live E2E evidence require external validation on physical hardware before stable promotion.
+**Historical decision (superseded for promotion):** **CONDITIONAL GO** was recorded on 2026-09-25. The 2026-09-30 correction above invalidates prior green Ubuntu live-E2E status as positive test evidence. **No stable promotion is authorized** until executed Ubuntu live tests pass and all remaining release qualification gates are satisfied.
 
 ---
 
@@ -50,7 +70,7 @@ This document records a dated **conditional V1 stable-release readiness assessme
 | Fail-Closed Audit Persistence | #36 / PR #36 | ✅ **CLOSED** | Durable append-only audit store; `AuditPersistence` error on write failure; zero upstream calls when audit unavailable |
 | Release Candidate Pipeline | #41 / PR #41 | ✅ **CLOSED** | Fail-closed tag-triggered pipeline with SBOM, provenance, SBOM attestations, draft-prerelease-only publication |
 | Signed Desktop Installers | #40 / PR #40 | ✅ **CLOSED** | `.deb` (Linux, validated via provenance), `.dmg` (macOS Developer ID + notarization), `.msi` (Windows Authenticode + timestamp) |
-| Live E2E Release Gate | #38 / PR #38 | ✅ **CLOSED** | Automated live E2E workflow against pinned `kicad-mcp-pro@3.35.0` + KiCad 10.0.6 on Ubuntu |
+| Live E2E Release Gate | #38 / PR #38 | ✅ **IMPLEMENTATION CLOSED; EXECUTION NOT YET QUALIFIED** | Workflow exists against pinned baseline, but pre-fix green runs executed 0 tests; PR #57 repairs test execution, first substantive run failed fixture discovery. |
 | Desktop Security-Critical UX | #39 / PR #39 | ✅ **CLOSED** | Comprehensive UI tests for offline/failure states; Vitest + React Testing Library in CI |
 | Update/Upgrade/Rollback Strategy | #42 / PR #42 | ✅ **CLOSED** | Documented in `docs/upgrade-v1.md`; tested in CI matrix |
 | Compatibility Matrix Baseline | #32 / PR #32 | ✅ **CLOSED** | Canonical matrix in `docs/architecture/compatibility-matrix.md` for Ubuntu 24.04 x86_64, macOS Apple Silicon, Windows 11 x86_64 |
@@ -95,7 +115,7 @@ This document records a dated **conditional V1 stable-release readiness assessme
 
 **Upstream Baseline:** `kicad-mcp-pro@3.35.0` pinned to commit `f641a92596ab7adc1e134287578b1ae5ff9580ad` (387 tools reviewed)
 
-**Live-Core Validation Status:** Ubuntu live E2E is automated in the repository against the pinned KiCad/`kicad-mcp-pro` baseline. macOS and Windows live validation, plus exact-artifact clean-machine qualification on all supported platforms, remain external promotion evidence.
+**Live-Core Validation Status (2026-09-30 correction):** Ubuntu live-E2E workflow exists but its historical green runs executed 0 tests. An actually executed and passing 3-test run is now an outstanding promotion requirement. macOS/Windows live evidence and exact-artifact clean-machine qualification remain separately outstanding.
 
 ---
 
@@ -150,8 +170,8 @@ This document records a dated **conditional V1 stable-release readiness assessme
 
 | Test | Status | Details |
 |------|--------|---------|
-| Automated live E2E on Ubuntu | ✅ **IMPLEMENTED** | Runs on push/PR to main; KiCad 10.0.6 + `kicad-mcp-pro@3.35.0` pinned |
-| Live reconciliation test | ✅ **IMPLEMENTED** | `cargo test -p kicad-mcp-gateway-daemon --test e2e_live` |
+| Automated live E2E on Ubuntu | ⚠️ **RUNNER IMPLEMENTED; PASSING TEST EVIDENCE PENDING** | Earlier green runs skipped all 3 tests; PR #57 adds `--include-ignored` and rejects zero-test success. First real run: 2 passed, 1 failed (fixture path), fix being validated. |
+| Live reconciliation test | ✅ **EXECUTED ONCE; PASSED** | `cargo test -p kicad-mcp-gateway-daemon --test e2e_live -- --include-ignored --nocapture` executed 3 tests; tool reconciliation and health check passed, full vertical slice failed. |
 | macOS live E2E | ❌ **NOT CONFIGURED** | No macOS runner in matrix (only Ubuntu) |
 | Windows live E2E | ❌ **NOT CONFIGURED** | No Windows runner in matrix (only Ubuntu) |
 
@@ -225,7 +245,7 @@ surfaces directly rather than inferring a zero-alert state from CI alone.
 - [x] Release candidate pipeline implemented and fail-closed
 - [x] Signed installer pipeline implemented for all three platforms
 - [x] Compatibility matrix documented and matches CI/release targets
-- [x] Live E2E automated on Ubuntu (baseline platform)
+- [ ] Ubuntu live E2E **executed and passing** — historical green runs executed 0 tests; PR #57 repair validation pending
 - [x] Security invariants verified (TTL, audit, trust boundaries, tool effects)
 - [x] Upgrade/rollback strategy documented and tested
 - [x] No expired release-blocking advisory exceptions
@@ -260,13 +280,14 @@ surfaces directly rather than inferring a zero-alert state from CI alone.
 
 **CONDITIONAL GO FOR V1 STABLE PROMOTION**
 
-All automated gates, security invariants, compatibility baselines, and documentation are complete and verified. The release candidate pipeline is production-ready.
+This **2026-09-25 historical claim is superseded** by the live-E2E evidence correction above: a green workflow that skips every live test is not a passed qualification gate. The release-candidate pipeline is implemented, but a passing run of all 3 Ubuntu live tests is now explicitly outstanding along with the other external promotion gates.
 
 **Blocking items for stable promotion:**
 1. Version bump to `1.0.0-rc1` and tag `v1.0.0-rc1` with signing credentials
 2. Clean-machine qualification evidence attached via `release-qa.md` issues for all three platforms
-3. Live E2E evidence attached for macOS and Windows
-4. Human release owner authorization to promote draft to stable
+3. Successful execution of all 3 Ubuntu live E2E tests on the pinned baseline, with retained artifact evidence
+4. Live E2E evidence attached for macOS and Windows
+5. Human release owner authorization to promote draft to stable
 
 Once the above are complete, the final stable release (`v1.0.0`) can be promoted from the validated RC artifacts.
 
@@ -277,6 +298,6 @@ Once the above are complete, the final stable release (`v1.0.0`) can be promoted
 1. **Version bump:** Update `Cargo.toml` and `apps/desktop/src-tauri/Cargo.toml` to `version = "1.0.0-rc1"`
 2. **Tag RC:** Push tag `v1.0.0-rc1` to trigger release workflow with signing credentials
 3. **Clean-machine QA:** Open three `release-qa.md` issues (one per platform) and attach evidence
-4. **Cross-platform live E2E:** Execute live probe on macOS/Windows per `compatibility-matrix.md`
+4. **Live E2E repair validation:** Obtain a passing 3/3 Ubuntu run on the exact corrected PR head; then execute live probes on macOS/Windows per `compatibility-matrix.md`
 5. **Final version bump:** Update to `version = "1.0.0"` and tag `v1.0.0` for stable release
 6. **Promote to stable:** Human release owner promotes the v1.0.0 release to stable after all evidence accepted
