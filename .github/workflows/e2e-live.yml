@@ -80,6 +80,8 @@ jobs:
           version: "latest-known"
           python-version: "3.13"
           enable-cache: true
+          cache-dependency-glob: ".github/workflows/e2e-live.yml"
+          cache-suffix: "kicad-mcp-pro-${{ env.KICAD_MCP_PRO_VERSION }}"
 
       - name: Validate compatibility inputs
         shell: bash
