@@ -167,6 +167,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use companion_core::PrincipalVerificationSource;
     use companion_protocol::MessageType;
 
     #[tokio::test]
@@ -184,6 +185,26 @@ mod tests {
         let received = transport.receive().await.unwrap();
         assert_eq!(received.envelope, incoming);
         assert!(received.verified_principal.is_none());
+    }
+
+    #[tokio::test]
+    async fn authenticated_inbound_context_is_atomic_with_the_envelope() {
+        let transport = MockTransport::new();
+        let envelope = Envelope::new(MessageType::SessionRequest, json!({}));
+        let principal = VerifiedPrincipal {
+            issuer: "https://issuer.example".into(),
+            subject: "actor-123".into(),
+            account_or_tenant: None,
+            client_or_agent: Some("agent-9".into()),
+            authentication_strength: "mfa".into(),
+            verification_source: PrincipalVerificationSource::AuthenticatedTransport,
+            transport_binding: "binding-A".into(),
+        };
+        transport.push_authenticated_incoming(envelope.clone(), principal.clone());
+
+        let received = transport.receive().await.unwrap();
+        assert_eq!(received.envelope, envelope);
+        assert_eq!(received.verified_principal, Some(principal));
     }
 
     #[tokio::test]
