@@ -11,12 +11,12 @@ use std::time::Duration;
 use companion_core::{
     AccessGrant, ApprovalDecisionKind, AuditEvent, AuthorizationPrincipal, CapabilityProfile,
     CompanionError, DeviceId, ExecutionStatus, GrantKind, GrantRequest, OperationId,
-    OperationRequest, PolicyResultKind, RiskLevel, Session, SessionId, WorkspaceId,
+    OperationRequest, PolicyResultKind, RiskLevel, Session, SessionId, VerifiedPrincipal, WorkspaceId,
 };
 use companion_policy::PolicyDecision;
 use companion_protocol::{Envelope, MessageType};
 use companion_sessions::{new_unpaired_session, SessionEvent, SessionTransition};
-use companion_transport::{Transport, TransportError};
+use companion_transport::{InboundEnvelope, Transport, TransportError};
 use serde::Deserialize;
 use time::OffsetDateTime;
 
@@ -50,7 +50,7 @@ pub async fn run_remote_processor(
         tokio::select! {
             received = transport.receive() => {
                 match received {
-                    Ok(envelope) => handle_envelope(&state, transport.as_ref(), envelope).await,
+                    Ok(inbound) => handle_inbound_envelope(&state, transport.as_ref(), inbound).await,
                     Err(TransportError::NoMessage) => {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -75,18 +75,48 @@ pub async fn handle_envelope(
     transport: &dyn Transport,
     envelope: Envelope,
 ) {
+    handle_inbound_envelope(state, transport, envelope.into()).await;
+}
+
+async fn handle_inbound_envelope(
+    state: &Arc<DaemonState>,
+    transport: &dyn Transport,
+    inbound: InboundEnvelope,
+) {
+    let InboundEnvelope {
+        envelope,
+        verified_principal,
+    } = inbound;
     if envelope.check_protocol_version().is_err() {
         tracing::warn!("dropping envelope with incompatible protocol version");
         return;
     }
     match envelope.message_type {
-        MessageType::SessionRequest => handle_session_request(state, envelope).await,
-        MessageType::OperationRequest => handle_operation_request(state, transport, envelope).await,
+        MessageType::SessionRequest => {
+            handle_session_request_with_principal(state, envelope, verified_principal).await
+        }
+        MessageType::OperationRequest => {
+            handle_operation_request_with_principal(
+                state,
+                transport,
+                envelope,
+                verified_principal,
+            )
+            .await
+        }
         _ => {}
     }
 }
 
 async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
+    handle_session_request_with_principal(state, envelope, None).await;
+}
+
+async fn handle_session_request_with_principal(
+    state: &Arc<DaemonState>,
+    envelope: Envelope,
+    verified_principal: Option<VerifiedPrincipal>,
+) {
     let claimed_device_id = envelope.device_id;
     let payload: SessionRequestPayload = match serde_json::from_value(envelope.payload) {
         Ok(p) => p,
@@ -137,7 +167,12 @@ async fn handle_session_request(state: &Arc<DaemonState>, envelope: Envelope) {
             GrantRequest {
                 subject_session_id: session.session_id,
                 device_id,
-                principal: AuthorizationPrincipal::unverified(payload.remote_principal),
+                principal: match verified_principal {
+                    Some(verified) => {
+                        AuthorizationPrincipal::verified(payload.remote_principal, verified)
+                    }
+                    None => AuthorizationPrincipal::unverified(payload.remote_principal),
+                },
                 workspace_ids,
                 capability_profile: payload.capability_profile,
                 task_scope: payload.task_scope,
@@ -185,6 +220,15 @@ async fn handle_operation_request(
     transport: &dyn Transport,
     envelope: Envelope,
 ) {
+    handle_operation_request_with_principal(state, transport, envelope, None).await;
+}
+
+async fn handle_operation_request_with_principal(
+    state: &Arc<DaemonState>,
+    transport: &dyn Transport,
+    envelope: Envelope,
+    verified_principal: Option<VerifiedPrincipal>,
+) {
     let claimed_device_id = envelope.device_id;
     let state_for_binding = Arc::clone(state);
     let binding = tokio::task::spawn_blocking(move || {
@@ -211,7 +255,7 @@ async fn handle_operation_request(
     })
     .await;
 
-    let Ok((decision, grant, session)) = eval else {
+    let Ok((mut decision, grant, session)) = eval else {
         tracing::warn!("policy evaluation task panicked");
         return;
     };
@@ -227,6 +271,20 @@ async fn handle_operation_request(
         // turn a log line into a usable capability identifier.
         tracing::warn!("operation request device binding rejected");
         return;
+    }
+
+    if let Some(grant) = grant.as_ref() {
+        if !grant
+            .principal
+            .accepts_transport_principal(verified_principal.as_ref())
+        {
+            tracing::warn!(
+                "operation request verified-principal transport binding rejected"
+            );
+            decision = PolicyDecision::Deny {
+                reason: companion_policy::DenyReason::PrincipalBindingMismatch,
+            };
+        }
     }
 
     let audit_event = build_audit_event(&request, grant.as_ref(), session.as_ref(), &decision);
