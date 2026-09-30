@@ -258,8 +258,10 @@ async fn live_e2e_full_vertical_slice() {
     );
     println!("READ audit verified");
 
-    // 11. Test BOUNDED WRITE operation: sch_add_symbol (schematic.write, normal risk)
-    println!("Testing BOUNDED WRITE operation: sch_add_symbol");
+    // 11. Test fail-closed policy: sch_add_symbol is classified for
+    // schematic.write, but its upstream effect contract is NOT reviewed.
+    // A claimed write must never reach KiCad just because a capability exists.
+    println!("Testing UNMODELLED WRITE DENIAL: sch_add_symbol");
     let write_op_id = OperationId::new();
     mock_relay.push_incoming(
         companion_protocol::Envelope::new(
@@ -307,27 +309,32 @@ async fn live_e2e_full_vertical_slice() {
         .into_iter()
         .find(|e| e.correlation_id.as_deref() == Some(&write_op_id.to_string()))
         .expect("result for the WRITE operation");
-    println!("WRITE operation result: {:?}", write_result.payload);
-    // The operation may succeed or fail depending on the fixture, but it should not be a policy denial
-    assert_ne!(
+    println!("UNMODELLED WRITE denial result: {:?}", write_result.payload);
+    assert_eq!(
         write_result.payload["success"], false,
-        "WRITE operation must not be denied by policy"
+        "unmodelled write must fail closed: {:?}",
+        write_result.payload
+    );
+    assert_eq!(
+        write_result.payload["result"]["denied"], "UnmodelledToolContract",
+        "the write must be denied by the missing reviewed effect contract"
     );
 
-    // 12. Verify audit record for WRITE
+    // 12. Verify the policy denial was durably audited, with no execution.
     let audit_events = state.audit_repo.list_recent(50).unwrap();
     let write_audit = audit_events
         .iter()
         .find(|e| e.operation_id == write_op_id)
-        .expect("audit record for WRITE operation");
-    println!(
-        "WRITE audit: policy_result={:?}, execution_status={:?}",
-        write_audit.policy_result, write_audit.execution_status
-    );
+        .expect("audit record for denied WRITE operation");
     assert_eq!(
         write_audit.policy_result,
-        companion_core::PolicyResultKind::Allow
+        companion_core::PolicyResultKind::Deny
     );
+    assert_eq!(
+        write_audit.execution_status,
+        companion_core::ExecutionStatus::NotExecuted
+    );
+    println!("UNMODELLED WRITE denied and durably audited");
 
     // 13. Test HIGH-RISK operation: pcb_auto_place_by_schematic (pcb.write, high risk)
     println!("Testing HIGH-RISK operation: pcb_auto_place_by_schematic");
