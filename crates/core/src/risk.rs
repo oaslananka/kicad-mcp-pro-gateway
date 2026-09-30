@@ -48,4 +48,26 @@ mod tests {
     fn unknown_risk_level_name_does_not_parse() {
         assert_eq!(RiskLevel::parse("catastrophic"), None);
     }
+
+    #[test]
+    fn risk_assessment_rejects_effective_risk_below_base() {
+        assert_eq!(
+            RiskAssessment::new(2, RiskLevel::High, RiskLevel::Normal, vec![]),
+            Err(RiskAssessmentError::EffectiveRiskBelowBase)
+        );
+    }
+
+    #[test]
+    fn risk_assessment_accepts_equal_or_higher_effective_risk() {
+        let equal = RiskAssessment::new(2, RiskLevel::Normal, RiskLevel::Normal, vec![])
+            .expect("equal risk preserves the static floor");
+        assert_eq!(equal.policy_version, 2);
+        assert_eq!(equal.base_risk, RiskLevel::Normal);
+        assert_eq!(equal.effective_risk, RiskLevel::Normal);
+        assert!(equal.factors.is_empty());
+
+        let raised = RiskAssessment::new(2, RiskLevel::Normal, RiskLevel::High, vec![])
+            .expect("higher effective risk is allowed");
+        assert_eq!(raised.effective_risk, RiskLevel::High);
+    }
 }
