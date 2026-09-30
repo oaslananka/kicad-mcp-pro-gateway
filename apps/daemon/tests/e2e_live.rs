@@ -271,10 +271,15 @@ async fn live_e2e_full_vertical_slice() {
                 tool_name: "sch_add_symbol".into(),
                 arguments: {
                     let mut map = serde_json::Map::new();
-                    map.insert("lib_id".to_string(), json!("Device:R"));
+                    // Pinned kicad-mcp-pro 3.35.0 sch_add_symbol signature
+                    // accepts library, symbol_name, x_mm, y_mm (not
+                    // legacy lib_id / position tuple fields).
+                    map.insert("library".to_string(), json!("Device"));
+                    map.insert("symbol_name".to_string(), json!("R"));
+                    map.insert("x_mm".to_string(), json!(100.0));
+                    map.insert("y_mm".to_string(), json!(100.0));
                     map.insert("reference".to_string(), json!("R1"));
                     map.insert("value".to_string(), json!("10k"));
-                    map.insert("position".to_string(), json!([100, 100]));
                     map
                 },
                 target_path: None,
