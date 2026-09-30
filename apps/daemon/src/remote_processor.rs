@@ -421,19 +421,39 @@ fn build_audit_event(
     session: Option<&Session>,
     decision: &PolicyDecision,
 ) -> AuditEvent {
-    let (policy_result, capability, risk) = match decision {
+    let (
+        policy_result,
+        capability,
+        risk,
+        risk_policy_version,
+        base_risk,
+        risk_factors,
+    ) = match decision {
         PolicyDecision::Allow { capability, risk } => (
             PolicyResultKind::Allow,
             Some(*capability),
             Some(risk.effective_risk),
+            Some(risk.policy_version),
+            Some(risk.base_risk),
+            risk.factors.clone(),
         ),
-        PolicyDecision::Deny { .. } => (PolicyResultKind::Deny, None, None),
+        PolicyDecision::Deny { .. } => (
+            PolicyResultKind::Deny,
+            None,
+            None,
+            None,
+            None,
+            Vec::new(),
+        ),
         PolicyDecision::RequireApproval {
             capability, risk, ..
         } => (
             PolicyResultKind::RequireApproval,
             Some(*capability),
             Some(risk.effective_risk),
+            Some(risk.policy_version),
+            Some(risk.base_risk),
+            risk.factors.clone(),
         ),
     };
     let verified = grant
@@ -464,6 +484,9 @@ fn build_audit_event(
         requested_tool: request.tool_name.clone(),
         capability,
         risk,
+        risk_policy_version,
+        base_risk,
+        risk_factors,
         policy_result,
         approval_decision: None,
         execution_status: ExecutionStatus::NotExecuted,
@@ -1475,6 +1498,9 @@ mod audit_fail_closed_tests {
             requested_tool: "filler".into(),
             capability: None,
             risk: None,
+            risk_policy_version: None,
+            base_risk: None,
+            risk_factors: vec![],
             policy_result: PolicyResultKind::Allow,
             approval_decision: None,
             execution_status: ExecutionStatus::NotExecuted,
