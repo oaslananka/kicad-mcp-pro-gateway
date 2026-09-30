@@ -332,7 +332,9 @@ fn parse_rfc3339(s: &str) -> Result<OffsetDateTime, AuditError> {
 
 #[cfg(test)]
 mod tests {
-    use companion_core::{OperationId, SessionId, WorkspaceId};
+    use companion_core::{
+        OperationId, RiskFactor, RiskFactorCode, SessionId, WorkspaceId,
+    };
 
     use super::*;
 
@@ -357,6 +359,9 @@ mod tests {
             requested_tool: "schematic.read".into(),
             capability: Some(Capability::SCHEMATIC_READ),
             risk: Some(RiskLevel::Low),
+            risk_policy_version: None,
+            base_risk: None,
+            risk_factors: vec![],
             policy_result: PolicyResultKind::Allow,
             approval_decision: None,
             execution_status: ExecutionStatus::NotExecuted,
@@ -419,6 +424,147 @@ mod tests {
         let error = repository.record(&event).unwrap_err();
         assert!(matches!(error, AuditError::Storage(_)));
         assert!(repository.list_recent(10).unwrap().is_empty());
+    }
+
+    fn bulk_factor(count: u64) -> RiskFactor {
+        RiskFactor {
+            code: RiskFactorCode::BulkArgumentCardinality,
+            subject: "item_ids".into(),
+            observed_count: count,
+            threshold: 2,
+            escalated_to: RiskLevel::High,
+        }
+    }
+
+    #[test]
+    fn dynamic_risk_evidence_round_trips_exactly() {
+        let repository = repo();
+        let mut event = sample_event(OperationId::new(), SessionId::new());
+        event.requested_tool = "pcb_delete_items".into();
+        event.capability = Some(Capability::PCB_WRITE);
+        event.risk = Some(RiskLevel::High);
+        event.risk_policy_version = Some(2);
+        event.base_risk = Some(RiskLevel::Normal);
+        event.risk_factors = vec![bulk_factor(3)];
+
+        repository.record(&event).unwrap();
+
+        assert_eq!(repository.list_recent(1).unwrap(), vec![event]);
+    }
+
+    #[test]
+    fn persisted_risk_factor_json_contains_only_safe_reviewed_evidence() {
+        let repository = repo();
+        let mut event = sample_event(OperationId::new(), SessionId::new());
+        event.risk = Some(RiskLevel::High);
+        event.risk_policy_version = Some(2);
+        event.base_risk = Some(RiskLevel::Normal);
+        event.risk_factors = vec![bulk_factor(3)];
+        repository.record(&event).unwrap();
+
+        let raw: String = repository
+            .storage
+            .connection()
+            .lock()
+            .expect("storage mutex poisoned")
+            .query_row(
+                "SELECT risk_factors_json FROM audit_events WHERE operation_id = ?1",
+                [event.operation_id.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert!(raw.contains("bulk_argument_cardinality"));
+        assert!(raw.contains("item_ids"));
+        assert!(raw.contains("\"observed_count\":3"));
+        assert!(raw.contains("\"threshold\":2"));
+        assert!(raw.contains("\"escalated_to\":\"High\""));
+        for raw_id in [
+            "00000000-0000-0000-0000-0000000000a1",
+            "00000000-0000-0000-0000-0000000000b2",
+        ] {
+            assert!(!raw.contains(raw_id), "raw item ids must never enter audit factors");
+        }
+    }
+
+    #[test]
+    fn malformed_stored_risk_factor_json_is_a_typed_read_error() {
+        let repository = repo();
+        let event = sample_event(OperationId::new(), SessionId::new());
+        repository.record(&event).unwrap();
+
+        repository
+            .storage
+            .connection()
+            .lock()
+            .expect("storage mutex poisoned")
+            .execute(
+                "UPDATE audit_events SET risk_factors_json = '{broken' WHERE operation_id = ?1",
+                [event.operation_id.to_string()],
+            )
+            .unwrap();
+
+        assert!(matches!(
+            repository.list_recent(1),
+            Err(AuditError::Storage(_))
+        ));
+    }
+
+    #[test]
+    fn historical_audit_row_keeps_effective_risk_without_invented_assessment() {
+        let repository = repo();
+        let operation_id = OperationId::new();
+        repository
+            .storage
+            .connection()
+            .lock()
+            .expect("storage mutex poisoned")
+            .execute(
+                "INSERT INTO audit_events (
+                    operation_id, timestamp, principal_assurance, requested_tool,
+                    capability, risk, policy_result, execution_status
+                 ) VALUES (?1, ?2, 'unverified', 'pcb_delete_items', 'pcb.write', ?3, ?4, ?5)",
+                rusqlite::params![
+                    operation_id.to_string(),
+                    "2026-09-02T00:00:00Z",
+                    "\"High\"",
+                    "\"RequireApproval\"",
+                    "\"NotExecuted\"",
+                ],
+            )
+            .unwrap();
+
+        let event = repository.list_recent(1).unwrap().pop().unwrap();
+        assert_eq!(event.operation_id, operation_id);
+        assert_eq!(event.risk, Some(RiskLevel::High));
+        assert_eq!(event.risk_policy_version, None);
+        assert_eq!(event.base_risk, None);
+        assert!(event.risk_factors.is_empty());
+    }
+
+    #[test]
+    fn approval_update_does_not_mutate_risk_assessment_evidence() {
+        let repository = repo();
+        let mut event = sample_event(OperationId::new(), SessionId::new());
+        event.risk = Some(RiskLevel::High);
+        event.risk_policy_version = Some(2);
+        event.base_risk = Some(RiskLevel::Normal);
+        event.risk_factors = vec![bulk_factor(3)];
+        repository.record(&event).unwrap();
+
+        repository
+            .update_approval_decision(event.operation_id, ApprovalDecisionKind::AllowOnce)
+            .unwrap();
+
+        let stored = repository.list_recent(1).unwrap().pop().unwrap();
+        assert_eq!(stored.risk, event.risk);
+        assert_eq!(stored.risk_policy_version, event.risk_policy_version);
+        assert_eq!(stored.base_risk, event.base_risk);
+        assert_eq!(stored.risk_factors, event.risk_factors);
+        assert_eq!(
+            stored.approval_decision,
+            Some(ApprovalDecisionKind::AllowOnce)
+        );
     }
 
     #[test]
@@ -700,6 +846,9 @@ mod tests {
         requested_tool: String,
         capability: Option<String>,
         risk: Option<String>,
+        risk_policy_version: Option<u32>,
+        base_risk: Option<String>,
+        risk_factors: Vec<RiskFactor>,
         policy_result: String,
         approval_decision: Option<String>,
         execution_status: String,
@@ -724,6 +873,9 @@ mod tests {
                 requested_tool: e.requested_tool.clone(),
                 capability: e.capability.map(|c| c.as_str().to_string()),
                 risk: e.risk.map(|r| format!("{r:?}")),
+                risk_policy_version: e.risk_policy_version,
+                base_risk: e.base_risk.map(|r| format!("{r:?}")),
+                risk_factors: e.risk_factors.clone(),
                 policy_result: format!("{:?}", e.policy_result),
                 approval_decision: e.approval_decision.map(|a| format!("{a:?}")),
                 execution_status: format!("{:?}", e.execution_status),
