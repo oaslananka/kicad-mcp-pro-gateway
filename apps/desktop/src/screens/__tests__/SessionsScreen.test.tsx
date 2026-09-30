@@ -231,7 +231,7 @@ describe("SessionsScreen", () => {
     const modal = screen.getByText("High-risk action requires approval").closest(".modal") as HTMLElement;
     expect(modal).toBeInTheDocument();
     expect(within(modal).getByText(/pcb_export_gerber/i)).toBeInTheDocument();
-    expect(within(modal).getByText("High")).toBeInTheDocument();
+    expect(within(modal).getAllByText("High")).toHaveLength(2);
     expect(within(modal).getByText("Test Workspace (ws_001)")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Allow Once" })).toBeInTheDocument();
@@ -299,7 +299,7 @@ describe("SessionsScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review" }));
 
     const modal = screen.getByText("High-risk action requires approval").closest(".modal") as HTMLElement;
-    expect(within(modal).getByText("High")).toBeInTheDocument();
+    expect(within(modal).getAllByText("High")).toHaveLength(2);
     expect(within(modal).getByText("Policy v2")).toBeInTheDocument();
     expect(
       within(modal).queryByText(/items triggers local approval/i),
