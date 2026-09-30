@@ -44,13 +44,18 @@ fn a_fresh_database_reports_the_current_schema_version() {
     for (table, column) in [
         ("access_grants", "verified_principal"),
         ("authorization_leases", "verified_principal"),
+        ("audit_events", "principal_assurance"),
+        ("audit_events", "verified_principal_issuer"),
+        ("audit_events", "verified_principal_subject"),
+        ("audit_events", "principal_verification_source"),
+        ("audit_events", "authentication_strength"),
     ] {
         let sql = format!("SELECT {column} FROM {table} LIMIT 0");
         conn.prepare(&sql)
             .unwrap_or_else(|_| panic!("{table}.{column} must exist after migration"));
     }
     assert_eq!(
-        SCHEMA_VERSION, 3,
+        SCHEMA_VERSION, 4,
         "one migration per schema version; bump this with the migration"
     );
 }
@@ -103,6 +108,70 @@ fn reopening_a_v1_database_adds_the_authorization_tables_without_touching_its_ro
         lease_count, 0,
         "no authority is invented by the schema change"
     );
+}
+
+#[test]
+fn reopening_a_v3_database_marks_existing_audit_rows_unverified_without_inventing_evidence() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("gateway.db");
+    {
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(include_str!("../migrations/0001_init.sql"))
+            .unwrap();
+        conn.execute_batch(include_str!("../migrations/0002_authorization.sql"))
+            .unwrap();
+        conn.execute_batch(include_str!("../migrations/0003_verified_principal.sql"))
+            .unwrap();
+        conn.execute(
+            "INSERT INTO audit_events (
+                operation_id, timestamp, session_id, workspace_id, remote_principal,
+                requested_tool, capability, risk, policy_result, approval_decision,
+                execution_status, error_class, duration_ms
+             ) VALUES (
+                'op_01J00000000000000000000000', '2026-09-01T00:00:00Z', NULL, NULL,
+                'agent:legacy', 'schematic.read', 'schematic.read', NULL, ?1,
+                NULL, ?2, NULL, NULL
+             )",
+            rusqlite::params!["\"Allow\"", "\"NotExecuted\""],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 3i64).unwrap();
+    }
+
+    let storage = Storage::open(dir.path()).expect("a V3 database opens and migrates");
+    let conn = storage.connection().lock().unwrap();
+    assert_eq!(schema_version(&conn).unwrap(), SCHEMA_VERSION);
+
+    let row: (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = conn
+        .query_row(
+            "SELECT principal_assurance, verified_principal_issuer,
+                    verified_principal_subject, principal_verification_source,
+                    authentication_strength
+             FROM audit_events
+             WHERE operation_id = 'op_01J00000000000000000000000'",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(row.0, "unverified");
+    assert_eq!(row.1, None);
+    assert_eq!(row.2, None);
+    assert_eq!(row.3, None);
+    assert_eq!(row.4, None);
 }
 
 #[test]

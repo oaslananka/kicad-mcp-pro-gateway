@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use companion_core::{
     ApprovalDecisionKind, AuditEvent, Capability, ExecutionStatus, OperationId, PolicyResultKind,
-    RiskLevel, SessionId,
+    PrincipalAssurance, PrincipalVerificationSource, RiskLevel, SessionId,
 };
 use companion_storage::Storage;
 use time::OffsetDateTime;
@@ -25,6 +25,11 @@ impl AuditRepository {
     }
 
     pub fn record(&self, event: &AuditEvent) -> Result<(), AuditError> {
+        if !event.has_consistent_principal_evidence() {
+            return Err(AuditError::Storage(
+                "inconsistent audit principal verification evidence".into(),
+            ));
+        }
         let conn = self
             .storage
             .connection()
@@ -32,15 +37,25 @@ impl AuditRepository {
             .map_err(|_| AuditError::Storage("mutex poisoned".into()))?;
         conn.execute(
             "INSERT INTO audit_events (
-                operation_id, timestamp, session_id, workspace_id, remote_principal, requested_tool,
-                capability, risk, policy_result, approval_decision, execution_status, error_class, duration_ms
-             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                operation_id, timestamp, session_id, workspace_id, remote_principal,
+                principal_assurance, verified_principal_issuer, verified_principal_subject,
+                principal_verification_source, authentication_strength, requested_tool,
+                capability, risk, policy_result, approval_decision, execution_status,
+                error_class, duration_ms
+             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
             rusqlite::params![
                 event.operation_id.to_string(),
                 format_rfc3339(event.timestamp)?,
                 event.session_id.map(|id| id.to_string()),
                 event.workspace_id.map(|id| id.to_string()),
                 event.remote_principal,
+                event.principal_assurance.as_str(),
+                event.verified_principal_issuer,
+                event.verified_principal_subject,
+                event
+                    .principal_verification_source
+                    .map(|source| source.as_str().to_string()),
+                event.authentication_strength,
                 event.requested_tool,
                 event.capability.map(|c| c.as_str().to_string()),
                 event.risk.map(to_json).transpose()?,
@@ -172,8 +187,9 @@ impl AuditRepository {
 }
 
 const SELECT_COLUMNS: &str = "SELECT operation_id, timestamp, session_id, workspace_id, remote_principal, \
-     requested_tool, capability, risk, policy_result, approval_decision, execution_status, error_class, \
-     duration_ms FROM audit_events";
+     principal_assurance, verified_principal_issuer, verified_principal_subject, principal_verification_source, \
+     authentication_strength, requested_tool, capability, risk, policy_result, approval_decision, execution_status, \
+     error_class, duration_ms FROM audit_events";
 
 struct RawRow {
     operation_id: String,
@@ -181,6 +197,11 @@ struct RawRow {
     session_id: Option<String>,
     workspace_id: Option<String>,
     remote_principal: Option<String>,
+    principal_assurance: String,
+    verified_principal_issuer: Option<String>,
+    verified_principal_subject: Option<String>,
+    principal_verification_source: Option<String>,
+    authentication_strength: Option<String>,
     requested_tool: String,
     capability: Option<String>,
     risk: Option<String>,
@@ -198,14 +219,19 @@ fn row_to_raw(row: &rusqlite::Row) -> rusqlite::Result<RawRow> {
         session_id: row.get(2)?,
         workspace_id: row.get(3)?,
         remote_principal: row.get(4)?,
-        requested_tool: row.get(5)?,
-        capability: row.get(6)?,
-        risk: row.get(7)?,
-        policy_result: row.get(8)?,
-        approval_decision: row.get(9)?,
-        execution_status: row.get(10)?,
-        error_class: row.get(11)?,
-        duration_ms: row.get(12)?,
+        principal_assurance: row.get(5)?,
+        verified_principal_issuer: row.get(6)?,
+        verified_principal_subject: row.get(7)?,
+        principal_verification_source: row.get(8)?,
+        authentication_strength: row.get(9)?,
+        requested_tool: row.get(10)?,
+        capability: row.get(11)?,
+        risk: row.get(12)?,
+        policy_result: row.get(13)?,
+        approval_decision: row.get(14)?,
+        execution_status: row.get(15)?,
+        error_class: row.get(16)?,
+        duration_ms: row.get(17)?,
     })
 }
 
@@ -221,7 +247,7 @@ fn collect_rows(
 }
 
 fn parse_raw(raw: RawRow) -> Result<AuditEvent, AuditError> {
-    Ok(AuditEvent {
+    let event = AuditEvent {
         operation_id: raw
             .operation_id
             .parse()
@@ -238,6 +264,27 @@ fn parse_raw(raw: RawRow) -> Result<AuditEvent, AuditError> {
             .transpose()
             .map_err(|e| AuditError::Storage(format!("{e:?}")))?,
         remote_principal: raw.remote_principal,
+        principal_assurance: PrincipalAssurance::parse(&raw.principal_assurance).ok_or_else(
+            || {
+                AuditError::Storage(format!(
+                    "unknown principal assurance in audit row: {}",
+                    raw.principal_assurance
+                ))
+            },
+        )?,
+        verified_principal_issuer: raw.verified_principal_issuer,
+        verified_principal_subject: raw.verified_principal_subject,
+        principal_verification_source: raw
+            .principal_verification_source
+            .map(|source| {
+                PrincipalVerificationSource::parse(&source).ok_or_else(|| {
+                    AuditError::Storage(format!(
+                        "unknown principal verification source in audit row: {source}"
+                    ))
+                })
+            })
+            .transpose()?,
+        authentication_strength: raw.authentication_strength,
         requested_tool: raw.requested_tool,
         capability: raw
             .capability
@@ -256,7 +303,13 @@ fn parse_raw(raw: RawRow) -> Result<AuditEvent, AuditError> {
         execution_status: from_json::<ExecutionStatus>(&raw.execution_status)?,
         error_class: raw.error_class,
         duration_ms: raw.duration_ms.map(|d| d as u64),
-    })
+    };
+    if !event.has_consistent_principal_evidence() {
+        return Err(AuditError::Storage(
+            "inconsistent audit principal verification evidence".into(),
+        ));
+    }
+    Ok(event)
 }
 
 fn to_json<T: serde::Serialize>(value: T) -> Result<String, AuditError> {
@@ -296,6 +349,11 @@ mod tests {
             session_id: Some(session_id),
             workspace_id: Some(WorkspaceId::new()),
             remote_principal: Some("agent:test".into()),
+            principal_assurance: companion_core::PrincipalAssurance::Unverified,
+            verified_principal_issuer: None,
+            verified_principal_subject: None,
+            principal_verification_source: None,
+            authentication_strength: None,
             requested_tool: "schematic.read".into(),
             capability: Some(Capability::SCHEMATIC_READ),
             risk: Some(RiskLevel::Low),
@@ -317,6 +375,50 @@ mod tests {
         assert_eq!(recent.len(), 1);
         assert_eq!(recent[0].operation_id, event.operation_id);
         assert_eq!(recent[0].policy_result, PolicyResultKind::Allow);
+    }
+
+    #[test]
+    fn verified_principal_metadata_round_trips_without_transport_binding() {
+        let repository = repo();
+        let mut event = sample_event(OperationId::new(), SessionId::new());
+        event.remote_principal = Some("caller-claimed-name".into());
+        event.principal_assurance = PrincipalAssurance::Verified;
+        event.verified_principal_issuer = Some("trusted-issuer".into());
+        event.verified_principal_subject = Some("actor-7".into());
+        event.principal_verification_source =
+            Some(PrincipalVerificationSource::AuthenticatedTransport);
+        event.authentication_strength = Some("phishing_resistant".into());
+
+        repository.record(&event).unwrap();
+        let recent = repository.list_recent(1).unwrap();
+        assert_eq!(recent, vec![event]);
+
+        let json = serde_json::to_string(&recent[0]).unwrap();
+        assert!(!json.contains("transport_binding"));
+        assert!(!json.contains("credential"));
+        assert!(!json.contains("signature"));
+    }
+
+    #[test]
+    fn inconsistent_verified_principal_metadata_is_rejected_before_write() {
+        let repository = repo();
+        let mut event = sample_event(OperationId::new(), SessionId::new());
+        event.principal_assurance = PrincipalAssurance::Verified;
+
+        let error = repository.record(&event).unwrap_err();
+        assert!(matches!(error, AuditError::Storage(_)));
+        assert!(repository.list_recent(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn unverified_audit_cannot_smuggle_verified_metadata() {
+        let repository = repo();
+        let mut event = sample_event(OperationId::new(), SessionId::new());
+        event.verified_principal_subject = Some("forged-subject".into());
+
+        let error = repository.record(&event).unwrap_err();
+        assert!(matches!(error, AuditError::Storage(_)));
+        assert!(repository.list_recent(10).unwrap().is_empty());
     }
 
     #[test]
@@ -571,6 +673,11 @@ mod tests {
             "raw_content",
             "secret",
             "token",
+            "transport_binding",
+            "credential",
+            "signature",
+            "certificate",
+            "proof",
         ] {
             assert!(
                 !object.contains_key(forbidden),
@@ -585,6 +692,11 @@ mod tests {
         session_id: Option<String>,
         workspace_id: Option<String>,
         remote_principal: Option<String>,
+        principal_assurance: String,
+        verified_principal_issuer: Option<String>,
+        verified_principal_subject: Option<String>,
+        principal_verification_source: Option<String>,
+        authentication_strength: Option<String>,
         requested_tool: String,
         capability: Option<String>,
         risk: Option<String>,
@@ -602,6 +714,13 @@ mod tests {
                 session_id: e.session_id.map(|s| s.to_string()),
                 workspace_id: e.workspace_id.map(|w| w.to_string()),
                 remote_principal: e.remote_principal.clone(),
+                principal_assurance: e.principal_assurance.as_str().to_string(),
+                verified_principal_issuer: e.verified_principal_issuer.clone(),
+                verified_principal_subject: e.verified_principal_subject.clone(),
+                principal_verification_source: e
+                    .principal_verification_source
+                    .map(|source| source.as_str().to_string()),
+                authentication_strength: e.authentication_strength.clone(),
                 requested_tool: e.requested_tool.clone(),
                 capability: e.capability.map(|c| c.as_str().to_string()),
                 risk: e.risk.map(|r| format!("{r:?}")),

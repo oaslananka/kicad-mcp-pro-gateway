@@ -11,8 +11,8 @@ use std::time::Duration;
 use companion_core::{
     AccessGrant, ApprovalDecisionKind, AuditEvent, AuthorizationPrincipal, CapabilityProfile,
     CompanionError, DeviceId, ExecutionStatus, GrantKind, GrantRequest, OperationId,
-    OperationRequest, PolicyResultKind, RiskLevel, Session, SessionId, VerifiedPrincipal,
-    WorkspaceId,
+    OperationRequest, PolicyResultKind, PrincipalAssurance, RiskLevel, Session, SessionId,
+    VerifiedPrincipal, WorkspaceId,
 };
 use companion_policy::PolicyDecision;
 use companion_protocol::{Envelope, MessageType};
@@ -433,6 +433,10 @@ fn build_audit_event(
             Some(*risk),
         ),
     };
+    let verified = grant
+        .map(|grant| &grant.principal)
+        .filter(|principal| principal.is_verified())
+        .and_then(|principal| principal.verified_principal());
     AuditEvent {
         operation_id: request.operation_id,
         timestamp: OffsetDateTime::now_utc(),
@@ -444,6 +448,16 @@ fn build_audit_event(
         remote_principal: grant
             .map(|grant| grant.principal.name.clone())
             .or_else(|| session.map(|session| session.remote_principal.clone())),
+        principal_assurance: if verified.is_some() {
+            PrincipalAssurance::Verified
+        } else {
+            PrincipalAssurance::Unverified
+        },
+        verified_principal_issuer: verified.map(|principal| principal.issuer.clone()),
+        verified_principal_subject: verified.map(|principal| principal.subject.clone()),
+        principal_verification_source: verified.map(|principal| principal.verification_source),
+        authentication_strength: verified
+            .map(|principal| principal.authentication_strength.clone()),
         requested_tool: request.tool_name.clone(),
         capability,
         risk,
@@ -1115,6 +1129,31 @@ risk = "critical"
             1,
             "the exact authenticated actor/binding may exercise its locally approved grant"
         );
+        let audit = state
+            .audit_repo
+            .list_recent(20)
+            .unwrap()
+            .into_iter()
+            .find(|event| event.operation_id == request.operation_id)
+            .expect("verified operation has durable audit evidence");
+        assert_eq!(audit.remote_principal.as_deref(), Some("agent:test"));
+        assert_eq!(audit.principal_assurance, PrincipalAssurance::Verified);
+        assert_eq!(
+            audit.verified_principal_issuer.as_deref(),
+            Some("https://issuer.example")
+        );
+        assert_eq!(
+            audit.verified_principal_subject.as_deref(),
+            Some("actor-123")
+        );
+        assert_eq!(
+            audit.principal_verification_source,
+            Some(PrincipalVerificationSource::AuthenticatedTransport)
+        );
+        assert_eq!(
+            audit.authentication_strength.as_deref(),
+            Some("phishing_resistant")
+        );
         fake_kicad.stop();
     }
 
@@ -1425,6 +1464,11 @@ mod audit_fail_closed_tests {
             session_id: None,
             workspace_id: None,
             remote_principal: Some("agent:test".into()),
+            principal_assurance: companion_core::PrincipalAssurance::Unverified,
+            verified_principal_issuer: None,
+            verified_principal_subject: None,
+            principal_verification_source: None,
+            authentication_strength: None,
             requested_tool: "filler".into(),
             capability: None,
             risk: None,

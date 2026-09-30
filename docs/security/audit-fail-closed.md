@@ -15,6 +15,14 @@ or environment variable that turns this off.
 The same rule governs approvals: a high-risk operation approved over local
 IPC executes only after its approval decision has been persisted.
 
+For identity provenance, the pre-execution row records the remote-supplied
+display claim separately from `principal_assurance`. When an operation is
+authorized by a structurally valid `VerifiedPrincipal`, the audit row also
+records only the safe issuer, subject, verification-source identifier, and
+authentication-strength descriptor. Raw credentials, proof/signature bytes,
+certificates, tokens, and the opaque transport binding are never audit fields.
+Legacy/pre-verification rows migrate as `unverified` with no invented evidence.
+
 There is therefore no "executed but unaudited" success state: either the
 operation ran with a durable record already on disk, or it did not run and
 the caller received a refusal.
@@ -121,7 +129,9 @@ upstream `tools/call` counter stays at zero:
   `approve_pending_operation`, `deny_pending_operation`)
 - Typed IPC error: `DaemonError::AuditPersistence` in
   `apps/daemon/src/errors.rs`
-- Audit write semantics: `crates/audit/src/repository.rs`
+- Audit write semantics and verified-principal provenance persistence:
+  `crates/audit/src/repository.rs`
+- Schema migration: `crates/storage/migrations/0004_audit_principal_verification.sql`
 - Tests: `audit_fail_closed_tests` in
   `apps/daemon/src/remote_processor.rs` and the failure/rollback tests in
   `crates/audit/src/repository.rs`
