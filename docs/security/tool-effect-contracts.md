@@ -63,7 +63,7 @@ metadata; it does not duplicate PCB/schematic semantics in Gateway.
 
 ## Upstream reviewed-manifest transition
 
-`kicad-mcp-pro` is adding a versioned machine-readable reviewed effect manifest.
+`kicad-mcp-pro` now publishes a versioned machine-readable reviewed effect manifest (upstream PR #1014, merged as `e5065df453a57367cf1ea83437717967d36de77c`).
 Gateway treats that document as factual compatibility input, **not** as an
 authorization grant. `UpstreamEffectManifest` in `companion-policy` parses the
 JSON with closed enums/fields, validates schema/source identity, constructs the
@@ -83,6 +83,18 @@ production snapshot and exposes contract drift (for example, the current
 upstream `export_gerber` surface no longer contains the older reviewed
 `variant_name` argument). Stale or malformed evidence must be reviewed before
 the fallback is changed.
+
+For a candidate upstream artifact, run:
+
+```sh
+cargo run -p companion-policy --bin reconcile-upstream-effect-manifest -- \
+  /path/to/tool-effect-manifest.json
+```
+
+The command exits non-zero when the manifest source pin differs from the
+production snapshot or when reviewed tool/effect contracts differ from the
+fallback. It reports drift but never writes policy or promotes an upstream
+tool into the allowlist.
 
 ## Refresh procedure
 
