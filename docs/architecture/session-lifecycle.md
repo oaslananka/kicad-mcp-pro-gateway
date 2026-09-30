@@ -129,7 +129,8 @@ decides on the grant.
 ## Schema version and migration
 
 `companion_storage::SCHEMA_VERSION` is the number of applied migrations
-(`2`: `0001_init.sql`, then the additive `0002_authorization.sql`). A database
+(`3`: `0001_init.sql`, additive `0002_authorization.sql`, then additive
+`0003_verified_principal.sql`). A database
 file written by a newer build is refused with
 `STORAGE_SCHEMA_FROM_NEWER_BUILD` *before* anything is applied, rather than
 partially interpreted. `0002` only creates `access_grants`,
