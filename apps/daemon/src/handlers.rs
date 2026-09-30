@@ -562,12 +562,7 @@ async fn list_pending_approvals(state: &Arc<DaemonState>) -> IpcResponse {
                     risk: format!("{:?}", s.risk.effective_risk),
                     base_risk: format!("{:?}", s.risk.base_risk),
                     risk_policy_version: s.risk.policy_version,
-                    risk_factors: s
-                        .risk
-                        .factors
-                        .into_iter()
-                        .map(risk_factor_view)
-                        .collect(),
+                    risk_factors: s.risk.factors.into_iter().map(risk_factor_view).collect(),
                 })
             })
             .collect::<Result<Vec<_>, DaemonError>>()
