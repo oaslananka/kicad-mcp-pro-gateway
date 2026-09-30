@@ -36,7 +36,7 @@ against the then-current release commit.
 
 ## Executive Summary
 
-This document records the final V1 stable-release sign-off for KiCad MCP Pro Gateway. The sign-off is based on direct evidence from the release candidate pipeline, automated verification workflows, and documented security/compatibility baselines.
+This document records a dated **conditional V1 stable-release readiness assessment** for KiCad MCP Pro Gateway. It is based on release-pipeline implementation, automated verification workflows, and documented security/compatibility baselines; it is not evidence that the external qualification and promotion steps were completed.
 
 **Decision:** **CONDITIONAL GO** — All automated evidence gates pass. Clean-machine qualification and live E2E evidence require external validation on physical hardware before stable promotion.
 
@@ -57,7 +57,7 @@ This document records the final V1 stable-release sign-off for KiCad MCP Pro Gat
 | OSV Security Scanning | `osv-full.yml` | ✅ **CLOSED** | Scheduled + push scans; fail-on-vuln; SARIF upload to code scanning |
 | Dependency Review | `security.yml` | ✅ **CLOSED** | PR dependency review (moderate+); zizmor workflow audit |
 
-**All identified P0 release-blocker issues are CLOSED with evidence.** No blockers remain in the V1 contract.
+**All identified P0 implementation/release-blocker issues in this dated tracker set are CLOSED with evidence.** The external qualification and promotion conditions recorded below remain blockers to an actual stable promotion.
 
 ---
 
@@ -209,11 +209,11 @@ surfaces directly rather than inferring a zero-alert state from CI alone.
 | `docs/development/release.md` | ✅ **CONSISTENT** | Accurately describes implemented `release.yml` workflow |
 | `docs/architecture/compatibility-matrix.md` | ✅ **CONSISTENT** | Matches CI matrix and release workflow targets |
 | `docs/upgrade-v1.md` | ✅ **CONSISTENT** | Documents tested upgrade/rollback strategy |
-| `SECURITY.md` | ✅ **CONSISTENT** | Reflects stable release status; points to threat model & trust boundaries |
+| `SECURITY.md` | ✅ **CONSISTENT FOR THE RECORDED REVIEW** | Points to threat model & trust boundaries; this row does not assert that a stable release was published |
 | `docs/security/threat-model.md` | ✅ **CONSISTENT** | Current threat model |
 | `docs/security/trust-boundaries.md` | ✅ **CONSISTENT** | Current trust boundaries |
 
-**All documentation is consistent with shipped behavior** (i.e., the implemented codebase and workflows).
+**The recorded documentation review was consistent with the implemented codebase and workflows.** “Implemented” must not be read as “published” or “externally qualified.”
 
 ---
 
