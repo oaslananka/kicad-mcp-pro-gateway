@@ -12,7 +12,8 @@
 
 use companion_core::{
     grant_from_legacy_session, AccessGrant, AuthorizationStatus, Capability, CapabilityProfile,
-    Clock, OperationRequest, RiskAssessment, RiskAssessmentError, RiskLevel, Session, SessionStatus,
+    Clock, OperationRequest, RiskAssessment, RiskAssessmentError, RiskLevel, Session,
+    SessionStatus,
 };
 use companion_workspace::{WorkspaceAuthorization, WorkspaceBoundary};
 

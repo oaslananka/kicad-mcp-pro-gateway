@@ -1,8 +1,6 @@
 //! Deterministic operation-risk assessment from reviewed registry rules.
 
-use companion_core::{
-    RiskAssessment, RiskAssessmentError, RiskFactor, RiskFactorCode, RiskLevel,
-};
+use companion_core::{RiskAssessment, RiskAssessmentError, RiskFactor, RiskFactorCode, RiskLevel};
 use serde_json::{Map, Value};
 
 use crate::operation_effects::NormalizedOperationEffects;
@@ -25,7 +23,11 @@ pub fn assess_operation_risk(
                 requires_effect,
                 escalate_to,
             } => {
-                if normalized_effects.paths_for(*requires_effect).next().is_none() {
+                if normalized_effects
+                    .paths_for(*requires_effect)
+                    .next()
+                    .is_none()
+                {
                     return Err(RiskAssessmentError::RequiredEffectMissing);
                 }
                 let value = arguments
