@@ -139,7 +139,9 @@ impl AuthorizationPrincipal {
     pub fn accepts_transport_principal(&self, current: Option<&VerifiedPrincipal>) -> bool {
         match self.assurance {
             PrincipalAssurance::Unverified => self.verified.is_none(),
-            PrincipalAssurance::Verified => self.verified.as_ref() == current,
+            PrincipalAssurance::Verified => {
+                matches!((self.verified.as_ref(), current), (Some(expected), Some(actual)) if expected == actual)
+            },
         }
     }
 }
@@ -821,6 +823,20 @@ mod tests {
         let unverified = AuthorizationPrincipal::unverified("display:claim");
         assert!(unverified.accepts_transport_principal(None));
         assert!(unverified.accepts_transport_principal(Some(&actor)));
+    }
+
+    #[test]
+    fn missing_verified_metadata_never_matches_missing_transport_identity() {
+        // Metadata may be malformed in memory even if durable decoding rejects
+        // it. A missing expected identity must never equal a missing actual one.
+        let malformed = AuthorizationPrincipal {
+            name: "display:claim".into(),
+            assurance: PrincipalAssurance::Verified,
+            verified: None,
+        };
+        let actor = verified_actor("bind-A");
+        assert!(!malformed.accepts_transport_principal(None));
+        assert!(!malformed.accepts_transport_principal(Some(&actor)));
     }
 
     #[test]
