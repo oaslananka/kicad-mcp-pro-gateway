@@ -421,10 +421,8 @@ fn parse_risk_rules(
                         message: "argument_cardinality minimum_count must be at least 2".into(),
                     });
                 }
-                let requires_effect =
-                    validate_rule_effect(&raw.name, contract, requires_effect)?;
-                let escalate_to =
-                    validate_rule_escalation(&raw.name, base_risk, escalate_to)?;
+                let requires_effect = validate_rule_effect(&raw.name, contract, requires_effect)?;
+                let escalate_to = validate_rule_escalation(&raw.name, base_risk, escalate_to)?;
                 RiskRule::ArgumentCardinality {
                     argument: argument.clone(),
                     minimum_count: *minimum_count,
