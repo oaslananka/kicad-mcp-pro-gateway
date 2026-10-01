@@ -4,8 +4,8 @@ use std::path::Path;
 use companion_core::{
     AccessGrant, ApprovalPolicy, AuthorizationPrincipal, AuthorizationStatus, Capability,
     CapabilityProfile, Clock, DeviceId, FakeClock, GrantKind, GrantRequest, OperationId,
-    OperationRequest, RiskAssessment, RiskFactor, RiskFactorCode, RiskLevel, Session, SessionId,
-    SessionStatus, WorkspaceId,
+    OperationRequest, RiskAssessment, RiskFactor, RiskLevel, Session, SessionId, SessionStatus,
+    WorkspaceId,
 };
 use companion_policy::{
     ApprovalReason, DenyReason, PolicyDecision, PolicyEngine, TomlToolRegistry,
@@ -672,8 +672,7 @@ fn multiple_item_delete_escalates_to_high_with_safe_factor() {
                 2,
                 RiskLevel::Normal,
                 RiskLevel::High,
-                vec![RiskFactor {
-                    code: RiskFactorCode::BulkArgumentCardinality,
+                vec![RiskFactor::BulkArgumentCardinality {
                     subject: "item_ids".into(),
                     observed_count: 2,
                     threshold: 2,
@@ -704,7 +703,15 @@ fn larger_bulk_delete_preserves_observed_count_without_raising_above_high() {
         panic!("three-item delete must require approval");
     };
     assert_eq!(risk.effective_risk(), RiskLevel::High);
-    assert_eq!(risk.factors()[0].observed_count, 3);
+    assert_eq!(
+        risk.factors()[0],
+        RiskFactor::BulkArgumentCardinality {
+            subject: "item_ids".into(),
+            observed_count: 3,
+            threshold: 2,
+            escalated_to: RiskLevel::High,
+        }
+    );
 }
 
 #[test]

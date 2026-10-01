@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use companion_core::{
     AccessGrant, AuthorizationLease, AuthorizationStatus, GrantId, OperationId, RiskFactor,
-    RiskFactorCode, Session, SessionId, WorkspaceId,
+    Session, SessionId, WorkspaceId,
 };
 use companion_core_bridge::CoreBridgeClient;
 use companion_protocol::{
@@ -107,15 +107,29 @@ fn format_timestamp(t: time::OffsetDateTime) -> String {
 }
 
 fn risk_factor_view(factor: RiskFactor) -> RiskFactorView {
-    let code = match factor.code {
-        RiskFactorCode::BulkArgumentCardinality => "bulk_argument_cardinality",
-    };
-    RiskFactorView {
-        code: code.to_string(),
-        subject: factor.subject,
-        observed_count: factor.observed_count,
-        threshold: factor.threshold,
-        escalated_to: format!("{:?}", factor.escalated_to),
+    match factor {
+        RiskFactor::BulkArgumentCardinality {
+            subject,
+            observed_count,
+            threshold,
+            escalated_to,
+        } => RiskFactorView {
+            code: "bulk_argument_cardinality".into(),
+            subject,
+            observed_count: Some(observed_count),
+            threshold: Some(threshold),
+            escalated_to: format!("{escalated_to:?}"),
+        },
+        RiskFactor::ConfirmedOverwrite {
+            subject,
+            escalated_to,
+        } => RiskFactorView {
+            code: "confirmed_overwrite".into(),
+            subject,
+            observed_count: None,
+            threshold: None,
+            escalated_to: format!("{escalated_to:?}"),
+        },
     }
 }
 

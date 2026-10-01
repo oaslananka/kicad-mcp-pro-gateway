@@ -356,7 +356,7 @@ fn parse_rfc3339(s: &str) -> Result<OffsetDateTime, AuditError> {
 
 #[cfg(test)]
 mod tests {
-    use companion_core::{OperationId, RiskFactor, RiskFactorCode, SessionId, WorkspaceId};
+    use companion_core::{OperationId, RiskFactor, SessionId, WorkspaceId};
 
     use super::*;
 
@@ -449,8 +449,7 @@ mod tests {
     }
 
     fn bulk_factor(count: u64) -> RiskFactor {
-        RiskFactor {
-            code: RiskFactorCode::BulkArgumentCardinality,
+        RiskFactor::BulkArgumentCardinality {
             subject: "item_ids".into(),
             observed_count: count,
             threshold: 2,

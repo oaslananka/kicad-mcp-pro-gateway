@@ -276,8 +276,8 @@ async fn full_vertical_slice_from_pairing_through_revocation() {
     let factor = &pending.risk_factors[0];
     assert_eq!(factor.code, "bulk_argument_cardinality");
     assert_eq!(factor.subject, "item_ids");
-    assert_eq!(factor.observed_count, 2);
-    assert_eq!(factor.threshold, 2);
+    assert_eq!(factor.observed_count, Some(2));
+    assert_eq!(factor.threshold, Some(2));
     assert_eq!(factor.escalated_to, "High");
     for raw_id in raw_item_ids {
         assert!(

@@ -1,6 +1,6 @@
 //! Deterministic operation-risk assessment from reviewed registry rules.
 
-use companion_core::{RiskAssessment, RiskAssessmentError, RiskFactor, RiskFactorCode, RiskLevel};
+use companion_core::{RiskAssessment, RiskAssessmentError, RiskFactor, RiskLevel};
 use serde_json::{Map, Value};
 
 use crate::operation_effects::NormalizedOperationEffects;
@@ -41,8 +41,7 @@ pub fn assess_operation_risk(
 
                 if observed_count >= *minimum_count {
                     effective_risk = effective_risk.max(*escalate_to);
-                    factors.push(RiskFactor {
-                        code: RiskFactorCode::BulkArgumentCardinality,
+                    factors.push(RiskFactor::BulkArgumentCardinality {
                         subject: argument.clone(),
                         observed_count,
                         threshold: *minimum_count,

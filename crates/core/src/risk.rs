@@ -27,19 +27,19 @@ impl RiskLevel {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RiskFactorCode {
-    BulkArgumentCardinality,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RiskFactor {
-    pub code: RiskFactorCode,
-    pub subject: String,
-    pub observed_count: u64,
-    pub threshold: u64,
-    pub escalated_to: RiskLevel,
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum RiskFactor {
+    BulkArgumentCardinality {
+        subject: String,
+        observed_count: u64,
+        threshold: u64,
+        escalated_to: RiskLevel,
+    },
+    ConfirmedOverwrite {
+        subject: String,
+        escalated_to: RiskLevel,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

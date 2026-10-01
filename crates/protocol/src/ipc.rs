@@ -25,7 +25,9 @@ pub const DAEMON_PRODUCT_ID: &str = "kicad-mcp-gateway";
 /// - 3: verified identity provenance is separated from caller-supplied claims.
 /// - 4: pending approvals expose base/effective risk, policy version, and safe
 ///   structured dynamic-risk factors.
-pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 4;
+/// - 5: pending approvals support reviewed risk factors that do not carry
+///   cardinality metadata.
+pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DaemonIdentityView {
@@ -303,8 +305,10 @@ pub struct AuditSummaryView {
 pub struct RiskFactorView {
     pub code: String,
     pub subject: String,
-    pub observed_count: u64,
-    pub threshold: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<u64>,
     pub escalated_to: String,
 }
 
