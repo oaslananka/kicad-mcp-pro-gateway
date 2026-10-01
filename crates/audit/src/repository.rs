@@ -457,6 +457,143 @@ mod tests {
         }
     }
 
+    fn overwrite_factor() -> RiskFactor {
+        RiskFactor::ConfirmedOverwrite {
+            subject: "confirm_overwrite".into(),
+            escalated_to: RiskLevel::High,
+        }
+    }
+
+    #[test]
+    fn literal_policy_v2_bulk_factor_json_remains_readable() {
+        let repository = repo();
+        let mut event = sample_event(OperationId::new(), SessionId::new());
+        event.risk = Some(RiskLevel::High);
+        event.risk_policy_version = Some(2);
+        event.base_risk = Some(RiskLevel::Normal);
+        repository.record(&event).unwrap();
+
+        let legacy = r#"[{"code":"bulk_argument_cardinality","subject":"item_ids","observed_count":3,"threshold":2,"escalated_to":"High"}]"#;
+        repository
+            .storage
+            .connection()
+            .lock()
+            .expect("storage mutex poisoned")
+            .execute(
+                "UPDATE audit_events SET risk_factors_json = ?1 WHERE operation_id = ?2",
+                rusqlite::params![legacy, event.operation_id.to_string()],
+            )
+            .unwrap();
+
+        let stored = repository.list_recent(1).unwrap().pop().unwrap();
+        assert_eq!(stored.risk_policy_version, Some(2));
+        assert_eq!(stored.risk_factors, vec![bulk_factor(3)]);
+    }
+
+    #[test]
+    fn confirmed_overwrite_evidence_round_trips_on_schema_v5() {
+        assert_eq!(companion_storage::SCHEMA_VERSION, 5);
+
+        let repository = repo();
+        let mut event = sample_event(OperationId::new(), SessionId::new());
+        event.requested_tool = "kicad_create_new_project".into();
+        event.capability = Some(Capability::PROJECT_WRITE);
+        event.risk = Some(RiskLevel::High);
+        event.risk_policy_version = Some(3);
+        event.base_risk = Some(RiskLevel::Normal);
+        event.risk_factors = vec![overwrite_factor()];
+
+        repository.record(&event).unwrap();
+
+        assert_eq!(repository.list_recent(1).unwrap(), vec![event]);
+    }
+
+    #[test]
+    fn overwrite_factor_json_contains_no_path_name_or_raw_boolean_value() {
+        let repository = repo();
+        let mut event = sample_event(OperationId::new(), SessionId::new());
+        event.requested_tool = "kicad_create_new_project".into();
+        event.capability = Some(Capability::PROJECT_WRITE);
+        event.risk = Some(RiskLevel::High);
+        event.risk_policy_version = Some(3);
+        event.base_risk = Some(RiskLevel::Normal);
+        event.risk_factors = vec![overwrite_factor()];
+        repository.record(&event).unwrap();
+
+        let raw: String = repository
+            .storage
+            .connection()
+            .lock()
+            .expect("storage mutex poisoned")
+            .query_row(
+                "SELECT risk_factors_json FROM audit_events WHERE operation_id = ?1",
+                [event.operation_id.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
+            serde_json::json!([{
+                "code": "confirmed_overwrite",
+                "subject": "confirm_overwrite",
+                "escalated_to": "High"
+            }])
+        );
+        for sentinel in [
+            "/secret/customer/project",
+            "production-controller",
+            "\"confirm_overwrite\":true",
+        ] {
+            assert!(!raw.contains(sentinel), "risk factor leaked sentinel {sentinel}");
+        }
+    }
+
+    #[test]
+    fn overwrite_approval_update_preserves_risk_evidence_byte_for_byte() {
+        let repository = repo();
+        let mut event = sample_event(OperationId::new(), SessionId::new());
+        event.requested_tool = "kicad_create_new_project".into();
+        event.capability = Some(Capability::PROJECT_WRITE);
+        event.risk = Some(RiskLevel::High);
+        event.risk_policy_version = Some(3);
+        event.base_risk = Some(RiskLevel::Normal);
+        event.risk_factors = vec![overwrite_factor()];
+        repository.record(&event).unwrap();
+
+        let before: (Option<i64>, Option<String>, String, String) = repository
+            .storage
+            .connection()
+            .lock()
+            .expect("storage mutex poisoned")
+            .query_row(
+                "SELECT risk_policy_version, base_risk, risk, risk_factors_json
+                 FROM audit_events WHERE operation_id = ?1",
+                [event.operation_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+
+        repository
+            .update_approval_decision(event.operation_id, ApprovalDecisionKind::AllowOnce)
+            .unwrap();
+
+        let after: (Option<i64>, Option<String>, String, String) = repository
+            .storage
+            .connection()
+            .lock()
+            .expect("storage mutex poisoned")
+            .query_row(
+                "SELECT risk_policy_version, base_risk, risk, risk_factors_json
+                 FROM audit_events WHERE operation_id = ?1",
+                [event.operation_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+
+        assert_eq!(before, after);
+    }
+
     #[test]
     fn dynamic_risk_evidence_round_trips_exactly() {
         let repository = repo();
