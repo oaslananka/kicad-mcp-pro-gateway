@@ -1,3 +1,5 @@
+/* tsqllint-disable */
+-- SQLite migration: TSQLLint targets SQL Server and is not applicable here.
 -- Additive, immutable dynamic-risk evidence for audit records.
 --
 -- Historical rows keep their recorded effective risk, but no version/base
