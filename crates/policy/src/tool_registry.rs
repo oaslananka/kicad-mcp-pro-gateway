@@ -735,6 +735,127 @@ mod tests {
         ));
     }
 
+    fn pinned_project_overwrite_tool(rule: &str, path_effects: &str, risk: &str) -> String {
+        let snapshot = ToolCatalogSnapshot::embedded();
+        format!(
+            "contract_version = {TOOL_EFFECT_CONTRACT_VERSION}\n\
+             source_repository = \"{}\"\n\
+             source_ref = \"{}\"\n\
+             source_sha = \"{}\"\n\n\
+             [[tool]]\n\
+             name = \"kicad_create_new_project\"\n\
+             capability = \"project.write\"\n\
+             risk = \"{risk}\"\n\
+             arguments = [\"path\", \"name\", \"confirm_overwrite\"]\n\
+             effects = []\n\
+             [[tool.path_arguments]]\n\
+             argument = \"path\"\n\
+             effects = {path_effects}\n\
+             required = true\n\
+             [[tool.path_arguments]]\n\
+             argument = \"name\"\n\
+             base_argument = \"path\"\n\
+             effects = {path_effects}\n\
+             required = true\n\
+             {rule}",
+            snapshot.source_repository, snapshot.source_ref, snapshot.source_sha,
+        )
+    }
+
+    const OVERWRITE_RULE: &str = "[[tool.risk_rules]]\n\
+        kind = \"boolean_equals\"\n\
+        argument = \"confirm_overwrite\"\n\
+        expected = true\n\
+        default = false\n\
+        requires_effect = \"write\"\n\
+        escalate_to = \"high\"\n\
+        factor = \"confirmed_overwrite\"\n";
+
+    #[test]
+    fn parses_reviewed_boolean_overwrite_rule() {
+        let source =
+            pinned_project_overwrite_tool(OVERWRITE_RULE, "[\"read\", \"write\", \"create\"]", "normal");
+        let registry = TomlToolRegistry::from_toml_str(&source).unwrap();
+
+        assert_eq!(
+            registry.risk_rules("kicad_create_new_project"),
+            &[RiskRule::BooleanEquals {
+                argument: "confirm_overwrite".into(),
+                expected: true,
+                default: false,
+                requires_effect: OperationEffect::Write,
+                escalate_to: RiskLevel::High,
+                factor: BooleanRiskFactor::ConfirmedOverwrite,
+            }]
+        );
+    }
+
+    #[test]
+    fn boolean_risk_rule_with_unknown_field_is_rejected() {
+        let source = pinned_project_overwrite_tool(
+            &format!("{OVERWRITE_RULE}unexpected = true\n"),
+            "[\"read\", \"write\", \"create\"]",
+            "normal",
+        );
+        assert!(TomlToolRegistry::from_toml_str(&source).is_err());
+    }
+
+    #[test]
+    fn boolean_risk_rule_cannot_reference_unknown_argument() {
+        let rule = OVERWRITE_RULE.replace("confirm_overwrite", "force_replace");
+        let source =
+            pinned_project_overwrite_tool(&rule, "[\"read\", \"write\", \"create\"]", "normal");
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn boolean_risk_rule_requires_reviewed_effect() {
+        let source =
+            pinned_project_overwrite_tool(OVERWRITE_RULE, "[\"read\", \"create\"]", "normal");
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn boolean_risk_rule_rejects_unknown_factor_code() {
+        let rule = OVERWRITE_RULE.replace("confirmed_overwrite", "caller_confirmed");
+        let source =
+            pinned_project_overwrite_tool(&rule, "[\"read\", \"write\", \"create\"]", "normal");
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn boolean_risk_rule_must_strictly_raise_base_risk() {
+        let rule = OVERWRITE_RULE.replace("escalate_to = \"high\"", "escalate_to = \"normal\"");
+        let source =
+            pinned_project_overwrite_tool(&rule, "[\"read\", \"write\", \"create\"]", "normal");
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn duplicate_equivalent_boolean_risk_rules_are_rejected() {
+        let source = pinned_project_overwrite_tool(
+            &format!("{OVERWRITE_RULE}{OVERWRITE_RULE}"),
+            "[\"read\", \"write\", \"create\"]",
+            "normal",
+        );
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
     #[test]
     fn risk_rule_requires_a_reviewed_effect_contract() {
         let snapshot = ToolCatalogSnapshot::embedded();
