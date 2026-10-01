@@ -21,8 +21,9 @@ pub use operation_effects::{
 pub use risk_assessment::assess_operation_risk;
 pub use tool_catalog::{ToolCatalogError, ToolCatalogSnapshot};
 pub use tool_registry::{
-    RiskRule, TomlToolRegistry, ToolCapabilityResolver, ToolContractSource, ToolRegistryCoverage,
-    ToolRegistryError, OPERATION_RISK_POLICY_VERSION, TOOL_EFFECT_CONTRACT_VERSION,
+    BooleanRiskFactor, RiskRule, TomlToolRegistry, ToolCapabilityResolver, ToolContractSource,
+    ToolRegistryCoverage, ToolRegistryError, OPERATION_RISK_POLICY_VERSION,
+    TOOL_EFFECT_CONTRACT_VERSION,
 };
 pub use upstream_effect_manifest::{
     EffectManifestReconciliation, EffectVerificationRequirement, ReviewedToolEffectFacts,

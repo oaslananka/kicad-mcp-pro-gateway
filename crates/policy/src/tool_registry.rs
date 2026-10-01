@@ -14,7 +14,12 @@ use crate::operation_effects::{OperationEffect, ToolEffectContract};
 use crate::tool_catalog::ToolCatalogSnapshot;
 
 pub const TOOL_EFFECT_CONTRACT_VERSION: u32 = 1;
-pub const OPERATION_RISK_POLICY_VERSION: u32 = 2;
+pub const OPERATION_RISK_POLICY_VERSION: u32 = 3;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BooleanRiskFactor {
+    ConfirmedOverwrite,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RiskRule {
@@ -23,6 +28,14 @@ pub enum RiskRule {
         minimum_count: u64,
         requires_effect: OperationEffect,
         escalate_to: RiskLevel,
+    },
+    BooleanEquals {
+        argument: String,
+        expected: bool,
+        default: bool,
+        requires_effect: OperationEffect,
+        escalate_to: RiskLevel,
+        factor: BooleanRiskFactor,
     },
 }
 
@@ -103,19 +116,22 @@ struct ToolEntryRaw {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum RiskRuleKindRaw {
-    ArgumentCardinality,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RiskRuleRaw {
-    kind: RiskRuleKindRaw,
-    argument: String,
-    minimum_count: u64,
-    requires_effect: String,
-    escalate_to: String,
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum RiskRuleRaw {
+    ArgumentCardinality {
+        argument: String,
+        minimum_count: u64,
+        requires_effect: String,
+        escalate_to: String,
+    },
+    BooleanEquals {
+        argument: String,
+        expected: bool,
+        default: bool,
+        requires_effect: String,
+        escalate_to: String,
+        factor: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -391,62 +407,60 @@ fn parse_risk_rules(
 
     let mut rules = Vec::with_capacity(raw.risk_rules.len());
     for raw_rule in &raw.risk_rules {
-        let rule = match raw_rule.kind {
-            RiskRuleKindRaw::ArgumentCardinality => {
-                if !contract.arguments().contains(&raw_rule.argument) {
-                    return Err(ToolRegistryError::InvalidRiskRule {
-                        tool: raw.name.clone(),
-                        message: format!(
-                            "argument '{}' is absent from the reviewed contract",
-                            raw_rule.argument
-                        ),
-                    });
-                }
-                if raw_rule.minimum_count < 2 {
+        let rule = match raw_rule {
+            RiskRuleRaw::ArgumentCardinality {
+                argument,
+                minimum_count,
+                requires_effect,
+                escalate_to,
+            } => {
+                validate_rule_argument(&raw.name, contract, argument)?;
+                if *minimum_count < 2 {
                     return Err(ToolRegistryError::InvalidRiskRule {
                         tool: raw.name.clone(),
                         message: "argument_cardinality minimum_count must be at least 2".into(),
                     });
                 }
                 let requires_effect =
-                    parse_effects(&raw.name, std::slice::from_ref(&raw_rule.requires_effect))?
-                        .into_iter()
-                        .next()
-                        .expect("one effect string yields one parsed effect");
-                let has_effect = contract.effects().contains(&requires_effect)
-                    || contract
-                        .path_arguments()
-                        .values()
-                        .any(|path| path.effects().contains(&requires_effect));
-                if !has_effect {
-                    return Err(ToolRegistryError::InvalidRiskRule {
-                        tool: raw.name.clone(),
-                        message: format!(
-                            "required effect '{}' is absent from the reviewed contract",
-                            raw_rule.requires_effect
-                        ),
-                    });
-                }
-                let escalate_to = RiskLevel::parse(&raw_rule.escalate_to).ok_or_else(|| {
-                    ToolRegistryError::InvalidRiskRule {
-                        tool: raw.name.clone(),
-                        message: format!(
-                            "unknown escalation risk level '{}'",
-                            raw_rule.escalate_to
-                        ),
-                    }
-                })?;
-                if escalate_to <= base_risk {
-                    return Err(ToolRegistryError::InvalidRiskRule {
-                        tool: raw.name.clone(),
-                        message: "risk rule must strictly raise the tool's base risk".into(),
-                    });
-                }
+                    validate_rule_effect(&raw.name, contract, requires_effect)?;
+                let escalate_to =
+                    validate_rule_escalation(&raw.name, base_risk, escalate_to)?;
                 RiskRule::ArgumentCardinality {
-                    argument: raw_rule.argument.clone(),
-                    minimum_count: raw_rule.minimum_count,
+                    argument: argument.clone(),
+                    minimum_count: *minimum_count,
                     requires_effect,
                     escalate_to,
+                }
+            }
+            RiskRuleRaw::BooleanEquals {
+                argument,
+                expected,
+                default,
+                requires_effect,
+                escalate_to,
+                factor,
+            } => {
+                validate_rule_argument(&raw.name, contract, argument)?;
+                let requires_effect =
+                    validate_rule_effect(&raw.name, contract, requires_effect)?;
+                let escalate_to =
+                    validate_rule_escalation(&raw.name, base_risk, escalate_to)?;
+                let factor = match factor.as_str() {
+                    "confirmed_overwrite" => BooleanRiskFactor::ConfirmedOverwrite,
+                    _ => {
+                        return Err(ToolRegistryError::InvalidRiskRule {
+                            tool: raw.name.clone(),
+                            message: format!("unknown boolean risk factor '{factor}'"),
+                        })
+                    }
+                };
+                RiskRule::BooleanEquals {
+                    argument: argument.clone(),
+                    expected: *expected,
+                    default: *default,
+                    requires_effect,
+                    escalate_to,
+                    factor,
                 }
             }
         };
@@ -459,6 +473,62 @@ fn parse_risk_rules(
         rules.push(rule);
     }
     Ok(rules)
+}
+
+fn validate_rule_argument(
+    tool: &str,
+    contract: &ToolEffectContract,
+    argument: &str,
+) -> Result<(), ToolRegistryError> {
+    if contract.arguments().contains(argument) {
+        return Ok(());
+    }
+    Err(ToolRegistryError::InvalidRiskRule {
+        tool: tool.to_string(),
+        message: format!("argument '{argument}' is absent from the reviewed contract"),
+    })
+}
+
+fn validate_rule_effect(
+    tool: &str,
+    contract: &ToolEffectContract,
+    raw_effect: &str,
+) -> Result<OperationEffect, ToolRegistryError> {
+    let requires_effect = parse_effects(tool, &[raw_effect.to_string()])?
+        .into_iter()
+        .next()
+        .expect("one effect string yields one parsed effect");
+    let has_effect = contract.effects().contains(&requires_effect)
+        || contract
+            .path_arguments()
+            .values()
+            .any(|path| path.effects().contains(&requires_effect));
+    if has_effect {
+        return Ok(requires_effect);
+    }
+    Err(ToolRegistryError::InvalidRiskRule {
+        tool: tool.to_string(),
+        message: format!("required effect '{raw_effect}' is absent from the reviewed contract"),
+    })
+}
+
+fn validate_rule_escalation(
+    tool: &str,
+    base_risk: RiskLevel,
+    raw_risk: &str,
+) -> Result<RiskLevel, ToolRegistryError> {
+    let escalate_to =
+        RiskLevel::parse(raw_risk).ok_or_else(|| ToolRegistryError::InvalidRiskRule {
+            tool: tool.to_string(),
+            message: format!("unknown escalation risk level '{raw_risk}'"),
+        })?;
+    if escalate_to <= base_risk {
+        return Err(ToolRegistryError::InvalidRiskRule {
+            tool: tool.to_string(),
+            message: "risk rule must strictly raise the tool's base risk".into(),
+        });
+    }
+    Ok(escalate_to)
 }
 
 fn parse_effects(
