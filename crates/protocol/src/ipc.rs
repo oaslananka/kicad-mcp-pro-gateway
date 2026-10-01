@@ -25,7 +25,9 @@ pub const DAEMON_PRODUCT_ID: &str = "kicad-mcp-gateway";
 /// - 3: verified identity provenance is separated from caller-supplied claims.
 /// - 4: pending approvals expose base/effective risk, policy version, and safe
 ///   structured dynamic-risk factors.
-pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 4;
+/// - 5: pending approvals support reviewed risk factors that do not carry
+///   cardinality metadata.
+pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DaemonIdentityView {
@@ -303,8 +305,10 @@ pub struct AuditSummaryView {
 pub struct RiskFactorView {
     pub code: String,
     pub subject: String,
-    pub observed_count: u64,
-    pub threshold: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_count: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<u64>,
     pub escalated_to: String,
 }
 
@@ -358,8 +362,8 @@ mod tests {
     #[test]
     fn a_changed_local_ipc_contract_bumps_the_version_it_is_checked_against() {
         assert_eq!(
-            LOCAL_IPC_PROTOCOL_VERSION, 4,
-            "4 = pending approvals expose structured dynamic-risk evidence; bump this test, \
+            LOCAL_IPC_PROTOCOL_VERSION, 5,
+            "5 = pending approvals support non-cardinality reviewed risk factors; bump this test, \
              whenever a request/response variant or a client-relevant field changes"
         );
         let previous_contract = DaemonIdentityView {
@@ -374,6 +378,47 @@ mod tests {
                 Err(DaemonIdentityError::ProtocolMismatch { .. })
             ),
             "a daemon from the previous contract must be refused, not talked to"
+        );
+    }
+
+    #[test]
+    fn bulk_risk_factor_keeps_numeric_fields_in_json() {
+        let factor = RiskFactorView {
+            code: "bulk_argument_cardinality".into(),
+            subject: "item_ids".into(),
+            observed_count: Some(3),
+            threshold: Some(2),
+            escalated_to: "High".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(factor).unwrap(),
+            serde_json::json!({
+                "code": "bulk_argument_cardinality",
+                "subject": "item_ids",
+                "observed_count": 3,
+                "threshold": 2,
+                "escalated_to": "High"
+            })
+        );
+    }
+
+    #[test]
+    fn overwrite_risk_factor_omits_cardinality_fields_in_json() {
+        let factor = RiskFactorView {
+            code: "confirmed_overwrite".into(),
+            subject: "confirm_overwrite".into(),
+            observed_count: None,
+            threshold: None,
+            escalated_to: "High".into(),
+        };
+        let value = serde_json::to_value(factor).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "code": "confirmed_overwrite",
+                "subject": "confirm_overwrite",
+                "escalated_to": "High"
+            })
         );
     }
 

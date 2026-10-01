@@ -222,6 +222,7 @@ impl<R: ToolCapabilityResolver> PolicyEngine<R> {
             Err(
                 RiskAssessmentError::RequiredArgumentMissing
                 | RiskAssessmentError::ArgumentNotArray
+                | RiskAssessmentError::ArgumentNotBoolean
                 | RiskAssessmentError::ArgumentCardinalityOverflow,
             ) => {
                 return PolicyDecision::Deny {

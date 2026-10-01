@@ -393,6 +393,15 @@ base_argument = "path"
 effects = ["read", "write", "create"]
 required = true
 
+[[tool.risk_rules]]
+kind = "boolean_equals"
+argument = "confirm_overwrite"
+expected = true
+default = false
+requires_effect = "write"
+escalate_to = "high"
+factor = "confirmed_overwrite"
+
 [[tool]]
 name = "kicad_get_project_info"
 capability = "project.read"
