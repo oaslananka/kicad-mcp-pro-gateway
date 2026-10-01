@@ -439,10 +439,8 @@ fn parse_risk_rules(
                 factor,
             } => {
                 validate_rule_argument(&raw.name, contract, argument)?;
-                let requires_effect =
-                    validate_rule_effect(&raw.name, contract, requires_effect)?;
-                let escalate_to =
-                    validate_rule_escalation(&raw.name, base_risk, escalate_to)?;
+                let requires_effect = validate_rule_effect(&raw.name, contract, requires_effect)?;
+                let escalate_to = validate_rule_escalation(&raw.name, base_risk, escalate_to)?;
                 let factor = match factor.as_str() {
                     "confirmed_overwrite" => BooleanRiskFactor::ConfirmedOverwrite,
                     _ => {
