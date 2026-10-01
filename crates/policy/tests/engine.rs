@@ -81,6 +81,52 @@ fn registry() -> TomlToolRegistry {
         minimum_count = 2
         requires_effect = "delete"
         escalate_to = "high"
+
+
+        [[tool]]
+        name = "kicad_create_new_project"
+        capability = "project.write"
+        risk = "normal"
+        arguments = ["path", "name", "confirm_overwrite"]
+        effects = []
+        [[tool.path_arguments]]
+        argument = "path"
+        effects = ["read", "write", "create"]
+        required = true
+        [[tool.path_arguments]]
+        argument = "name"
+        base_argument = "path"
+        effects = ["read", "write", "create"]
+        required = true
+        [[tool.risk_rules]]
+        kind = "boolean_equals"
+        argument = "confirm_overwrite"
+        expected = true
+        default = false
+        requires_effect = "write"
+        escalate_to = "high"
+        factor = "confirmed_overwrite"
+
+        [[tool]]
+        name = "mixed.risk"
+        capability = "pcb.write"
+        risk = "normal"
+        arguments = ["item_ids", "confirm_overwrite"]
+        effects = ["write", "delete"]
+        [[tool.risk_rules]]
+        kind = "argument_cardinality"
+        argument = "item_ids"
+        minimum_count = 2
+        requires_effect = "delete"
+        escalate_to = "high"
+        [[tool.risk_rules]]
+        kind = "boolean_equals"
+        argument = "confirm_overwrite"
+        expected = true
+        default = false
+        requires_effect = "write"
+        escalate_to = "high"
+        factor = "confirmed_overwrite"
         "#,
     )
     .unwrap()
@@ -644,7 +690,7 @@ fn one_item_delete_stays_at_base_normal_risk() {
         ),
         PolicyDecision::Allow {
             capability: Capability::PCB_WRITE,
-            risk: RiskAssessment::new(2, RiskLevel::Normal, RiskLevel::Normal, vec![]).unwrap(),
+            risk: RiskAssessment::new(OPERATION_RISK_POLICY_VERSION, RiskLevel::Normal, RiskLevel::Normal, vec![]).unwrap(),
         }
     );
 }
@@ -669,7 +715,7 @@ fn multiple_item_delete_escalates_to_high_with_safe_factor() {
             reason: ApprovalReason::HighRiskOperation,
             capability: Capability::PCB_WRITE,
             risk: RiskAssessment::new(
-                2,
+                OPERATION_RISK_POLICY_VERSION,
                 RiskLevel::Normal,
                 RiskLevel::High,
                 vec![RiskFactor::BulkArgumentCardinality {
@@ -755,6 +801,173 @@ fn empty_delete_list_never_lowers_base_risk() {
     };
     assert_eq!(risk.base_risk(), RiskLevel::Normal);
     assert_eq!(risk.effective_risk(), RiskLevel::Normal);
+}
+
+fn project_request(
+    subject: SessionId,
+    workspace_id: WorkspaceId,
+    confirm_overwrite: Option<serde_json::Value>,
+) -> OperationRequest {
+    let mut request = request(subject, workspace_id, "kicad_create_new_project");
+    request.arguments.insert("path".into(), serde_json::json!("."));
+    request.arguments.insert("name".into(), serde_json::json!("demo"));
+    if let Some(value) = confirm_overwrite {
+        request.arguments.insert("confirm_overwrite".into(), value);
+    }
+    request
+}
+
+#[test]
+fn omitted_overwrite_uses_reviewed_false_default_and_stays_normal() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Design, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate_with_grant(
+            &project_request(subject, ws.workspace_id, None),
+            &grant,
+            &ws,
+            &clock,
+        ),
+        PolicyDecision::Allow {
+            capability: Capability::PROJECT_WRITE,
+            risk: RiskAssessment::new(
+                OPERATION_RISK_POLICY_VERSION,
+                RiskLevel::Normal,
+                RiskLevel::Normal,
+                vec![],
+            )
+            .unwrap(),
+        }
+    );
+}
+
+#[test]
+fn explicit_false_overwrite_stays_normal() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Design, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    let PolicyDecision::Allow { risk, .. } = engine.evaluate_with_grant(
+        &project_request(subject, ws.workspace_id, Some(serde_json::json!(false))),
+        &grant,
+        &ws,
+        &clock,
+    ) else {
+        panic!("explicit false overwrite must stay allowed at base risk");
+    };
+    assert_eq!(risk.base_risk(), RiskLevel::Normal);
+    assert_eq!(risk.effective_risk(), RiskLevel::Normal);
+    assert_eq!(risk.policy_version(), 3);
+    assert!(risk.factors().is_empty());
+}
+
+#[test]
+fn overwrite_true_requires_local_approval() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Design, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    assert_eq!(
+        engine.evaluate_with_grant(
+            &project_request(subject, ws.workspace_id, Some(serde_json::json!(true))),
+            &grant,
+            &ws,
+            &clock,
+        ),
+        PolicyDecision::RequireApproval {
+            reason: ApprovalReason::HighRiskOperation,
+            capability: Capability::PROJECT_WRITE,
+            risk: RiskAssessment::new(
+                OPERATION_RISK_POLICY_VERSION,
+                RiskLevel::Normal,
+                RiskLevel::High,
+                vec![RiskFactor::ConfirmedOverwrite {
+                    subject: "confirm_overwrite".into(),
+                    escalated_to: RiskLevel::High,
+                }],
+            )
+            .unwrap(),
+        }
+    );
+}
+
+#[test]
+fn present_non_boolean_overwrite_values_fail_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Design, &clock);
+    let engine = PolicyEngine::new(registry());
+
+    for value in [
+        serde_json::Value::Null,
+        serde_json::json!("true"),
+        serde_json::json!(1),
+    ] {
+        assert_eq!(
+            engine.evaluate_with_grant(
+                &project_request(subject, ws.workspace_id, Some(value)),
+                &grant,
+                &ws,
+                &clock,
+            ),
+            PolicyDecision::Deny {
+                reason: DenyReason::MalformedToolArguments,
+            }
+        );
+    }
+}
+
+#[test]
+fn multiple_reviewed_rules_append_factors_deterministically() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = workspace(dir.path());
+    let clock = FakeClock::new_at(OffsetDateTime::UNIX_EPOCH);
+    let subject = SessionId::new();
+    let grant = active_grant(subject, ws.workspace_id, CapabilityProfile::Design, &clock);
+    let engine = PolicyEngine::new(registry());
+    let mut request = request(subject, ws.workspace_id, "mixed.risk");
+    request
+        .arguments
+        .insert("item_ids".into(), serde_json::json!(["a", "b", "c"]));
+    request
+        .arguments
+        .insert("confirm_overwrite".into(), serde_json::json!(true));
+
+    let PolicyDecision::RequireApproval { risk, .. } =
+        engine.evaluate_with_grant(&request, &grant, &ws, &clock)
+    else {
+        panic!("both reviewed escalation rules must produce High risk");
+    };
+
+    assert_eq!(risk.effective_risk(), RiskLevel::High);
+    assert_eq!(
+        risk.factors(),
+        &[
+            RiskFactor::BulkArgumentCardinality {
+                subject: "item_ids".into(),
+                observed_count: 3,
+                threshold: 2,
+                escalated_to: RiskLevel::High,
+            },
+            RiskFactor::ConfirmedOverwrite {
+                subject: "confirm_overwrite".into(),
+                escalated_to: RiskLevel::High,
+            },
+        ]
+    );
 }
 
 #[test]
