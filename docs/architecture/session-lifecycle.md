@@ -129,18 +129,22 @@ decides on the grant.
 ## Schema version and migration
 
 `companion_storage::SCHEMA_VERSION` is the number of applied migrations
-(`4`: `0001_init.sql`, additive `0002_authorization.sql`, additive
-`0003_verified_principal.sql`, then additive
-`0004_audit_principal_verification.sql`). Existing audit rows migrated by
-`0004` remain explicitly `unverified` with null verified-identity evidence;
-the migration never invents historical authentication. A database
-file written by a newer build is refused with
+(`5`: `0001_init.sql`, additive `0002_authorization.sql`, additive
+`0003_verified_principal.sql`, additive
+`0004_audit_principal_verification.sql`, then additive
+`0005_dynamic_risk.sql`). Migration 0005 adds nullable
+`risk_policy_version` and `base_risk` columns plus
+`risk_factors_json TEXT NOT NULL DEFAULT '[]'` to audit rows. Existing v4
+history keeps its previously recorded effective `risk`, while version/base
+remain null and factors remain empty; migration never fabricates a historical
+assessment. Likewise, rows migrated by 0004 remain explicitly `unverified`
+with null verified-identity evidence.
+
+A database file written by a newer build is refused with
 `STORAGE_SCHEMA_FROM_NEWER_BUILD` *before* anything is applied, rather than
-partially interpreted. `0002` only creates `access_grants`,
-`authorization_leases`, and their indexes; `0003` and `0004` only add
-verified-principal/audit-provenance columns. These migrations drop and rewrite
-nothing, so pre-migration rows, revocations, and audit references keep
-resolving.
+partially interpreted. Migrations 0002–0005 are additive and do not rewrite
+pre-existing authority or audit history, so revocations and audit references
+keep resolving.
 
 ## Relationship to policy
 
@@ -148,8 +152,12 @@ The grant state machine answers "is this principal authorized right now".
 It does not answer "is this specific operation allowed" — that is the
 [policy engine](../../crates/policy)'s job, which additionally checks
 workspace authorization, capability mapping, and risk/approval requirements
-per `OperationRequest`. Before a grant is created, the same policy layer
-bounds its requested lifetime by the local profile/risk TTL ceilings in
+per `OperationRequest`. Operation assessment uses policy version 2: static
+tool risk is a floor and only reviewed source-pinned rules may raise effective
+risk. New grants record the current risk-policy version as issuance evidence,
+but an older grant never selects an older or weaker evaluator. Before a grant
+is created, the same policy layer bounds its requested lifetime by the local
+profile/risk TTL ceilings in
 [Authorization TTL policy](../security/authorization-ttl.md). That
 policy-bounded `expires_at` is what the approver sees and what is persisted.
 

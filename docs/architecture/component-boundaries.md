@@ -28,19 +28,23 @@ apps/cli      --local IPC-->  apps/daemon
   decisions happen here. Desktop/CLI process ownership and packaged-sidecar
   rules are defined in the
   [production daemon lifecycle contract](../development/daemon-lifecycle.md).
+- The daemon's IPC v4 approval view exposes only safe risk evidence: effective
+  risk, base risk, policy version, reviewed argument name, counts, threshold,
+  and escalation target. Desktop/CLI may render that evidence but never receive
+  raw item IDs or other operation argument values for explanation.
 
 ### Crate responsibilities
 
 | Crate | Responsibility | Must not do |
 |---|---|---|
 | `protocol` | Wire types shared across daemon/CLI/desktop IPC and the future cloud transport: envelopes, versioning, pairing/session DTOs | No business logic, no I/O |
-| `core` | Strongly-typed domain IDs/models (including the `AccessGrant`/`AuthorizationLease` authorization model and the legacy `Session` adapter), error taxonomy, `Clock` abstraction | No I/O, no KiCad knowledge, no transport state |
+| `core` | Strongly-typed domain IDs/models (including `AccessGrant`/`AuthorizationLease`, immutable `RiskAssessment`/`RiskFactor`, and the legacy `Session` adapter), error taxonomy, `Clock` abstraction | No I/O, no KiCad knowledge, no transport state |
 | `identity` | Device keypair generation, secure-storage abstraction, fingerprinting, signing | No session/workspace logic |
 | `workspace` | Authorized workspace records, canonical path boundary enforcement | No capability/risk logic |
-| `policy` | Capability/profile/risk model, `ToolCapabilityResolver`, deterministic policy evaluator (decides on an `AccessGrant`) | No I/O, no network, no KiCad tool implementations, no transport state |
+| `policy` | Capability/profile policy, source-pinned tool/effect contracts, explicit reviewed risk rules, and deterministic operation evaluation against an `AccessGrant` | No I/O, no network, no KiCad tool implementations, no transport state, no heuristic inference from unreviewed argument shapes |
 | `sessions` | Authorization state machine (`AccessGrant`/`AuthorizationLease`), legacy session state machine, TTL, approvals, revoke/pause/resume, persistence, legacy-row migration, and the transport-connectivity fold | No policy decisions (consumes `policy`); the authorization machine has no transport events at all |
 | `storage` | SQLite persistence + migrations for all non-secret state | No secret material ever written in plaintext |
-| `audit` | Structured audit event creation/query on top of `storage` | No policy decisions |
+| `audit` | Structured audit event creation/query on top of `storage`, including immutable effective/base/version/factor risk evidence | No policy decisions and no risk recomputation |
 | `transport` | Transport trait, mock transport, protocol envelope, reconnect/backoff | No vendor-specific cloud implementation (future work) |
 | `core-bridge` | Adapter to the local kicad-mcp-pro MCP endpoint only | No arbitrary/public network targets, no KiCad domain logic |
 | `checkpoints` | Local safe-snapshot create/list/restore for authorized workspaces | No distributed revision graph (future work) |

@@ -53,7 +53,7 @@ examples cannot.
 | transport envelope | `crates/protocol/tests/property_codec.rs` | every `MessageType` round-trips through the codec with every field intact; version compatibility is decided by the major component alone |
 | local IPC request surface | `crates/protocol/tests/property_codec.rs` | an unknown request tag never decodes; a nested tag is payload data, not a second verb; an id from another domain never decodes as a session id, and every accepted spelling normalizes to one identity |
 | workspace path boundary | `crates/workspace/tests/property_tests.rs` | a request resolves exactly when its lexically normalized form is inside the root, and then resolves to that form; a sibling directory sharing the root's name prefix is never inside; a symlink inside the root resolves and one pointing outside is refused (Unix) |
-| tool registry and effect manifest | `crates/policy/tests/property_registry.rs` | arbitrary and single-byte-mutated manifest text never panics, and never yields a capability, risk, or effect the source did not declare; a capability, risk, or effect outside its closed set is always a load error; an effect contract loads only when source, arguments, effects, and path arguments are all declared |
+| tool registry and effect manifest | `crates/policy/tests/property_registry.rs` | arbitrary and single-byte-mutated manifest text never panics, and never yields a capability, risk, effect, or dynamic risk rule the source did not declare; closed rule kinds/fields, reviewed argument/effect references, threshold, and escalation direction all fail closed when invalid |
 | operation-effect normalization | `crates/policy/tests/operation_effects.rs` | every member of a multi-path argument is normalized; generated workspace-relative paths satisfy containment; a non-string member denies normalization |
 
 ### Corpora
@@ -165,8 +165,12 @@ PROPTEST_MAX_SHRINK_ITERS=100000 cargo test -p companion-protocol \
 - workspace escape flow: valid workspace vs malicious target outside it
 - caller/argument mismatch flow: safe caller `target_path` vs escaping argument
   path is denied and never reaches `tools/call`
-- high-risk flow: valid session + permitted capability + high-risk operation
+- high-risk flow: valid grant + permitted capability + high-risk operation
   → additional approval required → allow-once → operation runs
+- argument-aware risk flow: the same reviewed `pcb_delete_items` tool stays
+  Normal for one `item_ids` entry and becomes High for two or more; the
+  pending IPC view exposes only safe count/threshold metadata and the tool is
+  never called before approval
 - revocation flow: active → revoke → reconnect transport → operation still
   denied
 
@@ -231,3 +235,10 @@ The live report is profile-dependent. `registry_not_live` therefore means
 `snapshot_not_live` shows public tools omitted by the active profile. Staleness
 is evaluated against the SHA-pinned public-tool snapshot. Any live tool that
 is unclassified remains denied by `ToolCapabilityResolver`.
+
+Dynamic risk rules are covered by both parser/property tests and
+same-tool/different-arguments policy regressions. The current bounded rule
+surface is exactly `pcb_delete_items.item_ids >= 2 -> High`; tests pin missing
+and scalar `item_ids` as malformed, preserve static High as a floor, verify
+schema-v5 audit round trips, and assert that raw fixture UUIDs never appear in
+pending IPC or desktop approval rendering.
