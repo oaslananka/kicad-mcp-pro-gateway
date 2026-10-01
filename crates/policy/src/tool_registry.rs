@@ -773,8 +773,11 @@ mod tests {
 
     #[test]
     fn parses_reviewed_boolean_overwrite_rule() {
-        let source =
-            pinned_project_overwrite_tool(OVERWRITE_RULE, "[\"read\", \"write\", \"create\"]", "normal");
+        let source = pinned_project_overwrite_tool(
+            OVERWRITE_RULE,
+            "[\"read\", \"write\", \"create\"]",
+            "normal",
+        );
         let registry = TomlToolRegistry::from_toml_str(&source).unwrap();
 
         assert_eq!(
