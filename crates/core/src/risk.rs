@@ -143,7 +143,6 @@ mod tests {
         assert_eq!(raised.effective_risk(), RiskLevel::High);
     }
 
-
     #[test]
     fn legacy_bulk_factor_json_deserializes_unchanged() {
         let raw = r#"{"code":"bulk_argument_cardinality","subject":"item_ids","observed_count":3,"threshold":2,"escalated_to":"High"}"#;
@@ -194,6 +193,9 @@ mod tests {
                 "escalated_to": "High"
             })
         );
-        assert_eq!(serde_json::from_value::<RiskFactor>(encoded).unwrap(), factor);
+        assert_eq!(
+            serde_json::from_value::<RiskFactor>(encoded).unwrap(),
+            factor
+        );
     }
 }
