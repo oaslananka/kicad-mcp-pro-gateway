@@ -4,7 +4,7 @@
 //! `RequireApproval`. This function performs no I/O and has no side
 //! effects — the same inputs always produce the same decision. It implements
 //! exactly the ordered checks in `docs/architecture/data-flow.md` steps
-//! 4-10, in the same order.
+//! 4-11, in the same order.
 //!
 //! Authority comes from an [`AccessGrant`], never from a transport-era
 //! [`Session`]. [`PolicyEngine::evaluate`] exists only as the compatibility
@@ -238,7 +238,7 @@ impl<R: ToolCapabilityResolver> PolicyEngine<R> {
             }
         };
 
-        if assessment.effective_risk >= RiskLevel::High {
+        if assessment.effective_risk() >= RiskLevel::High {
             return PolicyDecision::RequireApproval {
                 reason: ApprovalReason::HighRiskOperation,
                 risk: assessment,

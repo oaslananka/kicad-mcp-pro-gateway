@@ -426,10 +426,10 @@ fn build_audit_event(
             PolicyDecision::Allow { capability, risk } => (
                 PolicyResultKind::Allow,
                 Some(*capability),
-                Some(risk.effective_risk),
-                Some(risk.policy_version),
-                Some(risk.base_risk),
-                risk.factors.clone(),
+                Some(risk.effective_risk()),
+                Some(risk.policy_version()),
+                Some(risk.base_risk()),
+                risk.factors().to_vec(),
             ),
             PolicyDecision::Deny { .. } => {
                 (PolicyResultKind::Deny, None, None, None, None, Vec::new())
@@ -439,10 +439,10 @@ fn build_audit_event(
             } => (
                 PolicyResultKind::RequireApproval,
                 Some(*capability),
-                Some(risk.effective_risk),
-                Some(risk.policy_version),
-                Some(risk.base_risk),
-                risk.factors.clone(),
+                Some(risk.effective_risk()),
+                Some(risk.policy_version()),
+                Some(risk.base_risk()),
+                risk.factors().to_vec(),
             ),
         };
     let verified = grant

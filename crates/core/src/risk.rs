@@ -42,12 +42,12 @@ pub struct RiskFactor {
     pub escalated_to: RiskLevel,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RiskAssessment {
-    pub policy_version: u32,
-    pub base_risk: RiskLevel,
-    pub effective_risk: RiskLevel,
-    pub factors: Vec<RiskFactor>,
+    policy_version: u32,
+    base_risk: RiskLevel,
+    effective_risk: RiskLevel,
+    factors: Vec<RiskFactor>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -80,6 +80,22 @@ impl RiskAssessment {
             effective_risk,
             factors,
         })
+    }
+
+    pub const fn policy_version(&self) -> u32 {
+        self.policy_version
+    }
+
+    pub const fn base_risk(&self) -> RiskLevel {
+        self.base_risk
+    }
+
+    pub const fn effective_risk(&self) -> RiskLevel {
+        self.effective_risk
+    }
+
+    pub fn factors(&self) -> &[RiskFactor] {
+        &self.factors
     }
 }
 
@@ -117,13 +133,13 @@ mod tests {
     fn risk_assessment_accepts_equal_or_higher_effective_risk() {
         let equal = RiskAssessment::new(2, RiskLevel::Normal, RiskLevel::Normal, vec![])
             .expect("equal risk preserves the static floor");
-        assert_eq!(equal.policy_version, 2);
-        assert_eq!(equal.base_risk, RiskLevel::Normal);
-        assert_eq!(equal.effective_risk, RiskLevel::Normal);
-        assert!(equal.factors.is_empty());
+        assert_eq!(equal.policy_version(), 2);
+        assert_eq!(equal.base_risk(), RiskLevel::Normal);
+        assert_eq!(equal.effective_risk(), RiskLevel::Normal);
+        assert!(equal.factors().is_empty());
 
         let raised = RiskAssessment::new(2, RiskLevel::Normal, RiskLevel::High, vec![])
             .expect("higher effective risk is allowed");
-        assert_eq!(raised.effective_risk, RiskLevel::High);
+        assert_eq!(raised.effective_risk(), RiskLevel::High);
     }
 }

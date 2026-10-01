@@ -703,8 +703,8 @@ fn larger_bulk_delete_preserves_observed_count_without_raising_above_high() {
     let PolicyDecision::RequireApproval { risk, .. } = decision else {
         panic!("three-item delete must require approval");
     };
-    assert_eq!(risk.effective_risk, RiskLevel::High);
-    assert_eq!(risk.factors[0].observed_count, 3);
+    assert_eq!(risk.effective_risk(), RiskLevel::High);
+    assert_eq!(risk.factors()[0].observed_count, 3);
 }
 
 #[test]
@@ -746,8 +746,8 @@ fn empty_delete_list_never_lowers_base_risk() {
     ) else {
         panic!("empty reviewed delete request should remain at base risk");
     };
-    assert_eq!(risk.base_risk, RiskLevel::Normal);
-    assert_eq!(risk.effective_risk, RiskLevel::Normal);
+    assert_eq!(risk.base_risk(), RiskLevel::Normal);
+    assert_eq!(risk.effective_risk(), RiskLevel::Normal);
 }
 
 #[test]
@@ -770,9 +770,9 @@ fn static_high_risk_remains_high_without_dynamic_factors() {
     ) else {
         panic!("static high-risk tool must still require approval");
     };
-    assert_eq!(risk.base_risk, RiskLevel::High);
-    assert_eq!(risk.effective_risk, RiskLevel::High);
-    assert!(risk.factors.is_empty());
+    assert_eq!(risk.base_risk(), RiskLevel::High);
+    assert_eq!(risk.effective_risk(), RiskLevel::High);
+    assert!(risk.factors().is_empty());
 }
 
 #[test]
