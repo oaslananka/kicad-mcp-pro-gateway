@@ -11,10 +11,10 @@ use std::time::Duration;
 use companion_core::{
     AccessGrant, ApprovalDecisionKind, AuditEvent, AuthorizationPrincipal, CapabilityProfile,
     CompanionError, DeviceId, ExecutionStatus, GrantKind, GrantRequest, OperationId,
-    OperationRequest, PolicyResultKind, PrincipalAssurance, RiskLevel, Session, SessionId,
+    OperationRequest, PolicyResultKind, PrincipalAssurance, RiskAssessment, Session, SessionId,
     VerifiedPrincipal, WorkspaceId,
 };
-use companion_policy::PolicyDecision;
+use companion_policy::{PolicyDecision, OPERATION_RISK_POLICY_VERSION};
 use companion_protocol::{Envelope, MessageType};
 use companion_sessions::{new_unpaired_session, SessionEvent, SessionTransition};
 use companion_transport::{InboundEnvelope, Transport, TransportError};
@@ -186,6 +186,7 @@ async fn handle_session_request_with_principal(
                 task_scope: payload.task_scope,
                 kind: GrantKind::Standing,
                 lifetime: ttl,
+                risk_policy_version: OPERATION_RISK_POLICY_VERSION,
             },
             state.clock.as_ref().now(),
         );
@@ -420,19 +421,30 @@ fn build_audit_event(
     session: Option<&Session>,
     decision: &PolicyDecision,
 ) -> AuditEvent {
-    let (policy_result, capability, risk) = match decision {
-        PolicyDecision::Allow { capability, risk } => {
-            (PolicyResultKind::Allow, Some(*capability), Some(*risk))
-        }
-        PolicyDecision::Deny { .. } => (PolicyResultKind::Deny, None, None),
-        PolicyDecision::RequireApproval {
-            capability, risk, ..
-        } => (
-            PolicyResultKind::RequireApproval,
-            Some(*capability),
-            Some(*risk),
-        ),
-    };
+    let (policy_result, capability, risk, risk_policy_version, base_risk, risk_factors) =
+        match decision {
+            PolicyDecision::Allow { capability, risk } => (
+                PolicyResultKind::Allow,
+                Some(*capability),
+                Some(risk.effective_risk()),
+                Some(risk.policy_version()),
+                Some(risk.base_risk()),
+                risk.factors().to_vec(),
+            ),
+            PolicyDecision::Deny { .. } => {
+                (PolicyResultKind::Deny, None, None, None, None, Vec::new())
+            }
+            PolicyDecision::RequireApproval {
+                capability, risk, ..
+            } => (
+                PolicyResultKind::RequireApproval,
+                Some(*capability),
+                Some(risk.effective_risk()),
+                Some(risk.policy_version()),
+                Some(risk.base_risk()),
+                risk.factors().to_vec(),
+            ),
+        };
     let verified = grant
         .map(|grant| &grant.principal)
         .filter(|principal| principal.is_verified())
@@ -461,6 +473,9 @@ fn build_audit_event(
         requested_tool: request.tool_name.clone(),
         capability,
         risk,
+        risk_policy_version,
+        base_risk,
+        risk_factors,
         policy_result,
         approval_decision: None,
         execution_status: ExecutionStatus::NotExecuted,
@@ -774,7 +789,7 @@ pub struct PendingSummary {
     pub session_id: SessionId,
     pub workspace_id: WorkspaceId,
     pub tool_name: String,
-    pub risk: RiskLevel,
+    pub risk: RiskAssessment,
 }
 
 pub fn list_pending_operations(state: &Arc<DaemonState>) -> Vec<PendingSummary> {
@@ -788,7 +803,7 @@ pub fn list_pending_operations(state: &Arc<DaemonState>) -> Vec<PendingSummary> 
             session_id: p.request.session_id,
             workspace_id: p.request.workspace_id,
             tool_name: p.request.tool_name.clone(),
-            risk: p.risk,
+            risk: p.risk.clone(),
         })
         .collect()
 }
@@ -1472,6 +1487,9 @@ mod audit_fail_closed_tests {
             requested_tool: "filler".into(),
             capability: None,
             risk: None,
+            risk_policy_version: None,
+            base_risk: None,
+            risk_factors: vec![],
             policy_result: PolicyResultKind::Allow,
             approval_decision: None,
             execution_status: ExecutionStatus::NotExecuted,

@@ -34,12 +34,13 @@
 | T10 | Inbound public listener becomes an attack surface | No inbound TCP listener is opened; local IPC binds only to a named pipe / Unix-domain socket, and all cloud connectivity is outbound-initiated |
 | T11 | UI or CLI bypasses daemon authorization | Both are thin clients over the same local IPC API; neither embeds policy logic |
 | T12 | Multiple daemon instances corrupt shared state | Exclusive OS advisory lock against the state directory before any DB/identity mutation; clients require a matching product/protocol/version identity before forwarding privileged IPC |
-| T13 | High-risk operation executes without an extra approval step | Risk is modeled separately from capability; `RequireApproval` results are enforced even when the session already holds the capability |
+| T13 | High-risk operation executes without an extra approval step | Risk is modeled separately from capability; static risk is a floor, reviewed operation rules may only raise it, and `RequireApproval` is enforced even when the grant already holds the capability |
 | T14 | Replay of a captured protocol message | Protocol envelopes carry `message_id`/`correlation_id`/`timestamp`; state-changing message handling is designed for replay detection once a real relay exists (see [protocol/README.md](../protocol/README.md)) |
 | T15 | Arbitrary shell / arbitrary filesystem access via a "convenience" tool mapping | Forbidden outright in V1; not modeled as a capability at all |
 | T16 | Relay traffic intended for another registered device is accepted locally | `session.request` and `operation.request` envelopes must carry the persistent local `device_id`; operation requests are additionally checked against `session.device_id` before policy evaluation can lead to execution |
 | T17 | An operation executes although the audit evidence for it could not be durably recorded | Fail-closed pre-execution audit gate: no `tools/call` and no approval execution without a committed record, reads and writes alike, with approval decisions persisted before execution — see [audit-fail-closed.md](audit-fail-closed.md) |
 | T18 | Desktop/CLI starts a stale or substituted local daemon | Launch paths are fixed to the Tauri `externalBin` or packaged CLI sibling; a bounded identity/version handshake runs on the same connection as every privileged request, and an incompatible endpoint never triggers a process/endpoint fallback |
+| T19 | A caller shapes destructive arguments to stay on a permissive static risk classification | Only source-pinned reviewed risk rules can raise risk; policy version 2 currently escalates `pcb_delete_items.item_ids` at cardinality 2+, after normalized effects/workspace containment and capability validation. Missing or non-array risk-relevant arguments fail closed, and no generic array/delete heuristic can silently widen authority. |
 
 ## Explicitly out of scope for V1 (tracked, not solved here)
 

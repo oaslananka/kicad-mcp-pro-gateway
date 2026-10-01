@@ -22,7 +22,10 @@ pub const DAEMON_PRODUCT_ID: &str = "kicad-mcp-gateway";
 ///   view. A version-1 client cannot see that authority is separate from
 ///   transport connectivity, so it must be retired rather than left to run
 ///   against a daemon that answers with views it will misread.
-pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 3;
+/// - 3: verified identity provenance is separated from caller-supplied claims.
+/// - 4: pending approvals expose base/effective risk, policy version, and safe
+///   structured dynamic-risk factors.
+pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DaemonIdentityView {
@@ -296,6 +299,15 @@ pub struct AuditSummaryView {
     pub note: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RiskFactorView {
+    pub code: String,
+    pub subject: String,
+    pub observed_count: u64,
+    pub threshold: u64,
+    pub escalated_to: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PendingApprovalView {
     pub operation_id: OperationId,
@@ -303,7 +315,11 @@ pub struct PendingApprovalView {
     pub workspace_id: WorkspaceId,
     pub workspace: Option<WorkspaceInfo>,
     pub tool_name: String,
+    /// Effective risk used by the approval gate.
     pub risk: String,
+    pub base_risk: String,
+    pub risk_policy_version: u32,
+    pub risk_factors: Vec<RiskFactorView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -342,8 +358,8 @@ mod tests {
     #[test]
     fn a_changed_local_ipc_contract_bumps_the_version_it_is_checked_against() {
         assert_eq!(
-            LOCAL_IPC_PROTOCOL_VERSION, 3,
-            "3 = identity source is separate from claims; bump this test, \
+            LOCAL_IPC_PROTOCOL_VERSION, 4,
+            "4 = pending approvals expose structured dynamic-risk evidence; bump this test, \
              whenever a request/response variant or a client-relevant field changes"
         );
         let previous_contract = DaemonIdentityView {

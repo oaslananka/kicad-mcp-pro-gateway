@@ -29,6 +29,7 @@ fn requested(kind: GrantKind) -> AccessGrant {
             task_scope: "boundary test".into(),
             kind,
             lifetime: Duration::hours(1),
+            risk_policy_version: 1,
         },
         OffsetDateTime::UNIX_EPOCH,
     )

@@ -27,6 +27,78 @@ impl RiskLevel {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RiskFactorCode {
+    BulkArgumentCardinality,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RiskFactor {
+    pub code: RiskFactorCode,
+    pub subject: String,
+    pub observed_count: u64,
+    pub threshold: u64,
+    pub escalated_to: RiskLevel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RiskAssessment {
+    policy_version: u32,
+    base_risk: RiskLevel,
+    effective_risk: RiskLevel,
+    factors: Vec<RiskFactor>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum RiskAssessmentError {
+    #[error("effective risk cannot be below base risk")]
+    EffectiveRiskBelowBase,
+    #[error("reviewed risk rule requires an effect absent from normalized operation effects")]
+    RequiredEffectMissing,
+    #[error("reviewed risk rule argument is missing")]
+    RequiredArgumentMissing,
+    #[error("reviewed risk rule argument must be an array")]
+    ArgumentNotArray,
+    #[error("reviewed risk rule argument cardinality cannot be represented")]
+    ArgumentCardinalityOverflow,
+}
+
+impl RiskAssessment {
+    pub fn new(
+        policy_version: u32,
+        base_risk: RiskLevel,
+        effective_risk: RiskLevel,
+        factors: Vec<RiskFactor>,
+    ) -> Result<Self, RiskAssessmentError> {
+        if effective_risk < base_risk {
+            return Err(RiskAssessmentError::EffectiveRiskBelowBase);
+        }
+        Ok(Self {
+            policy_version,
+            base_risk,
+            effective_risk,
+            factors,
+        })
+    }
+
+    pub const fn policy_version(&self) -> u32 {
+        self.policy_version
+    }
+
+    pub const fn base_risk(&self) -> RiskLevel {
+        self.base_risk
+    }
+
+    pub const fn effective_risk(&self) -> RiskLevel {
+        self.effective_risk
+    }
+
+    pub fn factors(&self) -> &[RiskFactor] {
+        &self.factors
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,5 +119,27 @@ mod tests {
     #[test]
     fn unknown_risk_level_name_does_not_parse() {
         assert_eq!(RiskLevel::parse("catastrophic"), None);
+    }
+
+    #[test]
+    fn risk_assessment_rejects_effective_risk_below_base() {
+        assert_eq!(
+            RiskAssessment::new(2, RiskLevel::High, RiskLevel::Normal, vec![]),
+            Err(RiskAssessmentError::EffectiveRiskBelowBase)
+        );
+    }
+
+    #[test]
+    fn risk_assessment_accepts_equal_or_higher_effective_risk() {
+        let equal = RiskAssessment::new(2, RiskLevel::Normal, RiskLevel::Normal, vec![])
+            .expect("equal risk preserves the static floor");
+        assert_eq!(equal.policy_version(), 2);
+        assert_eq!(equal.base_risk(), RiskLevel::Normal);
+        assert_eq!(equal.effective_risk(), RiskLevel::Normal);
+        assert!(equal.factors().is_empty());
+
+        let raised = RiskAssessment::new(2, RiskLevel::Normal, RiskLevel::High, vec![])
+            .expect("higher effective risk is allowed");
+        assert_eq!(raised.effective_risk(), RiskLevel::High);
     }
 }

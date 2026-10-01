@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api/client";
 import { usePolling } from "../hooks/usePolling";
-import type { PendingApprovalView, SessionView } from "../api/types";
+import type { PendingApprovalView, RiskFactorView, SessionView } from "../api/types";
 
 function statusBadgeClass(status: string): string {
   if (status === "Active") return "badge active";
@@ -12,6 +12,13 @@ function statusBadgeClass(status: string): string {
 function riskBadgeClass(risk: string): string {
   if (risk === "High" || risk === "Critical") return "badge risk-high";
   return "badge";
+}
+
+function riskFactorSummary(factor: RiskFactorView): string {
+  if (factor.code === "bulk_argument_cardinality") {
+    return `${factor.threshold}+ items triggers local approval; this request contains ${factor.observed_count} items.`;
+  }
+  return "Additional reviewed risk factor";
 }
 
 export default function SessionsScreen() {
@@ -204,9 +211,23 @@ export default function SessionsScreen() {
               <span className="mono">{opDialog.tool_name}</span>
             </div>
             <div className="row">
-              <span className="label">Risk</span>
+              <span className="label">Effective risk</span>
               <span className={riskBadgeClass(opDialog.risk)}>{opDialog.risk}</span>
             </div>
+            <div className="row">
+              <span className="label">Base risk</span>
+              <span>{opDialog.base_risk}</span>
+            </div>
+            <div className="row">
+              <span className="label">Risk policy</span>
+              <span>{`Policy v${opDialog.risk_policy_version}`}</span>
+            </div>
+            {opDialog.risk_factors.map((factor, index) => (
+              <div className="row" key={`${factor.code}:${index}`}>
+                <span className="label">Risk reason</span>
+                <span>{riskFactorSummary(factor)}</span>
+              </div>
+            ))}
             <div className="row">
               <span className="label">Workspace</span>
               <span className="mono" style={{ overflowWrap: "break-word" }}>

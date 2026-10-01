@@ -75,6 +75,14 @@ export interface AuditSummaryView {
   note: string;
 }
 
+export interface RiskFactorView {
+  code: string;
+  subject: string;
+  observed_count: number;
+  threshold: number;
+  escalated_to: string;
+}
+
 export interface PendingApprovalView {
   operation_id: string;
   session_id: string;
@@ -82,6 +90,9 @@ export interface PendingApprovalView {
   workspace: WorkspaceInfo | null;
   tool_name: string;
   risk: string;
+  base_risk: string;
+  risk_policy_version: number;
+  risk_factors: RiskFactorView[];
 }
 
 

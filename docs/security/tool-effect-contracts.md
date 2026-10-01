@@ -7,7 +7,9 @@ For every operation it performs this deterministic flow:
 tool name + forwarded arguments + SHA-pinned reviewed contract
 → NormalizedOperationEffects
 → workspace containment
-→ capability → risk → approval
+→ capability check
+→ static base risk + reviewed risk rules → RiskAssessment
+→ approval
 ```
 
 The trusted source is `crates/policy/assets/tool_registry.toml`. Its top-level
@@ -60,6 +62,48 @@ denied.
 categories. They are security-boundary facts, not a reimplementation of KiCad
 domain behavior. Contract review consumes upstream signatures and catalog
 metadata; it does not duplicate PCB/schematic semantics in Gateway.
+
+## Reviewed operation-risk rules
+
+The static `risk` on each registry entry is a floor: operation-specific
+assessment may raise it but can never lower it. Dynamic risk is policy version
+`2` and is driven only by typed `risk_rules` declared on the same
+source-pinned reviewed tool contract. Gateway does not infer risk from generic
+JSON shape, from a tool name, or from an effect such as `delete` by itself.
+
+The first reviewed rule is intentionally narrow:
+
+```toml
+[[tool.risk_rules]]
+kind = "argument_cardinality"
+argument = "item_ids"
+minimum_count = 2
+requires_effect = "delete"
+escalate_to = "high"
+```
+
+It applies only to `pcb_delete_items`. One or zero IDs keep that tool's
+static `Normal` risk; two or more IDs raise the effective risk to `High`
+and therefore require local approval. The rule is accepted only because
+`item_ids` and the `delete` effect are both present in that tool's reviewed
+contract. Registry loading rejects rules that reference an unknown argument,
+a missing required effect, a threshold below two, a non-escalating target, a
+duplicate rule, or a tool without an effect contract.
+
+At evaluation time, risk rules run only after effect normalization, workspace
+containment, and capability validation. A risk-relevant argument that is
+missing or has the wrong JSON type fails closed as malformed tool arguments;
+Gateway never coerces a scalar into an array. The resulting `RiskAssessment`
+records policy version, base risk, effective risk, and safe factors containing
+only reviewed metadata such as argument name, observed count, threshold, and
+escalation target. Raw item IDs, paths, credentials, source text, and project
+contents are not risk-factor data and are not persisted or rendered.
+
+This tranche deliberately leaves the production upstream pin at
+`oaslananka/kicad-mcp-pro@f641a92596ab7adc1e134287578b1ae5ff9580ad`.
+Issue #20 remains open for later workspace-context, path-breadth, and
+released-upstream consequence dimensions; those dimensions must enter through
+equally explicit reviewed facts rather than heuristics.
 
 ## Upstream reviewed-manifest transition
 

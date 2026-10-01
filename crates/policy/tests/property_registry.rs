@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 
 use companion_core::{Capability, RiskLevel};
 use companion_policy::{
-    OperationEffect, TomlToolRegistry, ToolCapabilityResolver, ToolCatalogSnapshot,
+    OperationEffect, RiskRule, TomlToolRegistry, ToolCapabilityResolver, ToolCatalogSnapshot,
     ToolEffectContract, TOOL_EFFECT_CONTRACT_VERSION,
 };
 use proptest::prelude::*;
@@ -480,6 +480,27 @@ fn a_tool_that_can_mutate_a_project_is_never_classified_low_risk() {
             "{name} can write, create, or delete but is classified low risk"
         );
     }
+}
+
+#[test]
+fn reviewed_bulk_delete_rule_is_exact_and_source_declared() {
+    let registry = TomlToolRegistry::try_embedded().expect("reviewed registry loads");
+    assert_eq!(
+        registry.risk_rules("pcb_delete_items"),
+        &[RiskRule::ArgumentCardinality {
+            argument: "item_ids".into(),
+            minimum_count: 2,
+            requires_effect: OperationEffect::Delete,
+            escalate_to: RiskLevel::High,
+        }]
+    );
+    assert!(
+        REVIEWED_REGISTRY.contains("argument = \"item_ids\"")
+            && REVIEWED_REGISTRY.contains("minimum_count = 2")
+            && REVIEWED_REGISTRY.contains("requires_effect = \"delete\"")
+            && REVIEWED_REGISTRY.contains("escalate_to = \"high\""),
+        "the runtime rule must be visibly declared in the reviewed asset"
+    );
 }
 
 /// The same review from the other direction: a tool whose reviewed effects are

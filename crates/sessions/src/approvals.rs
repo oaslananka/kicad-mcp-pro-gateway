@@ -126,6 +126,7 @@ mod tests {
                 task_scope: "task".into(),
                 kind: GrantKind::OneShot,
                 lifetime: time::Duration::hours(1),
+                risk_policy_version: 1,
             },
             clock.now(),
         );
@@ -156,6 +157,7 @@ mod tests {
                     task_scope: "task".into(),
                     kind: GrantKind::Standing,
                     lifetime: time::Duration::hours(1),
+                    risk_policy_version: 1,
                 },
                 clock.now(),
             )

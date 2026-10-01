@@ -24,16 +24,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Release Documentation**: Added `docs/development/release.md` detailing code signing (macOS Developer ID, Windows Authenticode), notarization, release engineering, and multi-OS manual QA procedures.
 - **Full Catalog Disposition & Snapshot Reconciliation**: Enforced 100% explicit disposition coverage for upstream tool catalog snapshots and automated reconciliation tooling.
 - **Trusted Tool-Effect Contracts**: Added source-pinned read/write/create/delete normalization and argument-path containment for reviewed V1 tools; unreviewed effects now fail closed independently of caller `target_path`.
+- **Reviewed Argument-Aware Risk Assessment**: Added policy-version-2 `RiskAssessment` evidence with static risk as a non-lowerable floor and typed source-pinned escalation rules. The first bounded rule raises `pcb_delete_items` from Normal to High when `item_ids` contains two or more entries; missing/non-array risk-relevant arguments fail closed, and no generic array/delete heuristic is used.
 - **Property/Fuzz Coverage for Trust Boundaries**: Added `proptest` targets for the local IPC framing and its size limit, the transport envelope, the local IPC request surface, the workspace path boundary, and the tool-registry/effect-manifest parsers, with in-code historical corpora for the inputs that have actually reached each boundary; the bounded CI lane and the longer local lane are documented in [`docs/development/testing.md`](docs/development/testing.md#property-and-fuzz-testing).
 
 ### Changed
 
-- **Local IPC Contract Version 2**: The desktop/CLI IPC contract version is now `2`, bumped in the
-  same change that added `ListAccessGrants`/`ListAuthorizationLeases` and the separate
-  authorization/transport view fields. Version 1 is rejected by the readiness handshake, so a client
-  that cannot see authorization state separately from transport connectivity is retired instead of
-  talking to a daemon whose views it would misread; a wrong-protocol endpoint still receives no
-  lifecycle or privileged request and no alternate endpoint is tried. The version history lives on
+- **Local IPC Contract Version 4**: The current desktop/CLI IPC contract is `4`.
+  Version 2 introduced separate authorization/transport views, version 3 separated verified identity
+  provenance from caller claims, and version 4 adds base/effective risk, risk-policy version, and safe
+  reviewed factor metadata to pending approvals. Older incompatible clients are rejected by the
+  readiness handshake; a wrong-protocol endpoint receives no lifecycle or privileged request and no
+  alternate endpoint is tried. The version history lives on
   `companion_protocol::LOCAL_IPC_PROTOCOL_VERSION` and is pinned by a test.
 - **Authorization Wire Spellings**: `AccessGrantView.authorization_status`,
   `grant_kind`, and `principal_assurance` now report the model's own `snake_case` spellings
@@ -45,6 +46,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Reconciled documentation maturity and status claims to reflect pre-alpha / unreleased development state.
 
 ### Security
+
+- **Dynamic-Risk Audit Evidence and Approval UX**: SQLite schema version 5 adds immutable effective/base risk, policy version, and safe factor evidence to audit rows while preserving v4 history without inventing missing facts. Pending approvals reuse the same assessment, approval-time policy revalidation must reproduce it before execution, and IPC/desktop explanations expose counts and reviewed field names without raw item IDs or other argument values.
 
 - **Verified Remote Principal Binding Foundation**: Added a provider-neutral `VerifiedPrincipal` model kept separate from the remote-supplied display claim, atomically couples inbound envelopes to authenticated actor context, persists only safe verification metadata in schema version 3, and refuses a verified grant when the current transport omits or substitutes its binding. The mock transport remains unauthenticated by default and no production credential verifier is claimed yet.
 

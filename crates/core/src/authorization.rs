@@ -271,6 +271,9 @@ pub struct GrantRequest {
     /// Already policy-bounded by the caller (see
     /// `docs/security/authorization-ttl.md`).
     pub lifetime: Duration,
+    /// Policy version in force when this grant request was recorded.
+    /// Operation-time evaluation still uses the currently running policy.
+    pub risk_policy_version: u32,
 }
 
 /// The explicit authorization authority record. Nothing here is derived from
@@ -339,7 +342,7 @@ impl AccessGrant {
             revocation_reason: None,
             consumed_at: None,
             issued_lease_id: None,
-            risk_policy_version: 1,
+            risk_policy_version: request.risk_policy_version,
             approval_policy: ApprovalPolicy::Standard,
             status: AuthorizationStatus::PendingApproval,
             migrated_from_session_id: None,
@@ -788,6 +791,7 @@ mod tests {
             task_scope: "inspect the board".into(),
             kind,
             lifetime: Duration::hours(1),
+            risk_policy_version: 1,
         }
     }
 
@@ -812,6 +816,16 @@ mod tests {
         assert_eq!(grant.status, AuthorizationStatus::PendingApproval);
         assert!(!grant.is_usable_at(now()));
         assert!(!grant.is_usable_at(now() - Duration::hours(1)));
+    }
+
+    #[test]
+    fn requested_grant_records_supplied_risk_policy_version() {
+        let mut request = grant_request(GrantKind::Standing);
+        request.risk_policy_version = 2;
+
+        let grant = AccessGrant::requested(request, now());
+
+        assert_eq!(grant.risk_policy_version, 2);
     }
 
     fn verified_actor(binding: &str) -> VerifiedPrincipal {

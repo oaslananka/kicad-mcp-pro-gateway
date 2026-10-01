@@ -4,7 +4,7 @@ use time::OffsetDateTime;
 use crate::authorization::{PrincipalAssurance, PrincipalVerificationSource};
 use crate::capability::Capability;
 use crate::ids::{OperationId, SessionId, WorkspaceId};
-use crate::risk::RiskLevel;
+use crate::risk::{RiskFactor, RiskLevel};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PolicyResultKind {
@@ -51,7 +51,15 @@ pub struct AuditEvent {
     pub authentication_strength: Option<String>,
     pub requested_tool: String,
     pub capability: Option<Capability>,
+    /// Effective risk used for the policy decision.
     pub risk: Option<RiskLevel>,
+    /// Risk-policy version that produced this assessment. Historical rows may
+    /// be absent because older schemas did not record it.
+    pub risk_policy_version: Option<u32>,
+    /// Static reviewed tool risk before any argument/effect escalation.
+    pub base_risk: Option<RiskLevel>,
+    /// Safe, structured assessment evidence. Never contains raw arguments.
+    pub risk_factors: Vec<RiskFactor>,
     pub policy_result: PolicyResultKind,
     pub approval_decision: Option<ApprovalDecisionKind>,
     pub execution_status: ExecutionStatus,

@@ -14,6 +14,17 @@ use crate::operation_effects::{OperationEffect, ToolEffectContract};
 use crate::tool_catalog::ToolCatalogSnapshot;
 
 pub const TOOL_EFFECT_CONTRACT_VERSION: u32 = 1;
+pub const OPERATION_RISK_POLICY_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RiskRule {
+    ArgumentCardinality {
+        argument: String,
+        minimum_count: u64,
+        requires_effect: OperationEffect,
+        escalate_to: RiskLevel,
+    },
+}
 
 pub trait ToolCapabilityResolver: Send + Sync {
     fn resolve(&self, tool_name: &str) -> Option<(Capability, RiskLevel)>;
@@ -23,6 +34,10 @@ pub trait ToolCapabilityResolver: Send + Sync {
     /// closed until they explicitly implement effect normalization.
     fn effect_contract(&self, _tool_name: &str) -> Option<&ToolEffectContract> {
         None
+    }
+
+    fn risk_rules(&self, _tool_name: &str) -> &[RiskRule] {
+        &[]
     }
 }
 
@@ -50,6 +65,8 @@ pub enum ToolRegistryError {
     IncompleteEffectContract { tool: String, message: String },
     #[error("tool effect contract for '{tool}' is invalid: {message}")]
     InvalidEffectContract { tool: String, message: String },
+    #[error("risk rule for '{tool}' is invalid: {message}")]
+    InvalidRiskRule { tool: String, message: String },
     #[error("embedded tool registry contains stale entry '{0}'")]
     StaleTool(String),
 }
@@ -81,6 +98,24 @@ struct ToolEntryRaw {
     effects: Option<Vec<String>>,
     #[serde(default)]
     path_arguments: Vec<PathArgumentRaw>,
+    #[serde(default)]
+    risk_rules: Vec<RiskRuleRaw>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RiskRuleKindRaw {
+    ArgumentCardinality,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RiskRuleRaw {
+    kind: RiskRuleKindRaw,
+    argument: String,
+    minimum_count: u64,
+    requires_effect: String,
+    escalate_to: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,6 +145,7 @@ struct ToolEntry {
     capability: Capability,
     risk: RiskLevel,
     effect_contract: Option<ToolEffectContract>,
+    risk_rules: Vec<RiskRule>,
 }
 
 pub struct TomlToolRegistry {
@@ -137,6 +173,7 @@ impl TomlToolRegistry {
                     risk: raw.risk.clone(),
                 })?;
             let effect_contract = parse_effect_contract(&raw, contract_source.as_ref())?;
+            let risk_rules = parse_risk_rules(&raw, risk, effect_contract.as_ref())?;
 
             if entries
                 .insert(
@@ -145,6 +182,7 @@ impl TomlToolRegistry {
                         capability,
                         risk,
                         effect_contract,
+                        risk_rules,
                     },
                 )
                 .is_some()
@@ -338,6 +376,91 @@ fn parse_effect_contract(
         })
 }
 
+fn parse_risk_rules(
+    raw: &ToolEntryRaw,
+    base_risk: RiskLevel,
+    effect_contract: Option<&ToolEffectContract>,
+) -> Result<Vec<RiskRule>, ToolRegistryError> {
+    if raw.risk_rules.is_empty() {
+        return Ok(Vec::new());
+    }
+    let contract = effect_contract.ok_or_else(|| ToolRegistryError::InvalidRiskRule {
+        tool: raw.name.clone(),
+        message: "risk rules require a reviewed effect contract".into(),
+    })?;
+
+    let mut rules = Vec::with_capacity(raw.risk_rules.len());
+    for raw_rule in &raw.risk_rules {
+        let rule = match raw_rule.kind {
+            RiskRuleKindRaw::ArgumentCardinality => {
+                if !contract.arguments().contains(&raw_rule.argument) {
+                    return Err(ToolRegistryError::InvalidRiskRule {
+                        tool: raw.name.clone(),
+                        message: format!(
+                            "argument '{}' is absent from the reviewed contract",
+                            raw_rule.argument
+                        ),
+                    });
+                }
+                if raw_rule.minimum_count < 2 {
+                    return Err(ToolRegistryError::InvalidRiskRule {
+                        tool: raw.name.clone(),
+                        message: "argument_cardinality minimum_count must be at least 2".into(),
+                    });
+                }
+                let requires_effect =
+                    parse_effects(&raw.name, std::slice::from_ref(&raw_rule.requires_effect))?
+                        .into_iter()
+                        .next()
+                        .expect("one effect string yields one parsed effect");
+                let has_effect = contract.effects().contains(&requires_effect)
+                    || contract
+                        .path_arguments()
+                        .values()
+                        .any(|path| path.effects().contains(&requires_effect));
+                if !has_effect {
+                    return Err(ToolRegistryError::InvalidRiskRule {
+                        tool: raw.name.clone(),
+                        message: format!(
+                            "required effect '{}' is absent from the reviewed contract",
+                            raw_rule.requires_effect
+                        ),
+                    });
+                }
+                let escalate_to = RiskLevel::parse(&raw_rule.escalate_to).ok_or_else(|| {
+                    ToolRegistryError::InvalidRiskRule {
+                        tool: raw.name.clone(),
+                        message: format!(
+                            "unknown escalation risk level '{}'",
+                            raw_rule.escalate_to
+                        ),
+                    }
+                })?;
+                if escalate_to <= base_risk {
+                    return Err(ToolRegistryError::InvalidRiskRule {
+                        tool: raw.name.clone(),
+                        message: "risk rule must strictly raise the tool's base risk".into(),
+                    });
+                }
+                RiskRule::ArgumentCardinality {
+                    argument: raw_rule.argument.clone(),
+                    minimum_count: raw_rule.minimum_count,
+                    requires_effect,
+                    escalate_to,
+                }
+            }
+        };
+        if rules.contains(&rule) {
+            return Err(ToolRegistryError::InvalidRiskRule {
+                tool: raw.name.clone(),
+                message: "duplicate equivalent risk rule".into(),
+            });
+        }
+        rules.push(rule);
+    }
+    Ok(rules)
+}
+
 fn parse_effects(
     tool: &str,
     effects: &[String],
@@ -413,6 +536,13 @@ impl ToolCapabilityResolver for TomlToolRegistry {
             .get(tool_name)
             .and_then(|entry| entry.effect_contract.as_ref())
     }
+
+    fn risk_rules(&self, tool_name: &str) -> &[RiskRule] {
+        self.entries
+            .get(tool_name)
+            .map(|entry| entry.risk_rules.as_slice())
+            .unwrap_or(&[])
+    }
 }
 
 #[cfg(test)]
@@ -481,5 +611,148 @@ mod tests {
             "#,
         );
         assert!(matches!(result, Err(ToolRegistryError::DuplicateTool(_))));
+    }
+
+    fn pinned_effectful_tool(rule: &str, arguments: &str, effects: &str, risk: &str) -> String {
+        let snapshot = ToolCatalogSnapshot::embedded();
+        format!(
+            "contract_version = {TOOL_EFFECT_CONTRACT_VERSION}\n\
+             source_repository = \"{}\"\n\
+             source_ref = \"{}\"\n\
+             source_sha = \"{}\"\n\n\
+             [[tool]]\n\
+             name = \"pcb_delete_items\"\n\
+             capability = \"pcb.write\"\n\
+             risk = \"{risk}\"\n\
+             arguments = {arguments}\n\
+             effects = {effects}\n\
+             {rule}",
+            snapshot.source_repository, snapshot.source_ref, snapshot.source_sha,
+        )
+    }
+
+    const CARDINALITY_RULE: &str = "[[tool.risk_rules]]\n\
+        kind = \"argument_cardinality\"\n\
+        argument = \"item_ids\"\n\
+        minimum_count = 2\n\
+        requires_effect = \"delete\"\n\
+        escalate_to = \"high\"\n";
+
+    #[test]
+    fn parses_reviewed_argument_cardinality_risk_rule() {
+        let source = pinned_effectful_tool(
+            CARDINALITY_RULE,
+            "[\"item_ids\"]",
+            "[\"read\", \"delete\"]",
+            "normal",
+        );
+        let registry = TomlToolRegistry::from_toml_str(&source).unwrap();
+
+        assert_eq!(
+            registry.risk_rules("pcb_delete_items"),
+            &[RiskRule::ArgumentCardinality {
+                argument: "item_ids".into(),
+                minimum_count: 2,
+                requires_effect: OperationEffect::Delete,
+                escalate_to: RiskLevel::High,
+            }]
+        );
+    }
+
+    #[test]
+    fn risk_rule_with_unknown_field_is_rejected() {
+        let source = pinned_effectful_tool(
+            &format!("{CARDINALITY_RULE}unexpected = true\n"),
+            "[\"item_ids\"]",
+            "[\"read\", \"delete\"]",
+            "normal",
+        );
+        assert!(TomlToolRegistry::from_toml_str(&source).is_err());
+    }
+
+    #[test]
+    fn risk_rule_with_unknown_kind_is_rejected() {
+        let rule = CARDINALITY_RULE.replace("argument_cardinality", "argument_volume");
+        let source =
+            pinned_effectful_tool(&rule, "[\"item_ids\"]", "[\"read\", \"delete\"]", "normal");
+        assert!(TomlToolRegistry::from_toml_str(&source).is_err());
+    }
+
+    #[test]
+    fn risk_rule_cannot_reference_an_unknown_argument() {
+        let rule = CARDINALITY_RULE.replace("item_ids", "missing_ids");
+        let source =
+            pinned_effectful_tool(&rule, "[\"item_ids\"]", "[\"read\", \"delete\"]", "normal");
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn risk_rule_requires_its_reviewed_effect() {
+        let source =
+            pinned_effectful_tool(CARDINALITY_RULE, "[\"item_ids\"]", "[\"read\"]", "normal");
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn argument_cardinality_threshold_must_be_at_least_two() {
+        let rule = CARDINALITY_RULE.replace("minimum_count = 2", "minimum_count = 1");
+        let source =
+            pinned_effectful_tool(&rule, "[\"item_ids\"]", "[\"read\", \"delete\"]", "normal");
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn risk_rule_must_strictly_raise_base_risk() {
+        let rule = CARDINALITY_RULE.replace("escalate_to = \"high\"", "escalate_to = \"normal\"");
+        let source =
+            pinned_effectful_tool(&rule, "[\"item_ids\"]", "[\"read\", \"delete\"]", "normal");
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn duplicate_equivalent_risk_rules_are_rejected() {
+        let source = pinned_effectful_tool(
+            &format!("{CARDINALITY_RULE}{CARDINALITY_RULE}"),
+            "[\"item_ids\"]",
+            "[\"read\", \"delete\"]",
+            "normal",
+        );
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
+    }
+
+    #[test]
+    fn risk_rule_requires_a_reviewed_effect_contract() {
+        let snapshot = ToolCatalogSnapshot::embedded();
+        let source = format!(
+            "contract_version = {TOOL_EFFECT_CONTRACT_VERSION}\n\
+             source_repository = \"{}\"\n\
+             source_ref = \"{}\"\n\
+             source_sha = \"{}\"\n\n\
+             [[tool]]\n\
+             name = \"pcb_delete_items\"\n\
+             capability = \"pcb.write\"\n\
+             risk = \"normal\"\n\
+             {CARDINALITY_RULE}",
+            snapshot.source_repository, snapshot.source_ref, snapshot.source_sha,
+        );
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
     }
 }

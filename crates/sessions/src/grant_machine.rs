@@ -296,6 +296,7 @@ mod tests {
                 task_scope: "test task".into(),
                 kind: GrantKind::Standing,
                 lifetime: Duration::hours(1),
+                risk_policy_version: 1,
             },
             clock.now(),
         )
