@@ -690,7 +690,13 @@ fn one_item_delete_stays_at_base_normal_risk() {
         ),
         PolicyDecision::Allow {
             capability: Capability::PCB_WRITE,
-            risk: RiskAssessment::new(OPERATION_RISK_POLICY_VERSION, RiskLevel::Normal, RiskLevel::Normal, vec![]).unwrap(),
+            risk: RiskAssessment::new(
+                OPERATION_RISK_POLICY_VERSION,
+                RiskLevel::Normal,
+                RiskLevel::Normal,
+                vec![]
+            )
+            .unwrap(),
         }
     );
 }
@@ -809,8 +815,12 @@ fn project_request(
     confirm_overwrite: Option<serde_json::Value>,
 ) -> OperationRequest {
     let mut request = request(subject, workspace_id, "kicad_create_new_project");
-    request.arguments.insert("path".into(), serde_json::json!("."));
-    request.arguments.insert("name".into(), serde_json::json!("demo"));
+    request
+        .arguments
+        .insert("path".into(), serde_json::json!("."));
+    request
+        .arguments
+        .insert("name".into(), serde_json::json!("demo"));
     if let Some(value) = confirm_overwrite {
         request.arguments.insert("confirm_overwrite".into(), value);
     }
