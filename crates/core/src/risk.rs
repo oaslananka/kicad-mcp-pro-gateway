@@ -60,6 +60,8 @@ pub enum RiskAssessmentError {
     RequiredArgumentMissing,
     #[error("reviewed risk rule argument must be an array")]
     ArgumentNotArray,
+    #[error("reviewed risk rule argument must be a boolean")]
+    ArgumentNotBoolean,
     #[error("reviewed risk rule argument cardinality cannot be represented")]
     ArgumentCardinalityOverflow,
 }
