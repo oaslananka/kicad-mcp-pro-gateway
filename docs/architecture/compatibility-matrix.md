@@ -68,7 +68,7 @@ release gate; see [release.md](../development/release.md).
 |---|---|---|
 | **KiCad** | `10.0.x` primary; `10.0.6` latest verified | Required local EDA environment. `8.x` is deprecated upstream and is **not** a Gateway-supported baseline; `9.x` is dropped; `11.x` is preview-only. |
 | **kicad-mcp-pro runtime** | `3.37.0` @ `014cf241480afc15ac2b34bf10c904f5415d376c` | Immutable released runtime used by the live compatibility lane. |
-| **Reviewed policy tool snapshot** | released manifest `3.37.0`; reviewed source @ `e460e28a4dd0f2c105a1d2db3e26eb731769c543` | Authorization/effect trust remains pinned independently of runtime: 387 tool names, unchanged from the prior snapshot. Six reviewed effect contracts reconcile exactly with the released manifest; newly discovered, changed, or unclassified tools remain denied. |
+| **Reviewed policy tool snapshot** | released manifest `3.37.0`; reviewed source @ `e460e28a4dd0f2c105a1d2db3e26eb731769c543` | Authorization/effect trust remains pinned independently of runtime: 387 tools, with the name set unchanged from the prior snapshot. Six reviewed effect contracts reconcile exactly with the released manifest; newly discovered, changed, or unclassified tools remain denied. |
 | **MCP core-bridge protocol** | `2026-07-28` | Primary stateless Streamable HTTP lane: direct `server/discover`, required per-request metadata/headers, no MCP session IDs. Explicit `2025-11-25` initialize/session compatibility remains available through `ProtocolLane::Legacy2025`. Tasks/Apps are not advertised or consumed. |
 | **Gateway transport protocol** | `0.1.0` | Gateway's versioned transport envelope; incompatible major versions are rejected. |
 | **Rust MSRV** | 1.88.0 | Checked in CI in addition to stable-toolchain checks. |
