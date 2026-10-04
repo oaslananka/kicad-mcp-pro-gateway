@@ -75,11 +75,18 @@ async fn live_e2e_full_vertical_slice() {
     let bridge = CoreBridgeClient::new(CoreBridgeConfig::new(endpoint.parse().unwrap()))
         .expect("valid core bridge endpoint");
 
-    let init_result = bridge
-        .initialize("e2e-init")
+    let discovery = bridge
+        .bootstrap("e2e-discover")
         .await
-        .expect("live kicad-mcp-pro server must be reachable and initialize successfully");
-    println!("Initialized with server: {:?}", init_result["serverInfo"]);
+        .expect("live kicad-mcp-pro server must support final MCP discovery");
+    assert_eq!(
+        discovery["supportedVersions"],
+        serde_json::json!([MCP_PROTOCOL_VERSION])
+    );
+    println!(
+        "Discovered server: {:?}",
+        discovery["_meta"]["io.modelcontextprotocol/serverInfo"]
+    );
 
     let tools = bridge
         .list_tools("e2e-tools")
@@ -580,17 +587,18 @@ async fn live_core_health_check() {
     let bridge = CoreBridgeClient::new(CoreBridgeConfig::new(endpoint.parse().unwrap()))
         .expect("valid core bridge endpoint");
 
-    let init_result = bridge
-        .initialize("health-check")
+    let discovery = bridge
+        .bootstrap("health-discover")
         .await
-        .expect("live kicad-mcp-pro server must be reachable");
+        .expect("live kicad-mcp-pro server must support final MCP discovery");
 
-    // CoreBridgeClient::initialize returns the JSON-RPC result payload,
-    // not the outer `{ jsonrpc, result }` envelope.
-    assert_eq!(init_result["protocolVersion"], MCP_PROTOCOL_VERSION);
-    assert!(init_result["serverInfo"]["name"]
+    assert_eq!(
+        discovery["supportedVersions"],
+        serde_json::json!([MCP_PROTOCOL_VERSION])
+    );
+    assert!(discovery["_meta"]["io.modelcontextprotocol/serverInfo"]["name"]
         .as_str()
-        .expect("initialized server must expose a name")
+        .expect("discovered server must expose a name")
         .contains("kicad-mcp-pro"));
 
     let tools = bridge
