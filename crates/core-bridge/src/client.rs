@@ -284,6 +284,38 @@ mod tests {
     }
 
     #[test]
+    fn final_lane_rejects_non_object_params() {
+        let client = CoreBridgeClient::new(CoreBridgeConfig::new(
+            Url::parse("http://127.0.0.1:3334/mcp").unwrap(),
+        ))
+        .unwrap();
+
+        let result = client.prepare_params(json!([]));
+        assert!(
+            matches!(result, Err(CoreBridgeError::ProtocolError(_))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn final_lane_rejects_caller_owned_request_metadata() {
+        let client = CoreBridgeClient::new(CoreBridgeConfig::new(
+            Url::parse("http://127.0.0.1:3334/mcp").unwrap(),
+        ))
+        .unwrap();
+
+        let result = client.prepare_params(json!({
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "caller-controlled"
+            }
+        }));
+        assert!(
+            matches!(result, Err(CoreBridgeError::ProtocolError(_))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
     fn loopback_hosts_are_allowed() {
         for url in [
             "http://127.0.0.1:3334/mcp",
