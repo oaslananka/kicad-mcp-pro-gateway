@@ -11,16 +11,11 @@ pub const MCP_LEGACY_PROTOCOL_VERSION: &str = "2025-11-25";
 
 /// Wire-level MCP compatibility lane. There is no automatic fallback between
 /// lanes: callers select one policy explicitly and requests stay within it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum McpProtocolLane {
+    #[default]
     Final2026,
     Legacy2025,
-}
-
-impl Default for McpProtocolLane {
-    fn default() -> Self {
-        Self::Final2026
-    }
 }
 
 impl McpProtocolLane {
