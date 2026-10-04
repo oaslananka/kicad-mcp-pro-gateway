@@ -545,7 +545,7 @@ mod tests {
             "production-controller",
             "\"confirm_overwrite\":true",
         ] {
-            assert!(!raw.contains(sentinel), "risk factor leaked sentinel {sentinel}");
+            assert!(\n                !raw.contains(sentinel),\n                "risk factor leaked sentinel {sentinel}"\n            );
         }
     }
 
