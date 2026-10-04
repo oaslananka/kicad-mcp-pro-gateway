@@ -11,7 +11,9 @@ pub mod mock_server;
 
 pub use client::{CoreBridgeClient, CoreBridgeConfig};
 pub use error::CoreBridgeError;
-pub use protocol::{ToolDescriptor, MCP_PROTOCOL_VERSION};
+pub use protocol::{
+    McpProtocolLane, ToolDescriptor, MCP_LEGACY_PROTOCOL_VERSION, MCP_PROTOCOL_VERSION,
+};
 
 #[cfg(any(test, feature = "test-util"))]
-pub use mock_server::{MockMcpServer, ToolCallBehavior};
+pub use mock_server::{MockMcpServer, RecordedMcpRequest, ToolCallBehavior};
