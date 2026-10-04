@@ -1,7 +1,5 @@
 # Confirm-Overwrite Risk Escalation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Escalate `kicad_create_new_project` from Normal to High only when the reviewed `confirm_overwrite` operation fact resolves to true, while preserving policy-v2 audit compatibility and fail-closed behavior.
 
 **Architecture:** Extend the reviewed registry with one closed `boolean_equals` rule kind, evaluate it after normalized effects/workspace containment, and carry the resulting tagged risk factor through the existing immutable `RiskAssessment`. Preserve SQLite schema v5 by keeping the historical bulk-factor JSON shape stable, while deliberately bumping local IPC to v5 because the client-visible factor vocabulary changes.
