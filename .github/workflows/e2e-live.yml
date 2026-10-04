@@ -21,9 +21,9 @@ on:
         required: false
         default: "10.0.6"
       kicad_mcp_pro_version:
-        description: "kicad-mcp-pro version to test (e.g., 3.35.0)"
+        description: "kicad-mcp-pro version to test (e.g., 3.37.0)"
         required: false
-        default: "3.35.0"
+        default: "3.37.0"
 
 permissions:
   contents: read
@@ -36,8 +36,8 @@ concurrency:
 env:
   # Pinned compatibility baseline from docs/architecture/compatibility-matrix.md
   KICAD_VERSION: ${{ github.event.inputs.kicad_version || '10.0.6' }}
-  KICAD_MCP_PRO_VERSION: ${{ github.event.inputs.kicad_mcp_pro_version || '3.35.0' }}
-  KICAD_MCP_PRO_COMMIT: f641a92596ab7adc1e134287578b1ae5ff9580ad
+  KICAD_MCP_PRO_VERSION: ${{ github.event.inputs.kicad_mcp_pro_version || '3.37.0' }}
+  KICAD_MCP_PRO_COMMIT: 014cf241480afc15ac2b34bf10c904f5415d376c
   RUSTFLAGS: "-D warnings"
 
 jobs:
@@ -122,6 +122,8 @@ jobs:
           KICAD_MCP_PROJECT_DIR="$FIXTURE_DIR" \
           KICAD_MCP_PROFILE=builder \
           KICAD_MCP_OPERATING_MODE=write \
+          KICAD_MCP_PROTOCOL_LANE=2026-07-28-rc \
+          KICAD_MCP_STATEFUL_HTTP=0 \
           kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334 &
           SERVER_PID=$!
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
@@ -164,7 +166,12 @@ jobs:
           ls -la "$FIXTURE_DIR" >> e2e-evidence.txt
           echo "" >> e2e-evidence.txt
           echo "--- Server Health Check ---" >> e2e-evidence.txt
-          curl -s http://127.0.0.1:3334/mcp -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"gateway-e2e","version":"0.1.0"}}}' >> e2e-evidence.txt 2>&1
+          curl -s http://127.0.0.1:3334/mcp -X POST \
+            -H "Accept: application/json, text/event-stream" \
+            -H "Content-Type: application/json" \
+            -H "MCP-Protocol-Version: 2026-07-28" \
+            -H "Mcp-Method: server/discover" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"gateway-e2e","version":"0.1.0"},"io.modelcontextprotocol/clientCapabilities":{}}}}' >> e2e-evidence.txt 2>&1
           echo "" >> e2e-evidence.txt
 
       - name: Run live E2E tests
