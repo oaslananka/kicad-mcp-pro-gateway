@@ -1,20 +1,19 @@
 //! The MCP Streamable HTTP client to the local kicad-mcp-pro server.
 //!
-//! This is deliberately a *minimal* client surface (`initialize`,
-//! `tools/list`, `tools/call`) rather than a full MCP SDK: kicad-mcp-pro's
-//! documented contract at the time of writing needs only these three
-//! methods for Gateway's purposes, and a smaller surface is easier to
-//! keep correct and audited. See `docs/protocol/README.md`.
+//! This is deliberately a *minimal* client surface (protocol bootstrap,
+//! `tools/list`, `tools/call`) rather than a full MCP SDK. The final
+//! 2026-07-28 lane is stateless and uses `server/discover`; the maintained
+//! 2025-11-25 lane keeps the legacy initialize/session contract explicitly.
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use serde_json::json;
+use serde_json::{json, Map, Value};
 use url::Url;
 
 use crate::error::CoreBridgeError;
-use crate::protocol::{JsonRpcRequest, JsonRpcResponse, ToolDescriptor, MCP_PROTOCOL_VERSION};
+use crate::protocol::{JsonRpcRequest, JsonRpcResponse, McpProtocolLane, ToolDescriptor};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -22,6 +21,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct CoreBridgeConfig {
     pub endpoint: Url,
     pub timeout: Duration,
+    pub protocol_lane: McpProtocolLane,
 }
 
 impl CoreBridgeConfig {
@@ -29,13 +29,20 @@ impl CoreBridgeConfig {
         Self {
             endpoint,
             timeout: DEFAULT_TIMEOUT,
+            protocol_lane: McpProtocolLane::Final2026,
         }
+    }
+
+    pub fn with_protocol_lane(mut self, protocol_lane: McpProtocolLane) -> Self {
+        self.protocol_lane = protocol_lane;
+        self
     }
 }
 
 pub struct CoreBridgeClient {
     http: reqwest::Client,
     endpoint: Url,
+    protocol_lane: McpProtocolLane,
     session_id: Mutex<Option<String>>,
 }
 
@@ -51,23 +58,45 @@ impl CoreBridgeClient {
         Ok(Self {
             http,
             endpoint: config.endpoint,
+            protocol_lane: config.protocol_lane,
             session_id: Mutex::new(None),
         })
     }
 
-    /// Performs the MCP `initialize` handshake. Returns the raw server
-    /// `result` payload — Gateway does not need to interpret every field
-    /// of it, only that the call succeeded.
+    /// Performs the selected lane's wire-level bootstrap.
+    ///
+    /// Final MCP 2026-07-28 uses direct `server/discover` and never emits
+    /// `initialize`. The legacy lane uses the 2025-11-25 initialize flow.
+    pub async fn bootstrap(
+        &self,
+        correlation_id: &str,
+    ) -> Result<serde_json::Value, CoreBridgeError> {
+        match self.protocol_lane {
+            McpProtocolLane::Final2026 => {
+                self.send("server/discover", json!({}), correlation_id).await
+            }
+            McpProtocolLane::Legacy2025 => {
+                let params = json!({
+                    "protocolVersion": self.protocol_lane.protocol_version(),
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "kicad-mcp-pro-gateway",
+                        "version": env!("CARGO_PKG_VERSION")
+                    },
+                });
+                self.send("initialize", params, correlation_id).await
+            }
+        }
+    }
+
+    /// Backward-compatible API name for callers that previously invoked
+    /// `initialize`. On the final lane this delegates to `server/discover`
+    /// and therefore does not put an initialize request on the wire.
     pub async fn initialize(
         &self,
         correlation_id: &str,
     ) -> Result<serde_json::Value, CoreBridgeError> {
-        let params = json!({
-            "protocolVersion": MCP_PROTOCOL_VERSION,
-            "capabilities": {},
-            "clientInfo": { "name": "kicad-mcp-pro-gateway", "version": env!("CARGO_PKG_VERSION") },
-        });
-        self.send("initialize", params, correlation_id).await
+        self.bootstrap(correlation_id).await
     }
 
     pub async fn list_tools(
@@ -100,6 +129,14 @@ impl CoreBridgeClient {
         params: serde_json::Value,
         correlation_id: &str,
     ) -> Result<serde_json::Value, CoreBridgeError> {
+        let request_name = params
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let params = match self.protocol_lane {
+            McpProtocolLane::Final2026 => final_request_params(params)?,
+            McpProtocolLane::Legacy2025 => params,
+        };
         let request_body = JsonRpcRequest::new(correlation_id, method, params);
 
         let mut req = self
@@ -107,16 +144,29 @@ impl CoreBridgeClient {
             .post(self.endpoint.clone())
             .header("Accept", "application/json, text/event-stream")
             .header("Content-Type", "application/json")
-            .header("MCP-Protocol-Version", MCP_PROTOCOL_VERSION)
+            .header(
+                "MCP-Protocol-Version",
+                self.protocol_lane.protocol_version(),
+            )
             .json(&request_body);
 
-        if let Some(session_id) = self
-            .session_id
-            .lock()
-            .expect("session_id mutex poisoned")
-            .clone()
-        {
-            req = req.header("MCP-Session-Id", session_id);
+        match self.protocol_lane {
+            McpProtocolLane::Final2026 => {
+                req = req.header("Mcp-Method", method);
+                if let Some(name) = request_name {
+                    req = req.header("Mcp-Name", name);
+                }
+            }
+            McpProtocolLane::Legacy2025 => {
+                if let Some(session_id) = self
+                    .session_id
+                    .lock()
+                    .expect("session_id mutex poisoned")
+                    .clone()
+                {
+                    req = req.header("MCP-Session-Id", session_id);
+                }
+            }
         }
 
         let response = req.send().await.map_err(|e| {
@@ -127,10 +177,21 @@ impl CoreBridgeClient {
             }
         })?;
 
-        if let Some(session_header) = response.headers().get("MCP-Session-Id") {
-            if let Ok(value) = session_header.to_str() {
-                *self.session_id.lock().expect("session_id mutex poisoned") =
-                    Some(value.to_string());
+        match self.protocol_lane {
+            McpProtocolLane::Final2026 => {
+                if response.headers().contains_key("MCP-Session-Id") {
+                    return Err(CoreBridgeError::ProtocolError(
+                        "final MCP 2026-07-28 lane returned a legacy session id".into(),
+                    ));
+                }
+            }
+            McpProtocolLane::Legacy2025 => {
+                if let Some(session_header) = response.headers().get("MCP-Session-Id") {
+                    if let Ok(value) = session_header.to_str() {
+                        *self.session_id.lock().expect("session_id mutex poisoned") =
+                            Some(value.to_string());
+                    }
+                }
             }
         }
 
@@ -156,6 +217,33 @@ impl CoreBridgeClient {
             CoreBridgeError::ProtocolError("response had neither result nor error".into())
         })
     }
+}
+
+fn final_request_params(params: Value) -> Result<Value, CoreBridgeError> {
+    let Value::Object(mut params) = params else {
+        return Err(CoreBridgeError::ProtocolError(
+            "MCP request params must be a JSON object".into(),
+        ));
+    };
+
+    let mut metadata = Map::new();
+    metadata.insert(
+        "io.modelcontextprotocol/protocolVersion".into(),
+        Value::String(crate::protocol::MCP_PROTOCOL_VERSION.into()),
+    );
+    metadata.insert(
+        "io.modelcontextprotocol/clientInfo".into(),
+        json!({
+            "name": "kicad-mcp-pro-gateway",
+            "version": env!("CARGO_PKG_VERSION")
+        }),
+    );
+    metadata.insert(
+        "io.modelcontextprotocol/clientCapabilities".into(),
+        json!({}),
+    );
+    params.insert("_meta".into(), Value::Object(metadata));
+    Ok(Value::Object(params))
 }
 
 /// Refuses any endpoint that is not loopback/local. This is a second gate
