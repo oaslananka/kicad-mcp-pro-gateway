@@ -27,19 +27,19 @@ impl RiskLevel {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RiskFactorCode {
-    BulkArgumentCardinality,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RiskFactor {
-    pub code: RiskFactorCode,
-    pub subject: String,
-    pub observed_count: u64,
-    pub threshold: u64,
-    pub escalated_to: RiskLevel,
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum RiskFactor {
+    BulkArgumentCardinality {
+        subject: String,
+        observed_count: u64,
+        threshold: u64,
+        escalated_to: RiskLevel,
+    },
+    ConfirmedOverwrite {
+        subject: String,
+        escalated_to: RiskLevel,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -60,6 +60,8 @@ pub enum RiskAssessmentError {
     RequiredArgumentMissing,
     #[error("reviewed risk rule argument must be an array")]
     ArgumentNotArray,
+    #[error("reviewed risk rule argument must be a boolean")]
+    ArgumentNotBoolean,
     #[error("reviewed risk rule argument cardinality cannot be represented")]
     ArgumentCardinalityOverflow,
 }
@@ -141,5 +143,61 @@ mod tests {
         let raised = RiskAssessment::new(2, RiskLevel::Normal, RiskLevel::High, vec![])
             .expect("higher effective risk is allowed");
         assert_eq!(raised.effective_risk(), RiskLevel::High);
+    }
+
+    #[test]
+    fn legacy_bulk_factor_json_deserializes_unchanged() {
+        let raw = r#"{"code":"bulk_argument_cardinality","subject":"item_ids","observed_count":3,"threshold":2,"escalated_to":"High"}"#;
+        let factor: RiskFactor = serde_json::from_str(raw).unwrap();
+        assert_eq!(
+            factor,
+            RiskFactor::BulkArgumentCardinality {
+                subject: "item_ids".into(),
+                observed_count: 3,
+                threshold: 2,
+                escalated_to: RiskLevel::High,
+            }
+        );
+    }
+
+    #[test]
+    fn bulk_factor_serializes_to_legacy_shape() {
+        let factor = RiskFactor::BulkArgumentCardinality {
+            subject: "item_ids".into(),
+            observed_count: 3,
+            threshold: 2,
+            escalated_to: RiskLevel::High,
+        };
+        assert_eq!(
+            serde_json::to_value(factor).unwrap(),
+            serde_json::json!({
+                "code": "bulk_argument_cardinality",
+                "subject": "item_ids",
+                "observed_count": 3,
+                "threshold": 2,
+                "escalated_to": "High"
+            })
+        );
+    }
+
+    #[test]
+    fn confirmed_overwrite_factor_round_trips_without_argument_value() {
+        let factor = RiskFactor::ConfirmedOverwrite {
+            subject: "confirm_overwrite".into(),
+            escalated_to: RiskLevel::High,
+        };
+        let encoded = serde_json::to_value(&factor).unwrap();
+        assert_eq!(
+            encoded,
+            serde_json::json!({
+                "code": "confirmed_overwrite",
+                "subject": "confirm_overwrite",
+                "escalated_to": "High"
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<RiskFactor>(encoded).unwrap(),
+            factor
+        );
     }
 }

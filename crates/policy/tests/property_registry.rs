@@ -14,8 +14,8 @@ use std::collections::BTreeSet;
 
 use companion_core::{Capability, RiskLevel};
 use companion_policy::{
-    OperationEffect, RiskRule, TomlToolRegistry, ToolCapabilityResolver, ToolCatalogSnapshot,
-    ToolEffectContract, TOOL_EFFECT_CONTRACT_VERSION,
+    BooleanRiskFactor, OperationEffect, RiskRule, TomlToolRegistry, ToolCapabilityResolver,
+    ToolCatalogSnapshot, ToolEffectContract, TOOL_EFFECT_CONTRACT_VERSION,
 };
 use proptest::prelude::*;
 
@@ -500,6 +500,31 @@ fn reviewed_bulk_delete_rule_is_exact_and_source_declared() {
             && REVIEWED_REGISTRY.contains("requires_effect = \"delete\"")
             && REVIEWED_REGISTRY.contains("escalate_to = \"high\""),
         "the runtime rule must be visibly declared in the reviewed asset"
+    );
+}
+
+#[test]
+fn reviewed_project_overwrite_rule_is_exact_and_source_declared() {
+    let registry = TomlToolRegistry::try_embedded().expect("reviewed registry loads");
+    assert_eq!(
+        registry.risk_rules("kicad_create_new_project"),
+        &[RiskRule::BooleanEquals {
+            argument: "confirm_overwrite".into(),
+            expected: true,
+            default: false,
+            requires_effect: OperationEffect::Write,
+            escalate_to: RiskLevel::High,
+            factor: BooleanRiskFactor::ConfirmedOverwrite,
+        }]
+    );
+    assert!(
+        REVIEWED_REGISTRY.contains("kind = \"boolean_equals\"")
+            && REVIEWED_REGISTRY.contains("argument = \"confirm_overwrite\"")
+            && REVIEWED_REGISTRY.contains("expected = true")
+            && REVIEWED_REGISTRY.contains("default = false")
+            && REVIEWED_REGISTRY.contains("requires_effect = \"write\"")
+            && REVIEWED_REGISTRY.contains("factor = \"confirmed_overwrite\""),
+        "the reviewed overwrite rule must be visibly declared in the runtime asset"
     );
 }
 

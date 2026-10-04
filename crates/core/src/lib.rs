@@ -39,7 +39,7 @@ pub use ids::{
     TaskId, WorkspaceId,
 };
 pub use operation::{OperationError, OperationRequest, OperationResult};
-pub use risk::{RiskAssessment, RiskAssessmentError, RiskFactor, RiskFactorCode, RiskLevel};
+pub use risk::{RiskAssessment, RiskAssessmentError, RiskFactor, RiskLevel};
 pub use session::{ApprovalPolicy, Session, SessionStatus};
 pub use transport_state::{CoreConnectionState, TransportState};
 
