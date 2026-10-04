@@ -596,10 +596,12 @@ async fn live_core_health_check() {
         discovery["supportedVersions"],
         serde_json::json!([MCP_PROTOCOL_VERSION])
     );
-    assert!(discovery["_meta"]["io.modelcontextprotocol/serverInfo"]["name"]
-        .as_str()
-        .expect("discovered server must expose a name")
-        .contains("kicad-mcp-pro"));
+    assert!(
+        discovery["_meta"]["io.modelcontextprotocol/serverInfo"]["name"]
+            .as_str()
+            .expect("discovered server must expose a name")
+            .contains("kicad-mcp-pro")
+    );
 
     let tools = bridge
         .list_tools("health-tools")
