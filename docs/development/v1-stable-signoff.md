@@ -34,6 +34,25 @@ against the then-current release commit.
 
 ---
 
+## Compatibility Reconciliation — 2026-10-04
+
+Gateway's runtime/protocol baseline has since advanced to released
+`kicad-mcp-pro 3.37.0` at immutable release commit
+`014cf241480afc15ac2b34bf10c904f5415d376c`, with MCP `2026-07-28` as the
+primary stateless lane. Exact-head [Live E2E run
+37241104324](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/37241104324)
+installed that release and executed **3 tests: 3 passed, 0 failed, 0 ignored**.
+
+The reviewed policy/effect source is separately pinned to
+`e460e28a4dd0f2c105a1d2db3e26eb731769c543`, the reviewed source SHA carried
+by the released 3.37.0 machine-readable effect manifest. The generated tool
+catalog remains 387 names with 0 additions/removals versus the previous
+`f641a925...` snapshot. This compatibility refresh therefore does not widen the
+tool allowlist. It also does not satisfy RC signing, clean-machine,
+macOS/Windows live, or human release-owner promotion gates.
+
+---
+
 ## 2026-09-30 Live E2E Evidence Correction (Supersedes Prior Green Claims)
 
 A security/release-gate audit during [PR #57](https://github.com/oaslananka/kicad-mcp-pro-gateway/pull/57)
@@ -122,9 +141,11 @@ This document records a dated **conditional V1 stable-release readiness assessme
 | Windows | arm64 | PLANNED | None |
 | macOS | x86_64 (Intel) | UNSUPPORTED | Explicitly unsupported |
 
-**Upstream Baseline:** `kicad-mcp-pro@3.35.0` pinned to commit `f641a92596ab7adc1e134287578b1ae5ff9580ad` (387 tools reviewed)
+**Upstream Runtime Baseline:** `kicad-mcp-pro@3.37.0` pinned to release commit `014cf241480afc15ac2b34bf10c904f5415d376c`.
 
-**Live-Core Validation Status (2026-09-30 correction):** Historical green Ubuntu workflows executed 0 tests. The subsequent [corrected run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) executed and passed 3/3 tests at `98967a3549701da2e2b596d7cf977aff8689987f`. This is bounded live integration evidence, not proof of physical PCB mutations or release artifact qualification. macOS/Windows live evidence and exact-artifact clean-machine qualification remain separately outstanding.
+**Reviewed Policy Source:** `e460e28a4dd0f2c105a1d2db3e26eb731769c543` (387 tool names; unchanged from the previous snapshot; released 3.37.0 effect manifest source identity).
+
+**Live-Core Validation Status:** Historical false-green evidence was corrected in 2026-09. The current runtime/protocol baseline is positively validated by [run 37241104324](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/37241104324), which installed kicad-mcp-pro 3.37.0 and passed 3/3 live tests with 0 failed and 0 ignored. This remains bounded live integration evidence, not proof of physical PCB mutations or release artifact qualification. macOS/Windows live evidence and exact-artifact clean-machine qualification remain separately outstanding.
 
 ---
 
@@ -254,7 +275,7 @@ surfaces directly rather than inferring a zero-alert state from CI alone.
 - [x] Release candidate pipeline implemented and fail-closed
 - [x] Signed installer pipeline implemented for all three platforms
 - [x] Compatibility matrix documented and matches CI/release targets
-- [x] Ubuntu live E2E **executed and passing** — historical zero-test runs remain invalid; [run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) passed 3/3
+- [x] Ubuntu live E2E **executed and passing on the current 3.37.0 / MCP 2026-07-28 baseline** — [run 37241104324](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/37241104324) passed 3/3; historical zero-test runs remain invalid
 - [x] Security invariants verified (TTL, audit, trust boundaries, tool effects)
 - [x] Upgrade/rollback strategy documented and tested
 - [x] No expired release-blocking advisory exceptions
@@ -289,14 +310,13 @@ surfaces directly rather than inferring a zero-alert state from CI alone.
 
 **CONDITIONAL GO FOR V1 STABLE PROMOTION**
 
-This **2026-09-25 historical claim is superseded** by the live-E2E evidence correction above: a green workflow that skips every live test is not a passed qualification gate. The release-candidate pipeline is implemented, but a passing run of all 3 Ubuntu live tests is now explicitly outstanding along with the other external promotion gates.
+This **2026-09-25 historical claim is superseded** by the later reconciliation records above. A green workflow that skips every live test is not a passed qualification gate; the current 3.37.0 / MCP 2026-07-28 Ubuntu lane now has positive 3/3 exact-head evidence. The remaining blockers are external RC/signing, clean-machine, macOS/Windows live, and human promotion gates.
 
 **Blocking items for stable promotion:**
 1. Version bump to `1.0.0-rc1` and tag `v1.0.0-rc1` with signing credentials
 2. Clean-machine qualification evidence attached via `release-qa.md` issues for all three platforms
-3. Successful execution of all 3 Ubuntu live E2E tests on the pinned baseline, with retained artifact evidence
-4. Live E2E evidence attached for macOS and Windows
-5. Human release owner authorization to promote draft to stable
+3. Live E2E evidence attached for macOS and Windows
+4. Human release owner authorization to promote draft to stable
 
 Once the above are complete, the final stable release (`v1.0.0`) can be promoted from the validated RC artifacts.
 
@@ -307,6 +327,6 @@ Once the above are complete, the final stable release (`v1.0.0`) can be promoted
 1. **Version bump:** Update `Cargo.toml` and `apps/desktop/src-tauri/Cargo.toml` to `version = "1.0.0-rc1"`
 2. **Tag RC:** Push tag `v1.0.0-rc1` to trigger release workflow with signing credentials
 3. **Clean-machine QA:** Open three `release-qa.md` issues (one per platform) and attach evidence
-4. **Live E2E repair validation:** Obtain a passing 3/3 Ubuntu run on the exact corrected PR head; then execute live probes on macOS/Windows per `compatibility-matrix.md`
+4. **Cross-platform live validation:** Execute live probes on macOS/Windows per `compatibility-matrix.md`; Ubuntu 3.37.0 final-protocol evidence is already retained in run 37241104324
 5. **Final version bump:** Update to `version = "1.0.0"` and tag `v1.0.0` for stable release
 6. **Promote to stable:** Human release owner promotes the v1.0.0 release to stable after all evidence accepted

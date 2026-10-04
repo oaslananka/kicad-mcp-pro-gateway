@@ -20,7 +20,7 @@ fn registry() -> TomlToolRegistry {
         contract_version = 1
         source_repository = "oaslananka/kicad-mcp-pro"
         source_ref = "main"
-        source_sha = "f641a92596ab7adc1e134287578b1ae5ff9580ad"
+        source_sha = "e460e28a4dd0f2c105a1d2db3e26eb731769c543"
 
         [[tool]]
         name = "schematic.read"

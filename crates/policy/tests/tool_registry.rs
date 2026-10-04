@@ -161,11 +161,7 @@ fn embedded_v1_contracts_cover_all_effect_kinds_and_path_arguments() {
     let export = registry.effect_contract("export_gerber").unwrap();
     assert_eq!(
         export.arguments(),
-        &BTreeSet::from([
-            "layers".into(),
-            "output_subdir".into(),
-            "variant_name".into()
-        ])
+        &BTreeSet::from(["layers".into(), "output_subdir".into()])
     );
     assert_eq!(
         export.effects(),

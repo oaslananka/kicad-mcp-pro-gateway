@@ -21,9 +21,12 @@ denied before `tools/call`.
 
 ## Reviewed V1 surface
 
-The initial reviewed contracts are pinned to kicad-mcp-pro commit
-`f641a92596ab7adc1e134287578b1ae5ff9580ad`. The public names and dispositions
-were reconciled against that commit's generated tool catalog; argument
+The reviewed contracts are pinned to kicad-mcp-pro reviewed source commit
+`e460e28a4dd0f2c105a1d2db3e26eb731769c543`, the source identity carried by
+the released `mcp-server-v3.37.0` effect manifest. The generated public tool
+catalog at that reviewed source is exactly 387 names and is unchanged from the
+previous `f641a92596ab7adc1e134287578b1ae5ff9580ad` snapshot (0 added, 0
+removed); argument
 allowlists and effects were reviewed from each FastMCP adapter and the service
 it delegates to:
 
@@ -34,7 +37,7 @@ it delegates to:
 | `kicad_create_new_project` | `path`, `name`, `confirm_overwrite` | `path`; `name` is also path-bearing because upstream appends it to `path` | read/write/create both normalized components |
 | `pcb_delete_items` | `item_ids` | active board state only | read/delete workspace state |
 | `lib_create_custom_symbol` | `name`, `pins` | active project state only | read/write/create the custom-symbol library |
-| `export_gerber` | `output_subdir`, `layers`, `variant_name` | `output_subdir` (default `gerber`) | read/write workspace; create/write output directory |
+| `export_gerber` | `output_subdir`, `layers` | `output_subdir` (default `gerber`) | read/write workspace; create/write output directory |
 
 The adapter sources are `src/kicad_mcp/tools/schematic_inspection.py`,
 `src/kicad_mcp/tools/pcb.py`, `src/kicad_mcp/tools/project_creation.py`,
@@ -99,10 +102,10 @@ only reviewed metadata such as argument name, observed count, threshold, and
 escalation target. Raw item IDs, paths, credentials, source text, and project
 contents are not risk-factor data and are not persisted or rendered.
 
-This tranche deliberately leaves the production upstream pin at
-`oaslananka/kicad-mcp-pro@f641a92596ab7adc1e134287578b1ae5ff9580ad`.
-Issue #20 remains open for later workspace-context, path-breadth, and
-released-upstream consequence dimensions; those dimensions must enter through
+The production reviewed source pin is
+`oaslananka/kicad-mcp-pro@e460e28a4dd0f2c105a1d2db3e26eb731769c543`.
+Issue #20 remains open independently for later workspace-context, path-breadth,
+and additional consequence dimensions; those dimensions must enter through
 equally explicit reviewed facts rather than heuristics.
 
 ## Upstream reviewed-manifest transition
@@ -115,18 +118,21 @@ same `ToolEffectContract` domain model used by policy, and can reconcile it
 against the embedded fallback without executing upstream Python code.
 
 The production daemon continues to trust only the source-pinned
-`tool_registry.toml` fallback until the upstream artifact and
-`upstream_tool_snapshot.toml` are reviewed and pinned to the same immutable
-upstream revision. Reconciliation rejects locally unclassified manifest tools;
-a newly published upstream tool therefore cannot become authorized by
-discovery or by manifest presence alone.
+`tool_registry.toml` fallback for authorization. That fallback and
+`upstream_tool_snapshot.toml` are now pinned to the manifest's reviewed source
+SHA `e460e28a4dd0f2c105a1d2db3e26eb731769c543`. Reconciliation rejects locally
+unclassified manifest tools; a newly published upstream tool therefore cannot
+become authorized by discovery or by manifest presence alone.
 
-The committed test fixture under `crates/policy/tests/fixtures/` is compatibility
-evidence only. It deliberately detects source-SHA staleness against the current
-production snapshot and exposes contract drift (for example, the current
-upstream `export_gerber` surface no longer contains the older reviewed
-`variant_name` argument). Stale or malformed evidence must be reviewed before
-the fallback is changed.
+The committed test fixture under `crates/policy/tests/fixtures/` is an exact
+copy of `contracts/tool-effect-manifest.json` from released
+`mcp-server-v3.37.0` (Git blob
+`ec5ea85714b9338b2c0ca768fbad0c23bfe287bc`). The fixture validates source
+identity and reconciles exactly with all six locally reviewed effect contracts.
+The prior stale `export_gerber.variant_name` fact was removed; no tool name,
+capability, or risk disposition was added by this refresh. Separate negative
+tests continue to prove that stale source identities, malformed manifests,
+unknown effects, and locally unclassified tools fail closed.
 
 For a candidate upstream artifact, run:
 

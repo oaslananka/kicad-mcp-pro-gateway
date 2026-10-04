@@ -10,11 +10,11 @@ fn fixture_value() -> serde_json::Value {
 }
 
 #[test]
-fn upstream_fixture_parses_strictly() {
+fn released_upstream_fixture_parses_strictly() {
     let manifest = UpstreamEffectManifest::from_json_str(FIXTURE).unwrap();
 
     assert_eq!(manifest.schema_version(), "1.0.0");
-    assert_eq!(manifest.source().version, "3.35.2");
+    assert_eq!(manifest.source().version, "3.37.0");
     assert_eq!(
         manifest.source().reviewed_source_sha,
         "e460e28a4dd0f2c105a1d2db3e26eb731769c543"
@@ -34,34 +34,48 @@ fn upstream_fixture_parses_strictly() {
 }
 
 #[test]
-fn current_upstream_fixture_is_detected_as_stale_against_the_embedded_fallback_snapshot() {
+fn released_manifest_source_matches_the_embedded_reviewed_snapshot() {
     let manifest = UpstreamEffectManifest::from_json_str(FIXTURE).unwrap();
     let snapshot = ToolCatalogSnapshot::embedded();
 
-    let error = manifest.validate_source(&snapshot).unwrap_err();
+    manifest.validate_source(&snapshot).unwrap();
+    assert_eq!(
+        snapshot.source_sha,
+        "e460e28a4dd0f2c105a1d2db3e26eb731769c543"
+    );
+    assert_eq!(snapshot.len(), 387);
+}
+
+#[test]
+fn stale_manifest_source_still_fails_closed() {
+    let mut value = fixture_value();
+    value["source"]["reviewed_source_sha"] =
+        serde_json::json!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let manifest =
+        UpstreamEffectManifest::from_json_str(&serde_json::to_string(&value).unwrap()).unwrap();
+    let snapshot = ToolCatalogSnapshot::embedded();
+
     assert!(matches!(
-        error,
-        UpstreamEffectManifestError::StaleSource {
+        manifest.validate_source(&snapshot),
+        Err(UpstreamEffectManifestError::StaleSource {
             field: "reviewed_source_sha",
             ..
-        }
+        })
     ));
 }
 
 #[test]
-fn reconciliation_exposes_the_real_export_gerber_argument_drift() {
+fn released_manifest_reconciles_exactly_with_the_reviewed_fallback() {
     let manifest = UpstreamEffectManifest::from_json_str(FIXTURE).unwrap();
     let registry = TomlToolRegistry::try_embedded().unwrap();
 
     let report = manifest.reconcile_with_fallback(&registry).unwrap();
-    assert!(report.fallback_only_reviewed.is_empty());
-    assert!(report.upstream_only_reviewed.is_empty());
-    assert_eq!(report.contract_mismatches, vec!["export_gerber"]);
+    assert!(report.is_exact_match(), "{report:?}");
 
     let upstream = manifest.tool("export_gerber").unwrap().contract();
     let fallback = registry.effect_contract("export_gerber").unwrap();
-    assert!(!upstream.arguments().contains("variant_name"));
-    assert!(fallback.arguments().contains("variant_name"));
+    assert_eq!(upstream, fallback);
+    assert!(!fallback.arguments().contains("variant_name"));
 }
 
 #[test]
