@@ -287,7 +287,7 @@ async fn status(state: &Arc<DaemonState>) -> IpcResponse {
             let paired = identity.is_some();
             let core_bridge_reachable =
                 match CoreBridgeClient::new(state.core_health_probe_config.clone()) {
-                    Ok(client) => client.initialize("status-core-health").await.is_ok(),
+                    Ok(client) => client.connect("status-core-health").await.is_ok(),
                     Err(_) => false,
                 };
             IpcResponse::Status(DaemonStatusView {
