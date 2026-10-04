@@ -29,7 +29,10 @@ async fn final_lane_connects_with_stateless_discovery_and_per_request_metadata()
     let discovery = &requests[0];
     assert_eq!(discovery.body["method"], "server/discover");
     assert_eq!(
-        discovery.headers.get("mcp-protocol-version").map(String::as_str),
+        discovery
+            .headers
+            .get("mcp-protocol-version")
+            .map(String::as_str),
         Some(FINAL_MCP_PROTOCOL_VERSION)
     );
     assert_eq!(
@@ -88,15 +91,12 @@ async fn final_lane_connects_with_stateless_discovery_and_per_request_metadata()
 #[tokio::test]
 async fn legacy_lane_is_explicit_and_preserves_initialize_session_semantics() {
     let server = MockMcpServer::start().await;
-    let config = CoreBridgeConfig::new(server.endpoint())
-        .with_protocol_lane(ProtocolLane::Legacy2025);
+    let config =
+        CoreBridgeConfig::new(server.endpoint()).with_protocol_lane(ProtocolLane::Legacy2025);
     let client = CoreBridgeClient::new(config).unwrap();
 
     let initialized = client.connect("corr-legacy-init").await.unwrap();
-    assert_eq!(
-        initialized["protocolVersion"],
-        LEGACY_MCP_PROTOCOL_VERSION
-    );
+    assert_eq!(initialized["protocolVersion"], LEGACY_MCP_PROTOCOL_VERSION);
 
     client.list_tools("corr-legacy-list").await.unwrap();
 
