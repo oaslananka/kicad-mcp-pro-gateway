@@ -7,10 +7,15 @@ pairing, session negotiation, or the operation envelope is a secret format.
 ## Three distinct protocols — do not confuse them
 
 1. **Local core-bridge protocol**: standard MCP over Streamable HTTP, exactly
-   as implemented by kicad-mcp-pro (`initialize`, `tools/list`, `tools/call`,
-   JSON-RPC 2.0 envelopes, protocol version `2025-11-25` at the time of
-   writing, optional `MCP-Session-Id`). Gateway is a client of this
-   protocol; it does not extend or modify it. See
+   as implemented by the released kicad-mcp-pro contract. Gateway defaults to
+   the final `2026-07-28` stateless lane: every request carries
+   `MCP-Protocol-Version`, `Mcp-Method` (and `Mcp-Name` for named calls)
+   plus trusted per-request client `_meta`; bootstrap is direct
+   `server/discover`, with no `initialize` lifecycle or session ID. The
+   explicit maintained `2025-11-25` legacy lane retains
+   `initialize`/`MCP-Session-Id` behavior and is never selected by automatic
+   fallback. Gateway is a client of these upstream lanes; it does not extend
+   MCP or advertise Tasks/Apps. See
    [`crates/core-bridge`](../../crates/core-bridge).
 2. **Local desktop/CLI IPC protocol**: length-bounded JSON messages over a
    Unix-domain socket or Windows named pipe. There is no TCP fallback. The
