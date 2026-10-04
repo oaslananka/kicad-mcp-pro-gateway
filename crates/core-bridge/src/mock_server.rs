@@ -1,4 +1,4 @@
-//! A minimal in-process mock MCP server for testing [`crate::CoreBridgeClient`]
+//! A minimal in-process mock MCP server for testing `CoreBridgeClient`
 //! without a real kicad-mcp-pro instance. Test-only — see
 //! `docs/development/testing.md`. It hand-rolls just enough HTTP/1.1
 //! parsing to receive one JSON-RPC POST per connection; it is not a
@@ -6,6 +6,7 @@
 
 #![cfg(any(test, feature = "test-util"))]
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -26,12 +27,28 @@ pub enum ToolCallBehavior {
     Hang,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordedMcpRequest {
+    pub method: String,
+    pub headers: BTreeMap<String, String>,
+    pub params: Value,
+}
+
+impl RecordedMcpRequest {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .get(&name.to_ascii_lowercase())
+            .map(String::as_str)
+    }
+}
+
 pub struct MockMcpServer {
     addr: SocketAddr,
     shutdown: Arc<Notify>,
     behavior: Arc<Mutex<ToolCallBehavior>>,
     call_count: Arc<AtomicUsize>,
     tool_calls: Arc<Mutex<Vec<Value>>>,
+    requests: Arc<Mutex<Vec<RecordedMcpRequest>>>,
 }
 
 impl MockMcpServer {
@@ -46,11 +63,13 @@ impl MockMcpServer {
         )));
         let call_count = Arc::new(AtomicUsize::new(0));
         let tool_calls = Arc::new(Mutex::new(Vec::new()));
+        let requests = Arc::new(Mutex::new(Vec::new()));
 
         let shutdown_task = Arc::clone(&shutdown);
         let behavior_task = Arc::clone(&behavior);
         let call_count_task = Arc::clone(&call_count);
         let tool_calls_task = Arc::clone(&tool_calls);
+        let requests_task = Arc::clone(&requests);
 
         tokio::spawn(async move {
             loop {
@@ -60,8 +79,15 @@ impl MockMcpServer {
                             let behavior = Arc::clone(&behavior_task);
                             let call_count = Arc::clone(&call_count_task);
                             let tool_calls = Arc::clone(&tool_calls_task);
+                            let requests = Arc::clone(&requests_task);
                             tokio::spawn(async move {
-                                let _ = handle_connection(stream, behavior, call_count, tool_calls).await;
+                                let _ = handle_connection(
+                                    stream,
+                                    behavior,
+                                    call_count,
+                                    tool_calls,
+                                    requests,
+                                ).await;
                             });
                         }
                     }
@@ -76,6 +102,7 @@ impl MockMcpServer {
             behavior,
             call_count,
             tool_calls,
+            requests,
         }
     }
 
@@ -98,6 +125,13 @@ impl MockMcpServer {
             .clone()
     }
 
+    pub fn requests(&self) -> Vec<RecordedMcpRequest> {
+        self.requests
+            .lock()
+            .expect("mock requests mutex poisoned")
+            .clone()
+    }
+
     pub fn stop(&self) {
         self.shutdown.notify_waiters();
     }
@@ -108,8 +142,9 @@ async fn handle_connection(
     behavior: Arc<Mutex<ToolCallBehavior>>,
     call_count: Arc<AtomicUsize>,
     tool_calls: Arc<Mutex<Vec<Value>>>,
+    requests: Arc<Mutex<Vec<RecordedMcpRequest>>>,
 ) -> std::io::Result<()> {
-    let body = read_http_request(&mut stream).await?;
+    let (headers, body) = read_http_request(&mut stream).await?;
     let request: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(_) => {
@@ -119,19 +154,54 @@ async fn handle_connection(
     };
 
     let id = request.get("id").cloned().unwrap_or(Value::Null);
-    let method = request.get("method").and_then(Value::as_str).unwrap_or("");
+    let method = request
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
+    requests
+        .lock()
+        .expect("mock requests mutex poisoned")
+        .push(RecordedMcpRequest {
+            method: method.clone(),
+            headers,
+            params,
+        });
 
-    match method {
-        "initialize" => {
+    match method.as_str() {
+        "server/discover" => {
             let result = json!({
-                "protocolVersion": crate::protocol::MCP_PROTOCOL_VERSION,
-                "serverInfo": { "name": "mock-kicad-mcp-pro", "version": "0.0.0-mock" },
-                "capabilities": {},
+                "resultType": "complete",
+                "supportedVersions": [crate::protocol::MCP_PROTOCOL_VERSION],
+                "capabilities": { "tools": {}, "resources": {} },
+                "_meta": {
+                    "io.modelcontextprotocol/serverInfo": {
+                        "name": "mock-kicad-mcp-pro",
+                        "version": "0.0.0-mock"
+                    }
+                },
+                "ttlMs": 3_600_000,
+                "cacheScope": "private"
             });
             write_response(
                 &mut stream,
                 200,
                 &json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+            )
+            .await
+        }
+        "initialize" => {
+            let result = json!({
+                "protocolVersion": crate::protocol::MCP_LEGACY_PROTOCOL_VERSION,
+                "serverInfo": { "name": "mock-kicad-mcp-pro", "version": "0.0.0-mock" },
+                "capabilities": {},
+            });
+            write_response_with_headers(
+                &mut stream,
+                200,
+                &json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                &[("MCP-Session-Id", "mock-legacy-session")],
             )
             .await
         }
@@ -182,7 +252,9 @@ async fn handle_connection(
     }
 }
 
-async fn read_http_request(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
+async fn read_http_request(
+    stream: &mut TcpStream,
+) -> std::io::Result<(BTreeMap<String, String>, Vec<u8>)> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 512];
 
@@ -207,15 +279,15 @@ async fn read_http_request(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
     };
 
     let header_text = String::from_utf8_lossy(&buf[..header_end]);
-    let content_length: usize = header_text
-        .lines()
-        .find_map(|line| {
-            let lower = line.to_ascii_lowercase();
-            lower
-                .strip_prefix("content-length:")
-                .map(|rest| rest.trim().to_string())
-        })
-        .and_then(|v| v.parse().ok())
+    let mut headers = BTreeMap::new();
+    for line in header_text.lines().skip(1) {
+        if let Some((name, value)) = line.split_once(':') {
+            headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
+        }
+    }
+    let content_length: usize = headers
+        .get("content-length")
+        .and_then(|value| value.parse().ok())
         .unwrap_or(0);
 
     while buf.len() < header_end + content_length {
@@ -227,7 +299,7 @@ async fn read_http_request(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
     }
 
     let end = (header_end + content_length).min(buf.len());
-    Ok(buf[header_end..end].to_vec())
+    Ok((headers, buf[header_end..end].to_vec()))
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -237,12 +309,28 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 async fn write_response(stream: &mut TcpStream, status: u16, body: &Value) -> std::io::Result<()> {
+    write_response_with_headers(stream, status, body, &[]).await
+}
+
+async fn write_response_with_headers(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &Value,
+    extra_headers: &[(&str, &str)],
+) -> std::io::Result<()> {
     let body_bytes = serde_json::to_vec(body).expect("mock response is always serializable");
     let status_text = if status == 200 { "OK" } else { "Bad Request" };
-    let header = format!(
-        "HTTP/1.1 {status} {status_text}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+    let mut header = format!(
+        "HTTP/1.1 {status} {status_text}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n",
         body_bytes.len()
     );
+    for (name, value) in extra_headers {
+        header.push_str(name);
+        header.push_str(": ");
+        header.push_str(value);
+        header.push_str("\r\n");
+    }
+    header.push_str("Connection: close\r\n\r\n");
     stream.write_all(header.as_bytes()).await?;
     stream.write_all(&body_bytes).await?;
     stream.flush().await
