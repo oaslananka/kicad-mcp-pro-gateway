@@ -18,7 +18,7 @@ pub async fn reconcile_live_tool_registry(
     registry: &TomlToolRegistry,
     snapshot: &ToolCatalogSnapshot,
 ) -> Result<LiveToolReconciliation, CoreBridgeError> {
-    core_bridge.initialize("registry-reconcile-init").await?;
+    core_bridge.connect("registry-reconcile-connect").await?;
     let tools = core_bridge.list_tools("registry-reconcile-list").await?;
     let live = tools
         .iter()
