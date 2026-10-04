@@ -9,15 +9,25 @@ Neither is a second support matrix: both must agree with the declarations here.
 
 ## Baseline provenance
 
-Baseline audited on **2026-09-24** against `oaslananka/kicad-mcp-pro` release
-`mcp-server-v3.35.0`. On **2026-09-30**, the Gateway live-E2E
-workflow's actual test execution was re-audited: its previously green runs
-were **not** live validation evidence (0 executed tests, 3 ignored). The upstream baseline is pinned to commit
-`f641a92596ab7adc1e134287578b1ae5ff9580ad`. The upstream compatibility contract
-at that commit declares KiCad 10.0.x primary (10.0.6 latest verified) and KiCad
-8.x deprecated, with file-level read/migration support and manual validation
-only. KiCad 9.x is dropped; KiCad 11.x is preview-only. Gateway does not turn
-those upstream statuses into additional Gateway support claims.
+Gateway keeps the runtime protocol baseline and the reviewed policy snapshot
+separately pinned so a protocol upgrade cannot silently widen authorization.
+
+- **Runtime/protocol baseline:** reviewed on **2026-10-05** against released
+  `oaslananka/kicad-mcp-pro` `mcp-server-v3.37.0`, immutable commit
+  `014cf241480afc15ac2b34bf10c904f5415d376c`. That release publishes final MCP
+  `2026-07-28` as primary and retains explicit `2025-11-25` compatibility.
+- **Policy/tool-effect snapshot:** remains the separately reviewed
+  `mcp-server-v3.35.0` source at
+  `f641a92596ab7adc1e134287578b1ae5ff9580ad` (387 tools). This change does not
+  refresh or widen Gateway authorization facts; that remains issue #8 scope.
+
+On **2026-09-30**, the Gateway live-E2E workflow's earlier false-green runs were
+corrected: run 36736490865 then executed and passed all three tests against the
+historical 3.35.0 baseline. The current workflow is being moved to the released
+3.37.0 strict final-protocol lane; an exact-head passing run is required before
+that newer live-runtime claim is considered verified. KiCad 10.0.x remains the
+primary Gateway baseline (10.0.6 latest verified); 9.x is dropped and 11.x is
+preview-only.
 
 ## Platform & Architecture Support
 
@@ -36,7 +46,8 @@ packaged `.deb` / `.dmg` / `.msi` sidecar verification are defined in the
 [daemon lifecycle evidence matrix](../development/daemon-lifecycle.md#automated-and-clean-machine-evidence).
 The ordinary CI package jobs intentionally build unsigned compile-test
 artifacts. A separate `e2e-live.yml` workflow installs KiCad 10.0.6 and the
-pinned `kicad-mcp-pro 3.35.0` baseline. **As discovered on 2026-09-30,
+released `kicad-mcp-pro 3.37.0` runtime/protocol baseline in its strict
+stateless final-protocol lane. **As discovered on 2026-09-30,
 prior green workflow runs actually executed zero tests (3 ignored)**, so
 those runs are not positive Ubuntu live-E2E qualification evidence. PR #57
 corrects the invocation and requires executed tests. The
@@ -55,8 +66,9 @@ release gate; see [release.md](../development/release.md).
 | Component | Target / Version Range | Policy / Notes |
 |---|---|---|
 | **KiCad** | `10.0.x` primary; `10.0.6` latest verified | Required local EDA environment. `8.x` is deprecated upstream and is **not** a Gateway-supported baseline; `9.x` is dropped; `11.x` is preview-only. |
-| **kicad-mcp-pro** | `3.35.0`, `main` @ `f641a92596ab7adc1e134287578b1ae5ff9580ad` | Reviewed upstream tool snapshot and tool-effect contract source: 387 tools. Newly discovered or unclassified tools remain denied. |
-| **MCP core-bridge protocol** | `2025-11-25` | Standard MCP Streamable HTTP client lane implemented by `crates/core-bridge`; it does not extend MCP. |
+| **kicad-mcp-pro runtime** | `3.37.0` release @ `014cf241480afc15ac2b34bf10c904f5415d376c` | Released protocol/runtime baseline for final MCP validation. |
+| **Gateway policy snapshot** | `3.35.0` source @ `f641a92596ab7adc1e134287578b1ae5ff9580ad` | Reviewed tool/effect facts: 387 tools. Newly discovered or unclassified tools remain denied until #8 separately reconciles a released manifest. |
+| **MCP core-bridge protocol** | `2026-07-28` primary; `2025-11-25` explicit legacy | Final lane is stateless `server/discover` + per-request metadata/headers with no MCP session ID; legacy initialize/session behavior is separately selected and tested. No automatic downgrade/fallback. |
 | **Gateway transport protocol** | `0.1.0` | Gateway's versioned transport envelope; incompatible major versions are rejected. |
 | **Rust MSRV** | 1.88.0 | Checked in CI in addition to stable-toolchain checks. |
 | **Node.js / pnpm** | Node 20 / pnpm 9 | Versions used by the Linux desktop CI job. |
@@ -65,8 +77,11 @@ release gate; see [release.md](../development/release.md).
 ## Live-Core Validation Status
 
 The repository has an Ubuntu live-E2E workflow that installs KiCad 10.0.6,
-installs pinned `kicad-mcp-pro 3.35.0`, starts the loopback MCP server, and
-invokes the Gateway suite. **Historic success conclusions before the PR #57
+installs released `kicad-mcp-pro 3.37.0` from commit
+`014cf241480afc15ac2b34bf10c904f5415d376c`, starts the loopback MCP server in
+strict stateless MCP `2026-07-28` conformance mode, and invokes the Gateway
+suite. The prior 3.35.0 passing run remains historical evidence rather than
+evidence for this newer runtime lane. **Historic success conclusions before the PR #57
 repair are not test-passing evidence:** all three live tests were marked
 `#[ignore]` and the workflow did not enable them (`0 passed; 3 ignored`).
 On 2026-09-30, the first real run executed all 3 tests (2 passed, 1
@@ -91,7 +106,8 @@ on every supported platform.
 
 | Combination | Current Status | Required Evidence |
 |---|---|---|
-| Linux `x86_64` + KiCad 10.0.6 + pinned kicad-mcp-pro 3.35.0 | **3/3 real live E2E tests passed** in [GitHub Actions run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) on 2026-09-30; prior zero-test green runs remain invalid evidence. | Preserve this bounded Ubuntu CI evidence; separately qualify the exact tagged artifact on a clean Ubuntu 24.04 machine before promotion. |
+| Linux `x86_64` + KiCad 10.0.6 + kicad-mcp-pro 3.37.0 final MCP lane | **PENDING exact-head Gateway live-E2E evidence for this compatibility change.** | Require a real nonzero passing Live E2E run before promoting the 3.37.0 final-lane support claim; exact-artifact clean-machine qualification remains separate. |
+| Linux `x86_64` + KiCad 10.0.6 + kicad-mcp-pro 3.35.0 legacy historical baseline | **3/3 real live E2E tests passed** in [GitHub Actions run 36736490865](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/36736490865) on 2026-09-30; prior zero-test green runs remain invalid evidence. | Historical bounded evidence only; it does not qualify the 3.37.0 final lane or a release artifact. |
 | macOS `aarch64` + KiCad 10.0.x + pinned kicad-mcp-pro | Not live-validated by this repository | Run the live probe and exact-artifact smoke/clean-machine qualification on Apple Silicon and retain the evidence. |
 | Windows `x86_64` + KiCad 10.0.x + pinned kicad-mcp-pro | Not live-validated by this repository | Run the live probe and exact-artifact smoke/clean-machine qualification on Windows 11 and retain the evidence. |
 | KiCad 8.x, 9.x, or 11.x | Unsupported for Gateway release qualification | Do not promote a support claim; an explicit future compatibility review is required. |
