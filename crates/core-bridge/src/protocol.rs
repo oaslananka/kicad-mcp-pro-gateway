@@ -3,10 +3,39 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The MCP protocol version this client negotiates, as documented by
-/// kicad-mcp-pro at the time this crate was written
-/// (`docs/mcp/transport.md` in that repository).
-pub const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
+/// Upstream's primary, stateless MCP contract.
+pub const FINAL_MCP_PROTOCOL_VERSION: &str = "2026-07-28";
+
+/// Explicit backward-compatible initialize/session lane retained by upstream.
+pub const LEGACY_MCP_PROTOCOL_VERSION: &str = "2025-11-25";
+
+/// Primary Gateway core-bridge protocol. Kept as an alias for callers that only
+/// need the promoted default rather than lane-specific behavior.
+pub const MCP_PROTOCOL_VERSION: &str = FINAL_MCP_PROTOCOL_VERSION;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProtocolLane {
+    #[default]
+    Final2026,
+    Legacy2025,
+}
+
+impl ProtocolLane {
+    pub const fn protocol_version(self) -> &'static str {
+        match self {
+            Self::Final2026 => FINAL_MCP_PROTOCOL_VERSION,
+            Self::Legacy2025 => LEGACY_MCP_PROTOCOL_VERSION,
+        }
+    }
+
+    pub const fn uses_initialize(self) -> bool {
+        matches!(self, Self::Legacy2025)
+    }
+
+    pub const fn uses_session_ids(self) -> bool {
+        matches!(self, Self::Legacy2025)
+    }
+}
 
 #[derive(Debug, Serialize)]
 pub struct JsonRpcRequest {
