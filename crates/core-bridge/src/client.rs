@@ -73,7 +73,8 @@ impl CoreBridgeClient {
     ) -> Result<serde_json::Value, CoreBridgeError> {
         match self.protocol_lane {
             McpProtocolLane::Final2026 => {
-                self.send("server/discover", json!({}), correlation_id).await
+                self.send("server/discover", json!({}), correlation_id)
+                    .await
             }
             McpProtocolLane::Legacy2025 => {
                 let params = json!({
