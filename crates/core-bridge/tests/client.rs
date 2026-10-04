@@ -10,7 +10,10 @@ async fn final_lane_uses_direct_stateless_discovery_and_request_metadata() {
     let client = CoreBridgeClient::new(CoreBridgeConfig::new(server.endpoint())).unwrap();
 
     let discovery = client.bootstrap("corr-discover").await.unwrap();
-    assert_eq!(discovery["supportedVersions"], json!([MCP_PROTOCOL_VERSION]));
+    assert_eq!(
+        discovery["supportedVersions"],
+        json!([MCP_PROTOCOL_VERSION])
+    );
     assert_eq!(
         discovery["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
         "mock-kicad-mcp-pro"
