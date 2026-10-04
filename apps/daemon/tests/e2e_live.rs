@@ -594,10 +594,12 @@ async fn live_core_health_check() {
     // CoreBridgeClient::connect returns the JSON-RPC result payload,
     // not the outer envelope.
     assert_eq!(discovery["supportedVersions"][0], MCP_PROTOCOL_VERSION);
-    assert!(discovery["_meta"]["io.modelcontextprotocol/serverInfo"]["name"]
-        .as_str()
-        .expect("discovered server must expose a name")
-        .contains("kicad-mcp-pro"));
+    assert!(
+        discovery["_meta"]["io.modelcontextprotocol/serverInfo"]["name"]
+            .as_str()
+            .expect("discovered server must expose a name")
+            .contains("kicad-mcp-pro")
+    );
 
     let tools = bridge
         .list_tools("health-tools")
