@@ -1,20 +1,19 @@
 //! The MCP Streamable HTTP client to the local kicad-mcp-pro server.
 //!
-//! This is deliberately a *minimal* client surface (`initialize`,
-//! `tools/list`, `tools/call`) rather than a full MCP SDK: kicad-mcp-pro's
-//! documented contract at the time of writing needs only these three
-//! methods for Gateway's purposes, and a smaller surface is easier to
-//! keep correct and audited. See `docs/protocol/README.md`.
+//! Gateway deliberately keeps a small audited surface: protocol connect /
+//! discovery, tools/list, and tools/call. The primary upstream contract is
+//! stateless MCP 2026-07-28; an explicit legacy 2025-11-25 initialize/session
+//! lane remains available for compatibility.
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use serde_json::json;
+use serde_json::{json, Value};
 use url::Url;
 
 use crate::error::CoreBridgeError;
-use crate::protocol::{JsonRpcRequest, JsonRpcResponse, ToolDescriptor, MCP_PROTOCOL_VERSION};
+use crate::protocol::{JsonRpcRequest, JsonRpcResponse, ProtocolLane, ToolDescriptor};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -22,6 +21,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct CoreBridgeConfig {
     pub endpoint: Url,
     pub timeout: Duration,
+    pub protocol_lane: ProtocolLane,
 }
 
 impl CoreBridgeConfig {
@@ -29,13 +29,20 @@ impl CoreBridgeConfig {
         Self {
             endpoint,
             timeout: DEFAULT_TIMEOUT,
+            protocol_lane: ProtocolLane::Final2026,
         }
+    }
+
+    pub fn with_protocol_lane(mut self, protocol_lane: ProtocolLane) -> Self {
+        self.protocol_lane = protocol_lane;
+        self
     }
 }
 
 pub struct CoreBridgeClient {
     http: reqwest::Client,
     endpoint: Url,
+    protocol_lane: ProtocolLane,
     session_id: Mutex<Option<String>>,
 }
 
@@ -51,30 +58,60 @@ impl CoreBridgeClient {
         Ok(Self {
             http,
             endpoint: config.endpoint,
+            protocol_lane: config.protocol_lane,
             session_id: Mutex::new(None),
         })
     }
 
-    /// Performs the MCP `initialize` handshake. Returns the raw server
-    /// `result` payload — Gateway does not need to interpret every field
-    /// of it, only that the call succeeded.
+    pub const fn protocol_lane(&self) -> ProtocolLane {
+        self.protocol_lane
+    }
+
+    /// Establishes protocol readiness without leaking legacy transport-session
+    /// mechanics into callers. The final lane uses direct server/discover;
+    /// only the explicit legacy lane performs initialize.
+    pub async fn connect(
+        &self,
+        correlation_id: &str,
+    ) -> Result<serde_json::Value, CoreBridgeError> {
+        match self.protocol_lane {
+            ProtocolLane::Final2026 => {
+                self.send("server/discover", json!({}), correlation_id, None)
+                    .await
+            }
+            ProtocolLane::Legacy2025 => self.initialize(correlation_id).await,
+        }
+    }
+
+    /// Performs the legacy MCP initialize handshake.
+    ///
+    /// Final-protocol callers must use connect(), which sends server/discover
+    /// and never sends legacy lifecycle/session fields.
     pub async fn initialize(
         &self,
         correlation_id: &str,
     ) -> Result<serde_json::Value, CoreBridgeError> {
+        if !self.protocol_lane.uses_initialize() {
+            return Err(CoreBridgeError::ProtocolError(
+                "initialize is only valid for the explicit MCP 2025-11-25 legacy lane".into(),
+            ));
+        }
+
         let params = json!({
-            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "protocolVersion": self.protocol_lane.protocol_version(),
             "capabilities": {},
             "clientInfo": { "name": "kicad-mcp-pro-gateway", "version": env!("CARGO_PKG_VERSION") },
         });
-        self.send("initialize", params, correlation_id).await
+        self.send("initialize", params, correlation_id, None).await
     }
 
     pub async fn list_tools(
         &self,
         correlation_id: &str,
     ) -> Result<Vec<ToolDescriptor>, CoreBridgeError> {
-        let result = self.send("tools/list", json!({}), correlation_id).await?;
+        let result = self
+            .send("tools/list", json!({}), correlation_id, None)
+            .await?;
         let tools = result
             .get("tools")
             .cloned()
@@ -91,7 +128,43 @@ impl CoreBridgeClient {
         correlation_id: &str,
     ) -> Result<serde_json::Value, CoreBridgeError> {
         let params = json!({ "name": name, "arguments": arguments });
-        self.send("tools/call", params, correlation_id).await
+        self.send("tools/call", params, correlation_id, Some(name))
+            .await
+    }
+
+    fn prepare_params(&self, params: Value) -> Result<Value, CoreBridgeError> {
+        if self.protocol_lane != ProtocolLane::Final2026 {
+            return Ok(params);
+        }
+
+        let mut params = match params {
+            Value::Object(map) => map,
+            _ => {
+                return Err(CoreBridgeError::ProtocolError(
+                    "final MCP request params must be a JSON object".into(),
+                ))
+            }
+        };
+
+        if params.contains_key("_meta") {
+            return Err(CoreBridgeError::ProtocolError(
+                "final MCP request metadata is owned by the core bridge".into(),
+            ));
+        }
+
+        params.insert(
+            "_meta".into(),
+            json!({
+                "io.modelcontextprotocol/protocolVersion": self.protocol_lane.protocol_version(),
+                "io.modelcontextprotocol/clientInfo": {
+                    "name": "kicad-mcp-pro-gateway",
+                    "version": env!("CARGO_PKG_VERSION"),
+                },
+                "io.modelcontextprotocol/clientCapabilities": {},
+            }),
+        );
+
+        Ok(Value::Object(params))
     }
 
     async fn send(
@@ -99,7 +172,9 @@ impl CoreBridgeClient {
         method: &str,
         params: serde_json::Value,
         correlation_id: &str,
+        name: Option<&str>,
     ) -> Result<serde_json::Value, CoreBridgeError> {
+        let params = self.prepare_params(params)?;
         let request_body = JsonRpcRequest::new(correlation_id, method, params);
 
         let mut req = self
@@ -107,16 +182,28 @@ impl CoreBridgeClient {
             .post(self.endpoint.clone())
             .header("Accept", "application/json, text/event-stream")
             .header("Content-Type", "application/json")
-            .header("MCP-Protocol-Version", MCP_PROTOCOL_VERSION)
+            .header(
+                "MCP-Protocol-Version",
+                self.protocol_lane.protocol_version(),
+            )
             .json(&request_body);
 
-        if let Some(session_id) = self
-            .session_id
-            .lock()
-            .expect("session_id mutex poisoned")
-            .clone()
-        {
-            req = req.header("MCP-Session-Id", session_id);
+        if self.protocol_lane == ProtocolLane::Final2026 {
+            req = req.header("Mcp-Method", method);
+            if let Some(name) = name {
+                req = req.header("Mcp-Name", name);
+            }
+        }
+
+        if self.protocol_lane.uses_session_ids() {
+            if let Some(session_id) = self
+                .session_id
+                .lock()
+                .expect("session_id mutex poisoned")
+                .clone()
+            {
+                req = req.header("MCP-Session-Id", session_id);
+            }
         }
 
         let response = req.send().await.map_err(|e| {
@@ -127,10 +214,12 @@ impl CoreBridgeClient {
             }
         })?;
 
-        if let Some(session_header) = response.headers().get("MCP-Session-Id") {
-            if let Ok(value) = session_header.to_str() {
-                *self.session_id.lock().expect("session_id mutex poisoned") =
-                    Some(value.to_string());
+        if self.protocol_lane.uses_session_ids() {
+            if let Some(session_header) = response.headers().get("MCP-Session-Id") {
+                if let Ok(value) = session_header.to_str() {
+                    *self.session_id.lock().expect("session_id mutex poisoned") =
+                        Some(value.to_string());
+                }
             }
         }
 
@@ -160,8 +249,7 @@ impl CoreBridgeClient {
 
 /// Refuses any endpoint that is not loopback/local. This is a second gate
 /// against reaching an arbitrary network host, independent of whatever the
-/// daemon's own configuration validation does — see
-/// `docs/security/trust-boundaries.md`.
+/// daemon's own configuration validation does.
 fn assert_loopback(endpoint: &Url) -> Result<(), CoreBridgeError> {
     let host = endpoint.host_str().unwrap_or("");
     let is_loopback = host.eq_ignore_ascii_case("localhost")
@@ -188,6 +276,44 @@ fn assert_loopback(endpoint: &Url) -> Result<(), CoreBridgeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_config_uses_final_protocol_lane() {
+        let config = CoreBridgeConfig::new(Url::parse("http://127.0.0.1:3334/mcp").unwrap());
+        assert_eq!(config.protocol_lane, ProtocolLane::Final2026);
+    }
+
+    #[test]
+    fn final_lane_rejects_non_object_params() {
+        let client = CoreBridgeClient::new(CoreBridgeConfig::new(
+            Url::parse("http://127.0.0.1:3334/mcp").unwrap(),
+        ))
+        .unwrap();
+
+        let result = client.prepare_params(json!([]));
+        assert!(
+            matches!(result, Err(CoreBridgeError::ProtocolError(_))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn final_lane_rejects_caller_owned_request_metadata() {
+        let client = CoreBridgeClient::new(CoreBridgeConfig::new(
+            Url::parse("http://127.0.0.1:3334/mcp").unwrap(),
+        ))
+        .unwrap();
+
+        let result = client.prepare_params(json!({
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "caller-controlled"
+            }
+        }));
+        assert!(
+            matches!(result, Err(CoreBridgeError::ProtocolError(_))),
+            "{result:?}"
+        );
+    }
 
     #[test]
     fn loopback_hosts_are_allowed() {

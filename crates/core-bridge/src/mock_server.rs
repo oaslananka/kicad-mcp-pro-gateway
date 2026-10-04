@@ -6,6 +6,7 @@
 
 #![cfg(any(test, feature = "test-util"))]
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -26,12 +27,19 @@ pub enum ToolCallBehavior {
     Hang,
 }
 
+#[derive(Debug, Clone)]
+pub struct RecordedHttpRequest {
+    pub headers: BTreeMap<String, String>,
+    pub body: Value,
+}
+
 pub struct MockMcpServer {
     addr: SocketAddr,
     shutdown: Arc<Notify>,
     behavior: Arc<Mutex<ToolCallBehavior>>,
     call_count: Arc<AtomicUsize>,
     tool_calls: Arc<Mutex<Vec<Value>>>,
+    requests: Arc<Mutex<Vec<RecordedHttpRequest>>>,
 }
 
 impl MockMcpServer {
@@ -46,11 +54,13 @@ impl MockMcpServer {
         )));
         let call_count = Arc::new(AtomicUsize::new(0));
         let tool_calls = Arc::new(Mutex::new(Vec::new()));
+        let requests = Arc::new(Mutex::new(Vec::new()));
 
         let shutdown_task = Arc::clone(&shutdown);
         let behavior_task = Arc::clone(&behavior);
         let call_count_task = Arc::clone(&call_count);
         let tool_calls_task = Arc::clone(&tool_calls);
+        let requests_task = Arc::clone(&requests);
 
         tokio::spawn(async move {
             loop {
@@ -60,8 +70,16 @@ impl MockMcpServer {
                             let behavior = Arc::clone(&behavior_task);
                             let call_count = Arc::clone(&call_count_task);
                             let tool_calls = Arc::clone(&tool_calls_task);
+                            let requests = Arc::clone(&requests_task);
                             tokio::spawn(async move {
-                                let _ = handle_connection(stream, behavior, call_count, tool_calls).await;
+                                let _ = handle_connection(
+                                    stream,
+                                    behavior,
+                                    call_count,
+                                    tool_calls,
+                                    requests,
+                                )
+                                .await;
                             });
                         }
                     }
@@ -76,6 +94,7 @@ impl MockMcpServer {
             behavior,
             call_count,
             tool_calls,
+            requests,
         }
     }
 
@@ -98,6 +117,13 @@ impl MockMcpServer {
             .clone()
     }
 
+    pub fn requests(&self) -> Vec<RecordedHttpRequest> {
+        self.requests
+            .lock()
+            .expect("mock request mutex poisoned")
+            .clone()
+    }
+
     pub fn stop(&self) {
         self.shutdown.notify_waiters();
     }
@@ -108,8 +134,9 @@ async fn handle_connection(
     behavior: Arc<Mutex<ToolCallBehavior>>,
     call_count: Arc<AtomicUsize>,
     tool_calls: Arc<Mutex<Vec<Value>>>,
+    requests: Arc<Mutex<Vec<RecordedHttpRequest>>>,
 ) -> std::io::Result<()> {
-    let body = read_http_request(&mut stream).await?;
+    let (headers, body) = read_http_request(&mut stream).await?;
     let request: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(_) => {
@@ -118,17 +145,39 @@ async fn handle_connection(
         }
     };
 
+    requests
+        .lock()
+        .expect("mock request mutex poisoned")
+        .push(RecordedHttpRequest {
+            headers,
+            body: request.clone(),
+        });
+
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     let method = request.get("method").and_then(Value::as_str).unwrap_or("");
 
     match method {
+        "server/discover" => {
+            let result = json!({
+                "protocolVersion": crate::protocol::FINAL_MCP_PROTOCOL_VERSION,
+                "supportedVersions": [crate::protocol::FINAL_MCP_PROTOCOL_VERSION],
+                "serverInfo": { "name": "mock-kicad-mcp-pro", "version": "0.0.0-mock" },
+                "capabilities": { "tools": {} },
+            });
+            write_response_with_session(
+                &mut stream,
+                200,
+                &json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+            )
+            .await
+        }
         "initialize" => {
             let result = json!({
-                "protocolVersion": crate::protocol::MCP_PROTOCOL_VERSION,
+                "protocolVersion": crate::protocol::LEGACY_MCP_PROTOCOL_VERSION,
                 "serverInfo": { "name": "mock-kicad-mcp-pro", "version": "0.0.0-mock" },
                 "capabilities": {},
             });
-            write_response(
+            write_response_with_session(
                 &mut stream,
                 200,
                 &json!({ "jsonrpc": "2.0", "id": id, "result": result }),
@@ -182,7 +231,9 @@ async fn handle_connection(
     }
 }
 
-async fn read_http_request(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
+async fn read_http_request(
+    stream: &mut TcpStream,
+) -> std::io::Result<(BTreeMap<String, String>, Vec<u8>)> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 512];
 
@@ -207,6 +258,12 @@ async fn read_http_request(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
     };
 
     let header_text = String::from_utf8_lossy(&buf[..header_end]);
+    let headers = header_text
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_string()))
+        .collect::<BTreeMap<_, _>>();
     let content_length: usize = header_text
         .lines()
         .find_map(|line| {
@@ -227,7 +284,7 @@ async fn read_http_request(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
     }
 
     let end = (header_end + content_length).min(buf.len());
-    Ok(buf[header_end..end].to_vec())
+    Ok((headers, buf[header_end..end].to_vec()))
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -236,11 +293,31 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+async fn write_response_with_session(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &Value,
+) -> std::io::Result<()> {
+    write_response_inner(stream, status, body, Some("mock-session")).await
+}
+
 async fn write_response(stream: &mut TcpStream, status: u16, body: &Value) -> std::io::Result<()> {
+    write_response_inner(stream, status, body, None).await
+}
+
+async fn write_response_inner(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &Value,
+    session_id: Option<&str>,
+) -> std::io::Result<()> {
     let body_bytes = serde_json::to_vec(body).expect("mock response is always serializable");
     let status_text = if status == 200 { "OK" } else { "Bad Request" };
+    let session_header = session_id
+        .map(|id| format!("MCP-Session-Id: {id}\r\n"))
+        .unwrap_or_default();
     let header = format!(
-        "HTTP/1.1 {status} {status_text}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {status} {status_text}\r\nContent-Type: application/json\r\n{session_header}Content-Length: {}\r\nConnection: close\r\n\r\n",
         body_bytes.len()
     );
     stream.write_all(header.as_bytes()).await?;

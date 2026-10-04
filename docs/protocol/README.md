@@ -7,10 +7,13 @@ pairing, session negotiation, or the operation envelope is a secret format.
 ## Three distinct protocols — do not confuse them
 
 1. **Local core-bridge protocol**: standard MCP over Streamable HTTP, exactly
-   as implemented by kicad-mcp-pro (`initialize`, `tools/list`, `tools/call`,
-   JSON-RPC 2.0 envelopes, protocol version `2025-11-25` at the time of
-   writing, optional `MCP-Session-Id`). Gateway is a client of this
-   protocol; it does not extend or modify it. See
+   as implemented by the pinned kicad-mcp-pro runtime. The primary lane is
+   stateless MCP `2026-07-28`: Gateway calls `server/discover` directly,
+   sends the required per-request `_meta`, `Mcp-Method`, and `Mcp-Name`
+   headers, and never establishes or echoes an MCP session ID. An explicit
+   `ProtocolLane::Legacy2025` lane retains the backward-compatible
+   `2025-11-25` initialize/session contract when deliberately selected.
+   Gateway does not advertise or consume Tasks/Apps extensions. See
    [`crates/core-bridge`](../../crates/core-bridge).
 2. **Local desktop/CLI IPC protocol**: length-bounded JSON messages over a
    Unix-domain socket or Windows named pipe. There is no TCP fallback. The
@@ -105,10 +108,11 @@ persists — so a client never has to normalize a debug rendering.
 All three protocol boundaries are explicit. A breaking Gateway transport
 change bumps the envelope's major component; receivers reject majors they do
 not understand rather than guess. Local IPC has a separate integer contract
-version (currently 3) and requires an exact match before forwarding privileged
-requests. IPC v3 distinguishes the remote claimed display name from verified
-actor identity on both SessionView and AccessGrantView: verified_identity is
-null for absent or incomplete authenticated grant evidence. The view carries
+version (currently 5) and requires an exact match before forwarding privileged
+requests. The protocol history is additive: v3 separated claimed and verified
+principal identity, v4 added structured dynamic-risk evidence, and v5 added the
+confirmed-overwrite risk-factor vocabulary. `verified_identity` remains null
+for absent or incomplete authenticated grant evidence. The view carries
 only issuer, subject, verification source and authentication strength, never
 a credential or transport binding. These fields do not imply production relay
 credential verification is implemented. Daemon package versions are checked separately so a stale Gateway
