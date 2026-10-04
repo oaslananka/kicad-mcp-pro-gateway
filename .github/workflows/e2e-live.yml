@@ -132,17 +132,33 @@ jobs:
           SERVER_PID=$!
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
           
-          # Wait for server to be ready
+          # Wait for the finite final-protocol discovery response. A bare
+          # GET /mcp may intentionally remain open under Streamable HTTP and
+          # must not be used as a readiness probe.
+          READY=0
           for i in {1..30}; do
-            if curl -s http://127.0.0.1:3334/mcp > /dev/null 2>&1; then
-              echo "kicad-mcp-pro server is ready"
+            if curl -sS --fail --max-time 5 http://127.0.0.1:3334/mcp \
+              -X POST \
+              -H "Accept: application/json, text/event-stream" \
+              -H "Content-Type: application/json" \
+              -H "MCP-Protocol-Version: 2026-07-28" \
+              -H "Mcp-Method: server/discover" \
+              -d '{"jsonrpc":"2.0","id":"readiness-discover","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"gateway-e2e-readiness","version":"0.1.0"},"io.modelcontextprotocol/clientCapabilities":{}}}}' \
+              -o /tmp/kicad-mcp-discovery.json; then
+              READY=1
+              echo "kicad-mcp-pro final MCP server is ready"
               break
             fi
             sleep 1
           done
-          
-          # Verify server is responding
-          curl -s http://127.0.0.1:3334/mcp || true
+
+          if [[ "$READY" != "1" ]]; then
+            echo "kicad-mcp-pro did not become ready for final MCP discovery" >&2
+            kill "$SERVER_PID" || true
+            exit 1
+          fi
+
+          cat /tmp/kicad-mcp-discovery.json
           sleep 2
 
       - name: Record environment evidence
@@ -170,7 +186,7 @@ jobs:
           ls -la "$FIXTURE_DIR" >> e2e-evidence.txt
           echo "" >> e2e-evidence.txt
           echo "--- Final MCP Discovery Probe ---" >> e2e-evidence.txt
-          curl -sS --fail-with-body http://127.0.0.1:3334/mcp \
+          curl -sS --fail-with-body --max-time 10 http://127.0.0.1:3334/mcp \
             -X POST \
             -H "Accept: application/json, text/event-stream" \
             -H "Content-Type: application/json" \
