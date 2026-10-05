@@ -169,6 +169,20 @@ for each candidate and attach its records. Every record must identify the exact
 installer filename and SHA-256 from the draft's `artifact-manifest.json`; a
 result for different bytes is not valid evidence.
 
+Qualification is bound to the exact candidate identity: tag, source commit, and
+artifact hashes. Evidence from an RC such as `v1.0.0-rc1` does **not** transfer
+to a rebuilt or reversioned `v1.0.0` artifact set. If the stable candidate is
+rebuilt, retagged, or otherwise produces different bytes, repeat the required
+clean-machine, live-KiCad/MCP, signing/notarization, and provenance verification
+against the final hashes. Stable publication must publish the same already
+qualified draft release; do not replace its tag or assets after qualification.
+
+For the first stable Gateway release, where no prior stable package exists, use
+a retained exact RC candidate as the old version for the required in-place
+upgrade checks. Record both the RC and stable-candidate hashes. The RC provides
+an upgrade baseline; it does not make its qualification evidence transferable
+to the final stable bytes.
+
 The required clean environments are:
 
 - a fresh Ubuntu 24.04 LTS x86-64 machine with no prior Gateway files or
@@ -244,6 +258,9 @@ remaining qualification/promotion activities, not implied capabilities.
 ### Promotion
 
 - [ ] All candidate hashes match the draft manifest and qualification records.
+- [ ] The draft being promoted is the same tag, source commit, and artifact byte
+  set that was qualified; no rebuild, reversioning, asset replacement, or tag
+  replacement occurred after qualification.
 - [ ] All required evidence is attached, redacted, and accepted.
-- [ ] A separately authorized release owner promotes the draft; this issue
-  itself does not publish a stable release.
+- [ ] A separately authorized release owner promotes that exact draft; this
+  issue itself does not publish a stable release.
