@@ -583,7 +583,7 @@ impl Window {
     if !self.minimized.load(Ordering::Acquire) && self.window.get_visible() {
       if let Err(e) = self
         .window_requests_tx
-        .send((self.window_id, WindowRequest::Focus))
+        .send_blocking((self.window_id, WindowRequest::Focus))
       {
         log::warn!("Fail to send visible request: {}", e);
       }
