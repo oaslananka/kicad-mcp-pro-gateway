@@ -16,7 +16,6 @@ use gtk::glib::{self, translate::FromGlibPtrFull};
 use gtk::{
   gdk::{self},
   gio::Cancellable,
-  glib::{Cast, IsA},
   prelude::*,
 };
 use http::Request;
