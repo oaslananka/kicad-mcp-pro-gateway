@@ -48,6 +48,8 @@ jobs:
   msrv:
     name: rust / msrv-1.88
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -99,6 +101,25 @@ jobs:
           name: desktop-cargo-lock-migration
           path: apps/desktop/src-tauri/Cargo.lock
           if-no-files-found: error
+
+      - name: Commit resolved desktop Cargo lock
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          LOCK_PATH="apps/desktop/src-tauri/Cargo.lock"
+          if git diff --quiet -- "$LOCK_PATH"; then
+            echo "Desktop Cargo.lock is already current."
+            exit 0
+          fi
+          LOCK_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${LOCK_PATH}?ref=${BRANCH}" --jq .sha)"
+          LOCK_CONTENT="$(base64 -w0 "$LOCK_PATH")"
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${LOCK_PATH}" \
+            -f message="chore(desktop): refresh Tauri 2.12 lockfile" \
+            -f content="$LOCK_CONTENT" \
+            -f sha="$LOCK_SHA" \
+            -f branch="$BRANCH"
 
   security:
     name: security / cargo-audit
