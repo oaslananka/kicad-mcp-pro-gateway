@@ -56,6 +56,7 @@ fn security_boundaries_keep_their_core_invariants() {
         "access_grants",
         "Audit is a gate",
         "replay",
+        "second daemon for the same data directory",
     ] {
         assert!(
             daemon.contains(marker),
@@ -98,6 +99,7 @@ fn security_boundaries_keep_their_core_invariants() {
         "2026-07-28",
         "2025-11-25",
         "Tasks/Apps",
+        "non-idempotent tool calls",
     ] {
         assert!(
             bridge.contains(marker),
@@ -115,6 +117,7 @@ fn desktop_and_ci_instructions_preserve_packaging_and_evidence_rules() {
         "vendor/compat",
         "glib 0.18",
         "Secure=true",
+        "Never display raw daemon stderr",
     ] {
         assert!(
             desktop.contains(marker),
@@ -126,7 +129,7 @@ fn desktop_and_ci_instructions_preserve_packaging_and_evidence_rules() {
     for marker in [
         "full commit SHAs",
         "false-green",
-        "zero live tests",
+        "non-zero expected test count",
         "SPDX SBOM",
         "human release-owner promotion",
     ] {
