@@ -19,6 +19,7 @@ pub fn assess_operation_risk(
         match rule {
             RiskRule::ArgumentCardinality {
                 argument,
+                breadth_dimension: _,
                 minimum_count,
                 requires_effect,
                 escalate_to,

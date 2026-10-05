@@ -14,17 +14,24 @@ use crate::operation_effects::{OperationEffect, ToolEffectContract};
 use crate::tool_catalog::ToolCatalogSnapshot;
 
 pub const TOOL_EFFECT_CONTRACT_VERSION: u32 = 1;
-pub const OPERATION_RISK_POLICY_VERSION: u32 = 3;
+pub const OPERATION_RISK_POLICY_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BooleanRiskFactor {
     ConfirmedOverwrite,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RiskBreadthDimension {
+    ItemCount,
+    PathCount,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RiskRule {
     ArgumentCardinality {
         argument: String,
+        breadth_dimension: RiskBreadthDimension,
         minimum_count: u64,
         requires_effect: OperationEffect,
         escalate_to: RiskLevel,
@@ -120,6 +127,7 @@ struct ToolEntryRaw {
 enum RiskRuleRaw {
     ArgumentCardinality {
         argument: String,
+        breadth_dimension: String,
         minimum_count: u64,
         requires_effect: String,
         escalate_to: String,
@@ -410,6 +418,7 @@ fn parse_risk_rules(
         let rule = match raw_rule {
             RiskRuleRaw::ArgumentCardinality {
                 argument,
+                breadth_dimension,
                 minimum_count,
                 requires_effect,
                 escalate_to,
@@ -421,10 +430,12 @@ fn parse_risk_rules(
                         message: "argument_cardinality minimum_count must be at least 2".into(),
                     });
                 }
+                let breadth_dimension = parse_risk_breadth_dimension(&raw.name, breadth_dimension)?;
                 let requires_effect = validate_rule_effect(&raw.name, contract, requires_effect)?;
                 let escalate_to = validate_rule_escalation(&raw.name, base_risk, escalate_to)?;
                 RiskRule::ArgumentCardinality {
                     argument: argument.clone(),
+                    breadth_dimension,
                     minimum_count: *minimum_count,
                     requires_effect,
                     escalate_to,
@@ -469,6 +480,20 @@ fn parse_risk_rules(
         rules.push(rule);
     }
     Ok(rules)
+}
+
+fn parse_risk_breadth_dimension(
+    tool: &str,
+    raw: &str,
+) -> Result<RiskBreadthDimension, ToolRegistryError> {
+    match raw {
+        "item_count" => Ok(RiskBreadthDimension::ItemCount),
+        "path_count" => Ok(RiskBreadthDimension::PathCount),
+        _ => Err(ToolRegistryError::InvalidRiskRule {
+            tool: tool.to_string(),
+            message: format!("unknown breadth dimension '{raw}'"),
+        }),
+    }
 }
 
 fn validate_rule_argument(
@@ -700,6 +725,7 @@ mod tests {
     const CARDINALITY_RULE: &str = "[[tool.risk_rules]]\n\
         kind = \"argument_cardinality\"\n\
         argument = \"item_ids\"\n\
+        breadth_dimension = \"item_count\"\n\
         minimum_count = 2\n\
         requires_effect = \"delete\"\n\
         escalate_to = \"high\"\n";
@@ -718,6 +744,7 @@ mod tests {
             registry.risk_rules("pcb_delete_items"),
             &[RiskRule::ArgumentCardinality {
                 argument: "item_ids".into(),
+                breadth_dimension: RiskBreadthDimension::ItemCount,
                 minimum_count: 2,
                 requires_effect: OperationEffect::Delete,
                 escalate_to: RiskLevel::High,
@@ -742,6 +769,17 @@ mod tests {
         let source =
             pinned_effectful_tool(&rule, "[\"item_ids\"]", "[\"read\", \"delete\"]", "normal");
         assert!(TomlToolRegistry::from_toml_str(&source).is_err());
+    }
+
+    #[test]
+    fn risk_rule_with_unknown_breadth_dimension_is_rejected() {
+        let rule = CARDINALITY_RULE.replace("item_count", "surface_area");
+        let source =
+            pinned_effectful_tool(&rule, "[\"item_ids\"]", "[\"read\", \"delete\"]", "normal");
+        assert!(matches!(
+            TomlToolRegistry::from_toml_str(&source),
+            Err(ToolRegistryError::InvalidRiskRule { .. })
+        ));
     }
 
     #[test]

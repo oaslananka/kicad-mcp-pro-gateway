@@ -1,23 +1,33 @@
 use companion_policy::{
-    EffectVerificationRequirement, OperationEffect, TomlToolRegistry, ToolCapabilityResolver,
-    ToolCatalogSnapshot, UpstreamEffectManifest, UpstreamEffectManifestError,
+    ArgumentValueKind, BreadthDimension, CollectionItemKind, EffectVerificationRequirement,
+    OperationEffect, TomlToolRegistry, ToolCapabilityResolver, ToolCatalogSnapshot,
+    UpstreamEffectManifest, UpstreamEffectManifestError,
 };
 
-const FIXTURE: &str = include_str!("fixtures/tool-effect-manifest-v1.json");
+const FIXTURE: &str = include_str!("fixtures/tool-effect-manifest-v2.json");
 
 fn fixture_value() -> serde_json::Value {
     serde_json::from_str(FIXTURE).unwrap()
+}
+
+fn tool_mut<'a>(value: &'a mut serde_json::Value, name: &str) -> &'a mut serde_json::Value {
+    value["tools"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|tool| tool["name"] == name)
+        .unwrap()
 }
 
 #[test]
 fn released_upstream_fixture_parses_strictly() {
     let manifest = UpstreamEffectManifest::from_json_str(FIXTURE).unwrap();
 
-    assert_eq!(manifest.schema_version(), "1.0.0");
-    assert_eq!(manifest.source().version, "3.37.0");
+    assert_eq!(manifest.schema_version(), "2.0.0");
+    assert_eq!(manifest.source().version, "4.0.0");
     assert_eq!(
         manifest.source().reviewed_source_sha,
-        "e460e28a4dd0f2c105a1d2db3e26eb731769c543"
+        "66c0cd2750b8d79d717ece5299ec8da995f775cd"
     );
     assert_eq!(manifest.tool_names().count(), 6);
 
@@ -31,6 +41,22 @@ fn released_upstream_fixture_parses_strictly() {
     assert!(read
         .verification_requirements()
         .contains(&EffectVerificationRequirement::SourceReview));
+
+    let delete = manifest.tool("pcb_delete_items").unwrap();
+    let item_ids = delete.argument_shape("item_ids").unwrap();
+    assert_eq!(item_ids.argument(), "item_ids");
+    assert_eq!(item_ids.value_kind(), ArgumentValueKind::Collection);
+    assert_eq!(item_ids.item_kind(), Some(CollectionItemKind::String));
+    assert_eq!(
+        item_ids.breadth_dimension(),
+        Some(BreadthDimension::ItemCount)
+    );
+
+    let project = manifest.tool("kicad_create_new_project").unwrap();
+    let overwrite = project.argument_shape("confirm_overwrite").unwrap();
+    assert_eq!(overwrite.value_kind(), ArgumentValueKind::Boolean);
+    assert_eq!(overwrite.item_kind(), None);
+    assert_eq!(overwrite.breadth_dimension(), None);
 }
 
 #[test]
@@ -41,7 +67,7 @@ fn released_manifest_source_matches_the_embedded_reviewed_snapshot() {
     manifest.validate_source(&snapshot).unwrap();
     assert_eq!(
         snapshot.source_sha,
-        "e460e28a4dd0f2c105a1d2db3e26eb731769c543"
+        "66c0cd2750b8d79d717ece5299ec8da995f775cd"
     );
     assert_eq!(snapshot.len(), 387);
 }
@@ -65,12 +91,13 @@ fn stale_manifest_source_still_fails_closed() {
 }
 
 #[test]
-fn released_manifest_reconciles_exactly_with_the_reviewed_fallback() {
+fn released_manifest_reconciles_exactly_with_the_reviewed_fallback_and_risk_facts() {
     let manifest = UpstreamEffectManifest::from_json_str(FIXTURE).unwrap();
     let registry = TomlToolRegistry::try_embedded().unwrap();
 
     let report = manifest.reconcile_with_fallback(&registry).unwrap();
     assert!(report.is_exact_match(), "{report:?}");
+    assert!(report.risk_fact_mismatches.is_empty());
 
     let upstream = manifest.tool("export_gerber").unwrap().contract();
     let fallback = registry.effect_contract("export_gerber").unwrap();
@@ -79,14 +106,16 @@ fn released_manifest_reconciles_exactly_with_the_reviewed_fallback() {
 }
 
 #[test]
-fn unknown_schema_major_fails_closed() {
-    let mut value = fixture_value();
-    value["schemaVersion"] = serde_json::json!("2.0.0");
+fn legacy_v1_and_unknown_future_schema_majors_fail_closed() {
+    for version in ["1.0.0", "3.0.0"] {
+        let mut value = fixture_value();
+        value["schemaVersion"] = serde_json::json!(version);
 
-    assert!(matches!(
-        UpstreamEffectManifest::from_json_str(&serde_json::to_string(&value).unwrap()),
-        Err(UpstreamEffectManifestError::UnsupportedSchemaVersion(_))
-    ));
+        assert!(matches!(
+            UpstreamEffectManifest::from_json_str(&serde_json::to_string(&value).unwrap()),
+            Err(UpstreamEffectManifestError::UnsupportedSchemaVersion(actual)) if actual == version
+        ));
+    }
 }
 
 #[test]
@@ -126,12 +155,7 @@ fn duplicate_tool_fails_closed() {
 #[test]
 fn malformed_path_dependency_fails_closed() {
     let mut value = fixture_value();
-    let project = value["tools"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|tool| tool["name"] == "kicad_create_new_project")
-        .unwrap();
+    let project = tool_mut(&mut value, "kicad_create_new_project");
     project["path_arguments"][1]["base_argument"] = serde_json::json!("missing");
 
     assert!(matches!(
@@ -152,6 +176,88 @@ fn duplicate_effect_fact_fails_closed() {
             ..
         })
     ));
+}
+
+#[test]
+fn malformed_collection_shape_fails_closed() {
+    let mut value = fixture_value();
+    let delete = tool_mut(&mut value, "pcb_delete_items");
+    delete["argument_shapes"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("item_kind");
+
+    assert!(matches!(
+        UpstreamEffectManifest::from_json_str(&serde_json::to_string(&value).unwrap()),
+        Err(UpstreamEffectManifestError::InvalidArgumentShape { .. })
+    ));
+}
+
+#[test]
+fn scalar_shape_cannot_smuggle_collection_only_metadata() {
+    let mut value = fixture_value();
+    let project = tool_mut(&mut value, "kicad_create_new_project");
+    project["argument_shapes"][0]["breadth_dimension"] = serde_json::json!("item_count");
+
+    assert!(matches!(
+        UpstreamEffectManifest::from_json_str(&serde_json::to_string(&value).unwrap()),
+        Err(UpstreamEffectManifestError::InvalidArgumentShape { .. })
+    ));
+}
+
+#[test]
+fn duplicate_argument_shape_fails_closed() {
+    let mut value = fixture_value();
+    let delete = tool_mut(&mut value, "pcb_delete_items");
+    let duplicate = delete["argument_shapes"][0].clone();
+    delete["argument_shapes"]
+        .as_array_mut()
+        .unwrap()
+        .push(duplicate);
+
+    assert!(matches!(
+        UpstreamEffectManifest::from_json_str(&serde_json::to_string(&value).unwrap()),
+        Err(UpstreamEffectManifestError::DuplicateFact {
+            field: "argument shapes",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn breadth_dimension_drift_is_visible_in_reconciliation() {
+    let mut value = fixture_value();
+    let delete = tool_mut(&mut value, "pcb_delete_items");
+    delete["argument_shapes"][0]["breadth_dimension"] = serde_json::json!("path_count");
+
+    let manifest =
+        UpstreamEffectManifest::from_json_str(&serde_json::to_string(&value).unwrap()).unwrap();
+    let registry = TomlToolRegistry::try_embedded().unwrap();
+    let report = manifest.reconcile_with_fallback(&registry).unwrap();
+
+    assert!(!report.is_exact_match());
+    assert_eq!(
+        report.risk_fact_mismatches,
+        vec!["pcb_delete_items.item_ids".to_string()]
+    );
+}
+
+#[test]
+fn boolean_shape_drift_is_visible_in_reconciliation() {
+    let mut value = fixture_value();
+    let project = tool_mut(&mut value, "kicad_create_new_project");
+    project["argument_shapes"][0]["value_kind"] = serde_json::json!("string");
+
+    let manifest =
+        UpstreamEffectManifest::from_json_str(&serde_json::to_string(&value).unwrap()).unwrap();
+    let registry = TomlToolRegistry::try_embedded().unwrap();
+    let report = manifest.reconcile_with_fallback(&registry).unwrap();
+
+    assert!(!report.is_exact_match());
+    assert_eq!(
+        report.risk_fact_mismatches,
+        vec!["kicad_create_new_project.confirm_overwrite".to_string()]
+    );
 }
 
 #[test]
