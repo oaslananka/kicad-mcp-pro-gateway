@@ -20,9 +20,12 @@ or promotion decision.
 Before any signing credential is made available, the workflow requires
 successful `push` runs for the exact tagged commit from `ci.yml`,
 `e2e-live.yml`, and `osv-full.yml`. Every matrix job then requires the tag to be
-exactly `v<workspace version>`. The desktop job also requires the daemon,
-desktop Cargo package, and `tauri.conf.json` versions to match. Builds use locked
-Rust dependencies and the frozen pnpm lockfile.
+exactly `v<workspace version>`. The daemon must continue to inherit that
+workspace version via `version.workspace = true`; the desktop job also requires
+the desktop Cargo package, desktop `package.json`, and `tauri.conf.json`
+versions to match it. The ordinary sidecar staging path enforces
+the same four-source product-version invariant before packaging. Builds use
+locked Rust dependencies and the frozen pnpm lockfile.
 
 ### 2. Headless artifacts
 
