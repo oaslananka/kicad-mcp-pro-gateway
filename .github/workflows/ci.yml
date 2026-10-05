@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, compat/tauri-2.12-reviewed-stack]
+    branches: [main]
   pull_request:
   merge_group:
 
@@ -48,8 +48,6 @@ jobs:
   msrv:
     name: rust / msrv-1.88
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,44 +84,9 @@ jobs:
         with:
           toolchain: 1.90.0
 
-      # Migration-only bootstrap: use the existing lock as the resolver baseline,
-      # let Cargo update only what the 2.12 manifest requires, and preserve the
-      # resulting lock as CI evidence. This step is removed once Cargo.lock is
-      # committed on the migration branch.
-      - name: Resolve and check desktop Tauri 2.12 migration
+      - name: Check desktop Tauri crate at desktop MSRV
         working-directory: apps/desktop/src-tauri
-        run: cargo check --all-targets
-
-      - name: Upload resolved desktop Cargo lock
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: desktop-cargo-lock-migration
-          path: apps/desktop/src-tauri/Cargo.lock
-          if-no-files-found: error
-
-      - name: Commit resolved desktop Cargo lock
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ github.ref_name }}
-        run: |
-          LOCK_PATH="apps/desktop/src-tauri/Cargo.lock"
-          if git diff --quiet -- "$LOCK_PATH"; then
-            echo "Desktop Cargo.lock is already current."
-            exit 0
-          fi
-          LOCK_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${LOCK_PATH}?ref=${BRANCH}" --jq .sha)"
-          base64 -w0 "$LOCK_PATH" > "$RUNNER_TEMP/desktop-cargo-lock.b64"
-          jq -n \
-            --arg message "chore(desktop): refresh Tauri 2.12 lockfile" \
-            --rawfile content "$RUNNER_TEMP/desktop-cargo-lock.b64" \
-            --arg sha "$LOCK_SHA" \
-            --arg branch "$BRANCH" \
-            '{message: $message, content: $content, sha: $sha, branch: $branch}' \
-            > "$RUNNER_TEMP/update-desktop-lock.json"
-          gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${LOCK_PATH}" \
-            --input "$RUNNER_TEMP/update-desktop-lock.json"
+        run: cargo check --all-targets --locked
 
   security:
     name: security / cargo-audit
