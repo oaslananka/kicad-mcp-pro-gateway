@@ -20,7 +20,7 @@ fn registry() -> TomlToolRegistry {
         contract_version = 1
         source_repository = "oaslananka/kicad-mcp-pro"
         source_ref = "main"
-        source_sha = "e460e28a4dd0f2c105a1d2db3e26eb731769c543"
+        source_sha = "66c0cd2750b8d79d717ece5299ec8da995f775cd"
 
         [[tool]]
         name = "schematic.read"
@@ -78,6 +78,7 @@ fn registry() -> TomlToolRegistry {
         [[tool.risk_rules]]
         kind = "argument_cardinality"
         argument = "item_ids"
+        breadth_dimension = "item_count"
         minimum_count = 2
         requires_effect = "delete"
         escalate_to = "high"
@@ -116,6 +117,7 @@ fn registry() -> TomlToolRegistry {
         [[tool.risk_rules]]
         kind = "argument_cardinality"
         argument = "item_ids"
+        breadth_dimension = "item_count"
         minimum_count = 2
         requires_effect = "delete"
         escalate_to = "high"
@@ -875,7 +877,7 @@ fn explicit_false_overwrite_stays_normal() {
     };
     assert_eq!(risk.base_risk(), RiskLevel::Normal);
     assert_eq!(risk.effective_risk(), RiskLevel::Normal);
-    assert_eq!(risk.policy_version(), 3);
+    assert_eq!(risk.policy_version(), 4);
     assert!(risk.factors().is_empty());
 }
 

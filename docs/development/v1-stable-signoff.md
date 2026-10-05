@@ -44,11 +44,12 @@ primary stateless lane. Exact-head [Live E2E run
 installed that release and executed **3 tests: 3 passed, 0 failed, 0 ignored**.
 
 The reviewed policy/effect source is separately pinned to
-`e460e28a4dd0f2c105a1d2db3e26eb731769c543`, the reviewed source SHA carried
-by the released 3.37.0 machine-readable effect manifest. The generated tool
-catalog remains 387 names with 0 additions/removals versus the previous
-`f641a925...` snapshot. This compatibility refresh therefore does not widen the
-tool allowlist. It also does not satisfy RC signing, clean-machine,
+`66c0cd2750b8d79d717ece5299ec8da995f775cd`, the reviewed source SHA carried
+by the released 4.0.0 machine-readable effect manifest schema 2.0.0. The
+generated tool catalog remains 387 names with 0 additions/removals versus the
+previous `e460e28...` snapshot. This policy-source refresh therefore does not
+widen the tool allowlist and does not change the separately live-validated
+3.37.0 runtime baseline. It also does not satisfy RC signing, clean-machine,
 macOS/Windows live, or human release-owner promotion gates.
 
 ---
@@ -143,7 +144,7 @@ This document records a dated **conditional V1 stable-release readiness assessme
 
 **Upstream Runtime Baseline:** `kicad-mcp-pro@3.37.0` pinned to release commit `014cf241480afc15ac2b34bf10c904f5415d376c`.
 
-**Reviewed Policy Source:** `e460e28a4dd0f2c105a1d2db3e26eb731769c543` (387 tool names; unchanged from the previous snapshot; released 3.37.0 effect manifest source identity).
+**Reviewed Policy Source:** `66c0cd2750b8d79d717ece5299ec8da995f775cd` (387 tool names; unchanged from the previous snapshot; released 4.0.0 effect manifest schema 2.0.0 source identity).
 
 **Live-Core Validation Status:** Historical false-green evidence was corrected in 2026-09. The current runtime/protocol baseline is positively validated by [run 37241104324](https://github.com/oaslananka/kicad-mcp-pro-gateway/actions/runs/37241104324), which installed kicad-mcp-pro 3.37.0 and passed 3/3 live tests with 0 failed and 0 ignored. This remains bounded live integration evidence, not proof of physical PCB mutations or release artifact qualification. macOS/Windows live evidence and exact-artifact clean-machine qualification remain separately outstanding.
 

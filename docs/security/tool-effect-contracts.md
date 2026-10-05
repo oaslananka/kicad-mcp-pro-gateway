@@ -19,14 +19,15 @@ listed tool without an `effects` block is denied with
 `UnmodelledToolContract`. Unknown arguments and malformed path values are also
 denied before `tools/call`.
 
-## Reviewed V1 surface
+## Reviewed effect surface
 
 The reviewed contracts are pinned to kicad-mcp-pro reviewed source commit
-`e460e28a4dd0f2c105a1d2db3e26eb731769c543`, the source identity carried by
-the released `mcp-server-v3.37.0` effect manifest. The generated public tool
-catalog at that reviewed source is exactly 387 names and is unchanged from the
-previous `f641a92596ab7adc1e134287578b1ae5ff9580ad` snapshot (0 added, 0
-removed); argument
+`66c0cd2750b8d79d717ece5299ec8da995f775cd`, the source identity carried by
+the released `mcp-server-v4.0.0` effect manifest schema `2.0.0`. The generated
+public tool catalog at that reviewed source is exactly 387 names and is
+unchanged from the previous
+`e460e28a4dd0f2c105a1d2db3e26eb731769c543` snapshot (0 added, 0 removed);
+argument
 allowlists and effects were reviewed from each FastMCP adapter and the service
 it delegates to:
 
@@ -70,9 +71,12 @@ metadata; it does not duplicate PCB/schematic semantics in Gateway.
 
 The static `risk` on each registry entry is a floor: operation-specific
 assessment may raise it but can never lower it. Dynamic risk is policy version
-`2` and is driven only by typed `risk_rules` declared on the same
-source-pinned reviewed tool contract. Gateway does not infer risk from generic
-JSON shape, from a tool name, or from an effect such as `delete` by itself.
+`4` and is driven only by typed `risk_rules` declared on the same source-pinned
+reviewed tool contract. Cardinality rules also declare a reviewed
+`breadth_dimension`; reconciliation requires that dimension and argument type
+to match the released upstream manifest v2 facts. Gateway does not infer risk
+from generic JSON shape, from a tool name, or from an effect such as `delete`
+by itself.
 
 The first reviewed rule is intentionally narrow:
 
@@ -80,6 +84,7 @@ The first reviewed rule is intentionally narrow:
 [[tool.risk_rules]]
 kind = "argument_cardinality"
 argument = "item_ids"
+breadth_dimension = "item_count"
 minimum_count = 2
 requires_effect = "delete"
 escalate_to = "high"
@@ -103,10 +108,10 @@ escalation target. Raw item IDs, paths, credentials, source text, and project
 contents are not risk-factor data and are not persisted or rendered.
 
 The production reviewed source pin is
-`oaslananka/kicad-mcp-pro@e460e28a4dd0f2c105a1d2db3e26eb731769c543`.
-Issue #20 remains open independently for later workspace-context, path-breadth,
-and additional consequence dimensions; those dimensions must enter through
-equally explicit reviewed facts rather than heuristics.
+`oaslananka/kicad-mcp-pro@66c0cd2750b8d79d717ece5299ec8da995f775cd`.
+Issue #20 remains open independently for later workspace-context, concrete
+`path_count` breadth, and additional consequence dimensions; those dimensions
+must enter through equally explicit reviewed facts rather than heuristics.
 
 ## Upstream reviewed-manifest transition
 
@@ -120,19 +125,24 @@ against the embedded fallback without executing upstream Python code.
 The production daemon continues to trust only the source-pinned
 `tool_registry.toml` fallback for authorization. That fallback and
 `upstream_tool_snapshot.toml` are now pinned to the manifest's reviewed source
-SHA `e460e28a4dd0f2c105a1d2db3e26eb731769c543`. Reconciliation rejects locally
+SHA `66c0cd2750b8d79d717ece5299ec8da995f775cd`. Reconciliation rejects locally
 unclassified manifest tools; a newly published upstream tool therefore cannot
 become authorized by discovery or by manifest presence alone.
 
 The committed test fixture under `crates/policy/tests/fixtures/` is an exact
 copy of `contracts/tool-effect-manifest.json` from released
-`mcp-server-v3.37.0` (Git blob
-`ec5ea85714b9338b2c0ca768fbad0c23bfe287bc`). The fixture validates source
+`mcp-server-v4.0.0` (Git blob
+`918d1e981a6d286eb80f843a43fc49145085a341`). The fixture validates source
 identity and reconciles exactly with all six locally reviewed effect contracts.
-The prior stale `export_gerber.variant_name` fact was removed; no tool name,
-capability, or risk disposition was added by this refresh. Separate negative
-tests continue to prove that stale source identities, malformed manifests,
-unknown effects, and locally unclassified tools fail closed.
+Manifest v2 additionally proves the two risk-relevant argument shapes currently
+used by Gateway policy: `pcb_delete_items.item_ids` is
+`collection<string>` / `item_count`, and
+`kicad_create_new_project.confirm_overwrite` is `boolean`. A mismatch in these
+facts makes reconciliation non-exact. No tool name, capability, effect
+contract, or risk threshold is added by this refresh. Separate negative tests
+continue to prove that stale source identities, malformed manifests, unknown
+effects, malformed argument-shape metadata, risk-fact drift, and locally
+unclassified tools fail closed.
 
 For a candidate upstream artifact, run:
 

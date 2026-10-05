@@ -14,8 +14,8 @@ use std::collections::BTreeSet;
 
 use companion_core::{Capability, RiskLevel};
 use companion_policy::{
-    BooleanRiskFactor, OperationEffect, RiskRule, TomlToolRegistry, ToolCapabilityResolver,
-    ToolCatalogSnapshot, ToolEffectContract, TOOL_EFFECT_CONTRACT_VERSION,
+    BooleanRiskFactor, OperationEffect, RiskBreadthDimension, RiskRule, TomlToolRegistry,
+    ToolCapabilityResolver, ToolCatalogSnapshot, ToolEffectContract, TOOL_EFFECT_CONTRACT_VERSION,
 };
 use proptest::prelude::*;
 
@@ -489,6 +489,7 @@ fn reviewed_bulk_delete_rule_is_exact_and_source_declared() {
         registry.risk_rules("pcb_delete_items"),
         &[RiskRule::ArgumentCardinality {
             argument: "item_ids".into(),
+            breadth_dimension: RiskBreadthDimension::ItemCount,
             minimum_count: 2,
             requires_effect: OperationEffect::Delete,
             escalate_to: RiskLevel::High,
@@ -496,6 +497,8 @@ fn reviewed_bulk_delete_rule_is_exact_and_source_declared() {
     );
     assert!(
         REVIEWED_REGISTRY.contains("argument = \"item_ids\"")
+            && REVIEWED_REGISTRY.contains("breadth_dimension = \"item_count\"")
+            && REVIEWED_REGISTRY.contains("breadth_dimension = \"item_count\"")
             && REVIEWED_REGISTRY.contains("minimum_count = 2")
             && REVIEWED_REGISTRY.contains("requires_effect = \"delete\"")
             && REVIEWED_REGISTRY.contains("escalate_to = \"high\""),

@@ -21,11 +21,12 @@ pub use operation_effects::{
 pub use risk_assessment::assess_operation_risk;
 pub use tool_catalog::{ToolCatalogError, ToolCatalogSnapshot};
 pub use tool_registry::{
-    BooleanRiskFactor, RiskRule, TomlToolRegistry, ToolCapabilityResolver, ToolContractSource,
-    ToolRegistryCoverage, ToolRegistryError, OPERATION_RISK_POLICY_VERSION,
+    BooleanRiskFactor, RiskBreadthDimension, RiskRule, TomlToolRegistry, ToolCapabilityResolver,
+    ToolContractSource, ToolRegistryCoverage, ToolRegistryError, OPERATION_RISK_POLICY_VERSION,
     TOOL_EFFECT_CONTRACT_VERSION,
 };
 pub use upstream_effect_manifest::{
+    ArgumentShapeFact, ArgumentValueKind, BreadthDimension, CollectionItemKind,
     EffectManifestReconciliation, EffectVerificationRequirement, ReviewedToolEffectFacts,
     TransactionSupport, UpstreamEffectManifest, UpstreamEffectManifestError,
     UpstreamEffectManifestSource, UPSTREAM_EFFECT_MANIFEST_REPOSITORY,
