@@ -65,7 +65,7 @@ The release workflow is privileged supply-chain code.
 Preserve:
 
 - exact tag/root-workspace version, daemon workspace-version inheritance, desktop Cargo version, desktop `package.json` version, and `tauri.conf.json` version identity;
-- release-version bumps refresh both affected Cargo lockfiles before locked CI/package builds;
+- release-version bumps refresh all affected Cargo and package lockfiles before locked CI/package builds;
 - CI/live-E2E/OSV gates before signing credential access;
 - macOS Developer ID signing, notarization, stapling, and Gatekeeper verification;
 - Windows Authenticode identity and timestamp verification;
