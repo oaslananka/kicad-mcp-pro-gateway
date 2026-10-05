@@ -190,7 +190,7 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if ! grep -Fq 'version.workspace = true' apps/daemon/Cargo.toml; then
+          if ! grep -Eq '^version\.workspace[[:space:]]*=[[:space:]]*true$' apps/daemon/Cargo.toml; then
             echo "Gateway daemon must inherit the root workspace version" >&2
             exit 1
           fi
