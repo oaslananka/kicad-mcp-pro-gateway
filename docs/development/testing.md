@@ -183,9 +183,10 @@ kicad-mcp-pro server, not a manual/GUI-only check.
 
 ## What CI enforces
 
-See `.github/workflows/ci.yml`. The repository declares Rust 1.88 as its MSRV;
-CI runs `cargo check --workspace --all-targets --locked` and the desktop Tauri
-crate with Rust 1.88.0 in addition to the stable-toolchain matrix. The native
+See `.github/workflows/ci.yml`. The root Gateway workspace keeps Rust 1.88 as
+its MSRV, while the deliberately separate Tauri 2.12 desktop workspace uses
+Rust 1.90. CI checks both floors in the existing required MSRV job in addition
+to the stable-toolchain matrix. The native
 Rust matrix runs the daemon lifecycle/IPC test on Linux, macOS, and Windows.
 A separate desktop matrix builds `.deb`, `.dmg`, and `.msi` packages, verifies
 that each contains its target-qualified daemon sidecar, and uploads the

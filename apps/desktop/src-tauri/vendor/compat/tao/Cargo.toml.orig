@@ -1,13 +1,13 @@
 [package]
 name = "tao"
-version = "0.35.3"
+version = "0.37.0"
 description = "Cross-platform window manager library."
 authors = [
   "Tauri Programme within The Commons Conservancy",
   "The winit contributors",
 ]
 edition = "2021"
-rust-version = "1.74"
+rust-version = "1.85"
 keywords = ["windowing"]
 license = "Apache-2.0"
 readme = "README.md"
@@ -67,10 +67,10 @@ softbuffer = "0.4"
 parking_lot = "0.12"
 unicode-segmentation = "1.11"
 windows-version = "0.1"
-windows-core = "0.61"
+windows-core = "0.62"
 
 [target."cfg(target_os = \"windows\")".dependencies.windows]
-version = "0.61"
+version = "0.62"
 features = [
   "Win32_Devices_HumanInterfaceDevice",
   "Win32_Foundation",
@@ -105,8 +105,9 @@ features = [
 jni = "0.21"
 ndk = "0.9"
 ndk-sys = "0.6"
+ndk-context = "0.1"
 percent-encoding = "2.3"
-tao-macros = { version = "0.1.0", path = "./tao-macros" }
+tao-macros = { version = "0.1.4", path = "./tao-macros" }
 
 [target."cfg(any(target_os = \"ios\", target_os = \"macos\"))".dependencies]
 objc2 = "0.6"
@@ -157,6 +158,8 @@ objc2-ui-kit = { version = "0.3", features = [
   "UIScene",
   "UISceneOptions",
   "UIOpenURLContext",
+  "UISceneWindowingControlStyle",
+  "UIWindowScene",
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "NSProcessInfo",

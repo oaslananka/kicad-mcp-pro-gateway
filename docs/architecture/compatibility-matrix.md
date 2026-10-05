@@ -72,7 +72,8 @@ release gate; see [release.md](../development/release.md).
 | **Reviewed policy tool snapshot** | released manifest `4.0.0` / schema `2.0.0`; reviewed source @ `66c0cd2750b8d79d717ece5299ec8da995f775cd` | Authorization/effect trust remains pinned independently of runtime: 387 tools, with the name set unchanged from the prior snapshot. Six reviewed effect contracts and the active risk-relevant argument facts reconcile exactly with the released manifest; newly discovered, changed, or unclassified tools remain denied. |
 | **MCP core-bridge protocol** | `2026-07-28` | Primary stateless Streamable HTTP lane: direct `server/discover`, required per-request metadata/headers, no MCP session IDs. Explicit `2025-11-25` initialize/session compatibility remains available through `ProtocolLane::Legacy2025`. Tasks/Apps are not advertised or consumed. |
 | **Gateway transport protocol** | `0.1.0` | Gateway's versioned transport envelope; incompatible major versions are rejected. |
-| **Rust MSRV** | 1.88.0 | Checked in CI in addition to stable-toolchain checks. |
+| **Gateway core Rust MSRV** | 1.88.0 | Root daemon/CLI workspace remains on the existing compatibility floor and is checked in CI. |
+| **Desktop Tauri Rust MSRV** | 1.90.0 | The separate Tauri 2.12 desktop workspace follows Tauri's reviewed MSRV and is checked independently in the existing required MSRV job. |
 | **Node.js / pnpm** | Node 20 / pnpm 9 | Versions used by the Linux desktop CI job. |
 | **Product identity** | Companion → Gateway, pre-1.0 | Renamed before the first release; no installed population to migrate — see [identity-migration.md](../development/identity-migration.md). |
 

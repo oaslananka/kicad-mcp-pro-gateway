@@ -8,14 +8,14 @@
 name = "kicad-mcp-gateway-desktop"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.90"
 description = "KiCad MCP Pro Gateway desktop shell. Talks only to the daemon's local IPC API."
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "~2.7.0", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "~2.12.0", features = [] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -28,7 +28,7 @@ companion-core = { path = "../../../crates/core" }
 name = "kicad-mcp-gateway-desktop"
 path = "src/main.rs"
 
-# Tauri 2.11.x still depends on the GTK3 0.18 line.  The compatibility
+# Tauri 2.12.x still depends on the GTK3 0.18 line.  The compatibility
 # crates below keep those public package versions for Tauri's semver constraints
 # while rebasing their gtk-rs-core dependencies onto the maintained glib 0.20
 # line.  Tauri/tao/wry carry only the small API-adaptation surface needed for
