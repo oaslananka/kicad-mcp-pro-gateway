@@ -57,7 +57,10 @@ fn security_boundaries_keep_their_core_invariants() {
         "Audit is a gate",
         "replay",
     ] {
-        assert!(\n            daemon.contains(marker),\n            "daemon instructions missing: {marker}"\n        );
+        assert!(
+            daemon.contains(marker),
+            "daemon instructions missing: {marker}"
+        );
     }
 
     let crates = read("crates/AGENTS.md");
@@ -68,7 +71,10 @@ fn security_boundaries_keep_their_core_invariants() {
         "transport",
         "core-bridge",
     ] {
-        assert!(\n            crates.contains(marker),\n            "crate instructions missing: {marker}"\n        );
+        assert!(
+            crates.contains(marker),
+            "crate instructions missing: {marker}"
+        );
     }
 
     let policy = read("crates/policy/AGENTS.md");
@@ -79,7 +85,10 @@ fn security_boundaries_keep_their_core_invariants() {
         "Static reviewed risk is a floor",
         "fail closed",
     ] {
-        assert!(\n            policy.contains(marker),\n            "policy instructions missing: {marker}"\n        );
+        assert!(
+            policy.contains(marker),
+            "policy instructions missing: {marker}"
+        );
     }
 
     let bridge = read("crates/core-bridge/AGENTS.md");
@@ -90,7 +99,10 @@ fn security_boundaries_keep_their_core_invariants() {
         "2025-11-25",
         "Tasks/Apps",
     ] {
-        assert!(\n            bridge.contains(marker),\n            "bridge instructions missing: {marker}"\n        );
+        assert!(
+            bridge.contains(marker),
+            "bridge instructions missing: {marker}"
+        );
     }
 }
 
