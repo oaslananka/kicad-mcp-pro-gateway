@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, compat/tauri-2.12-reviewed-stack]
   pull_request:
   merge_group:
 
