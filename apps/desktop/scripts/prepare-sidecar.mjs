@@ -54,12 +54,19 @@ function verifyReleaseVersions() {
     "apps/desktop/src-tauri/Cargo.toml",
     "kicad-mcp-gateway-desktop",
   );
+  const packageMetadata = JSON.parse(
+    readFileSync(join(repositoryRoot, "apps/desktop/package.json"), "utf8"),
+  );
   const tauriConfig = JSON.parse(
     readFileSync(join(repositoryRoot, "apps/desktop/src-tauri/tauri.conf.json"), "utf8"),
   );
-  if (desktopVersion !== daemonVersion || tauriConfig.version !== daemonVersion) {
+  if (
+    desktopVersion !== daemonVersion ||
+    packageMetadata.version !== daemonVersion ||
+    tauriConfig.version !== daemonVersion
+  ) {
     throw new Error(
-      `Gateway lifecycle version mismatch: daemon=${daemonVersion}, desktop=${desktopVersion}, tauri=${tauriConfig.version}`,
+      `Gateway lifecycle version mismatch: daemon=${daemonVersion}, desktop=${desktopVersion}, package=${packageMetadata.version}, tauri=${tauriConfig.version}`,
     );
   }
 }
