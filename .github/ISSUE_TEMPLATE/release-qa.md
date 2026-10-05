@@ -22,6 +22,11 @@ Do not continue unless the tag, source commit, workflow run, draft release, and
 all three manifest hashes refer to the same candidate. Record the exact expected
 installer hashes below from the draft's `artifact-manifest.json`.
 
+Use one QA issue per candidate, covering all three supported platforms in this
+single record. Do not split a candidate across per-platform issues: the purpose
+of this checklist is to bind cross-platform qualification to one immutable tag,
+source commit, manifest, and artifact set.
+
 ## Exact Artifact Hashes
 
 | Platform | Installer filename | SHA-256 | Headless archive filename | SHA-256 |

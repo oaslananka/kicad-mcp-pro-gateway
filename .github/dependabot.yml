@@ -14,7 +14,7 @@ updates:
           - version-update:semver-minor
           - version-update:semver-patch
     ignore:
-      # #69: Tauri runtime/build and JS API/CLI minors must migrate together.
+      # Future Tauri minor migrations after the reviewed 2.12.x boundary must move runtime/build/vendor/JS together.
       - dependency-name: "tauri"
         versions: [">=2.13.0, <3.0.0"]
       - dependency-name: "tauri-build"

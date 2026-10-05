@@ -1,6 +1,6 @@
 # Repository security automation
 
-This document records the repository-level security and quality automation baseline. The GitHub-native `main` quality-gate state was last verified against the live API on 2026-09-26; the GTK3/glib compatibility set was reviewed on 2026-09-25.
+This document records the repository-level security and quality automation baseline. The GitHub-native `main` quality-gate state was last verified against the live API on 2026-10-05; the GTK3/glib compatibility set was re-reviewed on 2026-10-05 during the Tauri 2.12.1 migration.
 
 ## Enforced in repository workflows
 
@@ -71,7 +71,7 @@ The observed CodeQL, full-repository OSV, Socket, Mergify, and Dependabot signal
 
 ### Verification record
 
-Live API state was revalidated on 2026-09-26:
+Live API state was revalidated on 2026-10-05:
 
 - The [rulesets index](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/rulesets) returns one active repository ruleset, and [ruleset `23952106`](https://api.github.com/repos/oaslananka/kicad-mcp-pro-gateway/rulesets/23952106) currently requires the 11 contexts listed above.
 - The legacy `Independent Review` commit-status context was removed from the active required-status-check set on 2026-09-26. It is not produced by a checked-in GitHub Actions workflow in this repository and is not part of the current merge policy.

@@ -314,20 +314,23 @@ surfaces directly rather than inferring a zero-alert state from CI alone.
 This **2026-09-25 historical claim is superseded** by the later reconciliation records above. A green workflow that skips every live test is not a passed qualification gate; the current 3.37.0 / MCP 2026-07-28 Ubuntu lane now has positive 3/3 exact-head evidence. The remaining blockers are external RC/signing, clean-machine, macOS/Windows live, and human promotion gates.
 
 **Blocking items for stable promotion:**
-1. Version bump to `1.0.0-rc1` and tag `v1.0.0-rc1` with signing credentials
-2. Clean-machine qualification evidence attached via `release-qa.md` issues for all three platforms
-3. Live E2E evidence attached for macOS and Windows
-4. Human release owner authorization to promote draft to stable
+1. Produce the exact final stable candidate as a tagged draft release with signing credentials.
+2. Attach one `release-qa.md` record for that exact candidate covering all three supported platforms.
+3. Attach exact-candidate live KiCad/MCP evidence for macOS and Windows.
+4. Obtain human release-owner authorization to promote the already-qualified draft.
 
-Once the above are complete, the final stable release (`v1.0.0`) can be promoted from the validated RC artifacts.
+An RC such as `v1.0.0-rc1` may be used for prerelease rehearsal or RC publication,
+but its clean-machine evidence cannot be transferred to a rebuilt/reversioned
+`v1.0.0` artifact set. Stable publication must use the exact tag, source commit,
+and bytes that were qualified.
 
 ---
 
 ## 13. Next Steps
 
-1. **Version bump:** Update `Cargo.toml` and `apps/desktop/src-tauri/Cargo.toml` to `version = "1.0.0-rc1"`
-2. **Tag RC:** Push tag `v1.0.0-rc1` to trigger release workflow with signing credentials
-3. **Clean-machine QA:** Open three `release-qa.md` issues (one per platform) and attach evidence
-4. **Cross-platform live validation:** Execute live probes on macOS/Windows per `compatibility-matrix.md`; Ubuntu 3.37.0 final-protocol evidence is already retained in run 37241104324
-5. **Final version bump:** Update to `version = "1.0.0"` and tag `v1.0.0` for stable release
-6. **Promote to stable:** Human release owner promotes the v1.0.0 release to stable after all evidence accepted
+1. **Optional RC rehearsal:** If an RC is desired, update all product versions to `1.0.0-rc1`, merge normally, and tag `v1.0.0-rc1` to exercise the signed draft-candidate workflow. Treat any QA evidence as scoped to those exact RC hashes.
+2. **Stable candidate:** Update all product versions to `1.0.0`, merge through the normal required checks, and tag `v1.0.0`. The release workflow must create the signed/notarized draft+prerelease candidate for those exact bytes.
+3. **Candidate QA:** Open one `release-qa.md` issue for the `v1.0.0` candidate and complete its Ubuntu, macOS, and Windows sections against the hashes in that draft's `artifact-manifest.json`.
+4. **Cross-platform live validation:** Attach macOS/Windows live KiCad/MCP evidence for the same final candidate. Automated Ubuntu evidence remains necessary but does not replace those platform checks.
+5. **Restart on identity change:** If the tag, source commit, version, or any shipped artifact bytes change, discard the incomplete qualification as evidence for the new candidate and repeat the required checks against the new hashes.
+6. **Promote exact draft:** After all evidence is accepted, a separately authorized release owner promotes that same `v1.0.0` draft to stable without replacing the tag or assets.
