@@ -114,12 +114,16 @@ jobs:
             exit 0
           fi
           LOCK_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${LOCK_PATH}?ref=${BRANCH}" --jq .sha)"
-          LOCK_CONTENT="$(base64 -w0 "$LOCK_PATH")"
+          base64 -w0 "$LOCK_PATH" > "$RUNNER_TEMP/desktop-cargo-lock.b64"
+          jq -n \
+            --arg message "chore(desktop): refresh Tauri 2.12 lockfile" \
+            --rawfile content "$RUNNER_TEMP/desktop-cargo-lock.b64" \
+            --arg sha "$LOCK_SHA" \
+            --arg branch "$BRANCH" \
+            '{message: $message, content: $content, sha: $sha, branch: $branch}' \
+            > "$RUNNER_TEMP/update-desktop-lock.json"
           gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${LOCK_PATH}" \
-            -f message="chore(desktop): refresh Tauri 2.12 lockfile" \
-            -f content="$LOCK_CONTENT" \
-            -f sha="$LOCK_SHA" \
-            -f branch="$BRANCH"
+            --input "$RUNNER_TEMP/update-desktop-lock.json"
 
   security:
     name: security / cargo-audit

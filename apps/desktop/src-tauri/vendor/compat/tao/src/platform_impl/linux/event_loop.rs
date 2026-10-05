@@ -294,7 +294,7 @@ impl<T: 'static> EventLoop<T> {
     }
 
     // Window Request
-    let handle_window_request = move |(id, request): (WindowId, WindowRequest)| {
+    let mut handle_window_request = move |(id, request): (WindowId, WindowRequest)| {
       if let Some(window) = app_.window_by_id(id.0) {
         match request {
           WindowRequest::Title(title) => window.set_title(&title),
