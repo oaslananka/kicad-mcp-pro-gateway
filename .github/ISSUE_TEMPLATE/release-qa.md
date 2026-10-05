@@ -121,6 +121,10 @@ Run these checks on every platform and attach redacted evidence.
 
 ## Upgrade, Uninstall, and Data Retention
 
+For the first stable release, use the retained exact RC candidate as the old
+version when no prior stable Gateway release exists. Record both old and new
+artifact hashes; qualifying the RC does not qualify different stable bytes.
+
 | Check | Ubuntu | macOS | Windows |
 |---|---|---|---|
 | Install the next candidate in place | [ ] | [ ] | [ ] |

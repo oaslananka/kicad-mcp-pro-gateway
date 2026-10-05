@@ -314,23 +314,25 @@ surfaces directly rather than inferring a zero-alert state from CI alone.
 This **2026-09-25 historical claim is superseded** by the later reconciliation records above. A green workflow that skips every live test is not a passed qualification gate; the current 3.37.0 / MCP 2026-07-28 Ubuntu lane now has positive 3/3 exact-head evidence. The remaining blockers are external RC/signing, clean-machine, macOS/Windows live, and human promotion gates.
 
 **Blocking items for stable promotion:**
-1. Produce the exact final stable candidate as a tagged draft release with signing credentials.
-2. Attach one `release-qa.md` record for that exact candidate covering all three supported platforms.
-3. Attach exact-candidate live KiCad/MCP evidence for macOS and Windows.
-4. Obtain human release-owner authorization to promote the already-qualified draft.
+1. Produce a signed `v1.0.0-rc1` draft candidate to provide the first-release signing rehearsal and exact prior-package baseline required by the upgrade checks.
+2. Produce the exact final `v1.0.0` stable candidate as a separate tagged draft release with signing credentials.
+3. Attach one `release-qa.md` record for that exact final candidate covering all three supported platforms, including upgrade from the retained RC hashes.
+4. Attach exact-final-candidate live KiCad/MCP evidence for macOS and Windows.
+5. Obtain human release-owner authorization to promote the already-qualified `v1.0.0` draft.
 
-An RC such as `v1.0.0-rc1` may be used for prerelease rehearsal or RC publication,
-but its clean-machine evidence cannot be transferred to a rebuilt/reversioned
-`v1.0.0` artifact set. Stable publication must use the exact tag, source commit,
-and bytes that were qualified.
+The RC provides a controlled prior package for first-release upgrade validation.
+Its clean-machine or signing evidence cannot be transferred to a rebuilt or
+reversioned `v1.0.0` artifact set. Stable publication must use the exact final
+tag, source commit, and bytes that were qualified.
 
 ---
 
 ## 13. Next Steps
 
-1. **Optional RC rehearsal:** If an RC is desired, update all product versions to `1.0.0-rc1`, merge normally, and tag `v1.0.0-rc1` to exercise the signed draft-candidate workflow. Treat any QA evidence as scoped to those exact RC hashes.
-2. **Stable candidate:** Update all product versions to `1.0.0`, merge through the normal required checks, and tag `v1.0.0`. The release workflow must create the signed/notarized draft+prerelease candidate for those exact bytes.
-3. **Candidate QA:** Open one `release-qa.md` issue for the `v1.0.0` candidate and complete its Ubuntu, macOS, and Windows sections against the hashes in that draft's `artifact-manifest.json`.
-4. **Cross-platform live validation:** Attach macOS/Windows live KiCad/MCP evidence for the same final candidate. Automated Ubuntu evidence remains necessary but does not replace those platform checks.
-5. **Restart on identity change:** If the tag, source commit, version, or any shipped artifact bytes change, discard the incomplete qualification as evidence for the new candidate and repeat the required checks against the new hashes.
-6. **Promote exact draft:** After all evidence is accepted, a separately authorized release owner promotes that same `v1.0.0` draft to stable without replacing the tag or assets.
+1. **RC baseline:** Update all product versions to `1.0.0-rc1`, merge normally, and tag `v1.0.0-rc1` to exercise the signed draft-candidate workflow. Retain its exact tag, source commit, manifest, and artifact hashes as the old-version baseline for the stable upgrade checks.
+2. **RC scope:** If the RC itself is published or otherwise claimed as qualified, complete QA against its own exact hashes. Regardless, RC evidence never substitutes for final stable-candidate qualification.
+3. **Stable candidate:** Update all product versions to `1.0.0`, merge through the normal required checks, and tag `v1.0.0`. The release workflow must create the signed/notarized draft+prerelease candidate for those exact final bytes.
+4. **Final candidate QA:** Open one `release-qa.md` issue for the `v1.0.0` candidate and complete its Ubuntu, macOS, and Windows sections against the hashes in that draft's `artifact-manifest.json`, including in-place upgrade from the retained `v1.0.0-rc1` artifacts.
+5. **Cross-platform live validation:** Attach macOS/Windows live KiCad/MCP evidence for the same final candidate. Automated Ubuntu evidence remains necessary but does not replace those platform checks.
+6. **Restart on identity change:** If the final tag, source commit, version, or any shipped artifact bytes change, discard the incomplete qualification as evidence for the new candidate and repeat the required checks against the new hashes.
+7. **Promote exact draft:** After all evidence is accepted, a separately authorized release owner promotes that same `v1.0.0` draft to stable without replacing the tag or assets.

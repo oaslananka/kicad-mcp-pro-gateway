@@ -177,6 +177,12 @@ clean-machine, live-KiCad/MCP, signing/notarization, and provenance verification
 against the final hashes. Stable publication must publish the same already
 qualified draft release; do not replace its tag or assets after qualification.
 
+For the first stable Gateway release, where no prior stable package exists, use
+a retained exact RC candidate as the old version for the required in-place
+upgrade checks. Record both the RC and stable-candidate hashes. The RC provides
+an upgrade baseline; it does not make its qualification evidence transferable
+to the final stable bytes.
+
 The required clean environments are:
 
 - a fresh Ubuntu 24.04 LTS x86-64 machine with no prior Gateway files or
