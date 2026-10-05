@@ -15,9 +15,9 @@ needed because the old glib channel API is no longer available. No vulnerable
 
 Provenance of package baselines:
 
-- Tauri `2.11.6`
-- tauri-runtime `2.12.0`
-- tauri-runtime-wry `2.12.0`
+- Tauri `2.12.1`
+- tauri-runtime `2.12.1`
+- tauri-runtime-wry `2.12.1`
 - tao `0.37.0`
 - wry `0.57.0`
 - gtk/gdk/atk `0.18.2`
@@ -27,8 +27,9 @@ Provenance of package baselines:
 - libappindicator `0.9.0`
 
 The compatibility result is verified with both the default toolchain and the
-repository MSRV (`cargo +1.88.0 check --all-targets --locked`). The lockfile must
-contain `glib >= 0.20` and no `glib 0.18.x`. OSV remains fail-closed; the glib
+desktop MSRV (`cargo +1.90.0 check --all-targets --locked`); the root Gateway
+workspace remains on Rust 1.88. The lockfile must contain `glib >= 0.20` and no
+`glib 0.18.x`. OSV remains fail-closed; the glib
 advisory is deliberately not listed in `osv-scanner.toml`.
 
 Security hardening applied while vendored: GDK user-data lookup returns `None`
@@ -45,7 +46,7 @@ stack resolves to maintained gtk-rs/glib packages without compatibility patches.
 ## 2.12 migration decision (2026-10-05)
 
 The Gateway core workspace keeps Rust 1.88. The deliberately separate desktop
-Tauri workspace adopts Rust 1.90 because published Tauri 2.12 declares that
+Tauri workspace adopts Rust 1.90 because published Tauri 2.12.x declares that
 MSRV. This is an explicit desktop compatibility/security review, not a silent
 project-wide MSRV increase. Future Tauri minor upgrades remain grouped for
 full Rust/vendor/JS review.
