@@ -41,7 +41,7 @@ Production builds use the packaged sidecar.
 - Preserve single-daemon ownership and the CLI/desktop explicit-stop handoff.
 - Bounded restart/watchdog behavior must not create multiple daemon owners.
 
-Release version parity across daemon, desktop Cargo package, and `tauri.conf.json` is mandatory.
+Release version parity across the root/daemon workspace version, desktop Cargo package, desktop `package.json`, and `tauri.conf.json` is mandatory. A release-version change must also refresh the affected Cargo lockfiles before locked CI/package builds.
 
 ## Vendored Tauri/GTK compatibility set
 

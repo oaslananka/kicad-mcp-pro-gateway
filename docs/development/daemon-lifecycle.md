@@ -124,8 +124,11 @@ and Windows Rust CI matrix.
 
 ## Update and rollback behavior
 
-The daemon, desktop Cargo package, and `tauri.conf.json` must carry the same
-version. `pnpm sidecar:release` rejects version drift before compiling.
+The root/daemon workspace version, desktop Cargo package, desktop `package.json`,
+and `tauri.conf.json` must carry the same product version. `pnpm sidecar:release`
+rejects version drift before compiling. A product-version bump must also refresh
+both the root `Cargo.lock` and `apps/desktop/src-tauri/Cargo.lock` so the locked
+CI and package paths resolve the new local package versions.
 
 On update:
 
