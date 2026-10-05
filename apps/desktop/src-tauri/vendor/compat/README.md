@@ -1,6 +1,6 @@
 # GTK3 / glib 0.20 compatibility set
 
-This directory is a temporary compatibility layer for Tauri 2.11.x on Linux.
+This directory is a temporary compatibility layer for Tauri 2.12.x on Linux.
 The published Tauri stack still constrains GTK3 bindings to the gtk-rs 0.18
 package line, which in turn resolves `glib` 0.18 and triggers
 `RUSTSEC-2024-0429` / `GHSA-wrw7-89jp-8q8g`.
@@ -15,11 +15,11 @@ needed because the old glib channel API is no longer available. No vulnerable
 
 Provenance of package baselines:
 
-- Tauri `2.11.6`
-- tauri-runtime `2.11.3`
-- tauri-runtime-wry `2.11.4`
-- tao `0.35.3`
-- wry `0.55.1`
+- Tauri `2.12.1`
+- tauri-runtime `2.12.1`
+- tauri-runtime-wry `2.12.1`
+- tao `0.37.0`
+- wry `0.57.0`
 - gtk/gdk/atk `0.18.2`
 - webkit2gtk `2.0.2`
 - javascriptcore-rs `1.1.2`
@@ -27,8 +27,9 @@ Provenance of package baselines:
 - libappindicator `0.9.0`
 
 The compatibility result is verified with both the default toolchain and the
-repository MSRV (`cargo +1.88.0 check --all-targets --locked`). The lockfile must
-contain `glib >= 0.20` and no `glib 0.18.x`. OSV remains fail-closed; the glib
+desktop MSRV (`cargo +1.90.0 check --all-targets --locked`); the root Gateway
+workspace remains on Rust 1.88. The lockfile must contain `glib >= 0.20` and no
+`glib 0.18.x`. OSV remains fail-closed; the glib
 advisory is deliberately not listed in `osv-scanner.toml`.
 
 Security hardening applied while vendored: GDK user-data lookup returns `None`
@@ -40,3 +41,12 @@ transport security.
 
 Remove this directory when upstream Tauri publishes a release whose Linux GTK3
 stack resolves to maintained gtk-rs/glib packages without compatibility patches.
+
+
+## 2.12 migration decision (2026-10-05)
+
+The Gateway core workspace keeps Rust 1.88. The deliberately separate desktop
+Tauri workspace adopts Rust 1.90 because published Tauri 2.12.x declares that
+MSRV. This is an explicit desktop compatibility/security review, not a silent
+project-wide MSRV increase. Future Tauri minor upgrades remain grouped for
+full Rust/vendor/JS review.

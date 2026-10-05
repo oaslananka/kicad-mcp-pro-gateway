@@ -14,7 +14,7 @@ This document records the repository-level security and quality automation basel
 - OSV-Scanner compares PR dependency state against the base branch and rejects newly introduced known vulnerabilities.
 - A weekly and main-push OSV full scan checks the complete current dependency baseline and uploads SARIF to GitHub code scanning.
 
-The Tauri lockfile uses a reviewed GTK3 compatibility set under `apps/desktop/src-tauri/vendor/compat`. It preserves the package versions required by Tauri 2.11.x while rebasing the gtk-rs-core dependencies onto glib 0.20, so the vulnerable glib 0.18 package is absent from `Cargo.lock`. `vendor/compat/README.md` records the provenance and verification contract. The remaining time-bounded OSV exceptions cover only INFO/unmaintained transitives from GTK/urlpattern. OSV prints each exception and its reason during scans; new advisories remain fail-closed.
+The Tauri lockfile uses a reviewed GTK3 compatibility set under `apps/desktop/src-tauri/vendor/compat`. It preserves the package versions required by Tauri 2.12.x while rebasing the gtk-rs-core dependencies onto glib 0.20, so the vulnerable glib 0.18 package is absent from `Cargo.lock`. `vendor/compat/README.md` records the provenance and verification contract. The remaining time-bounded OSV exceptions cover only INFO/unmaintained transitives from GTK/urlpattern. OSV prints each exception and its reason during scans; new advisories remain fail-closed.
 
 ## GitHub native protections
 
@@ -58,7 +58,7 @@ The repository ruleset named `main quality gate` (ID `23952106`) is active and t
 | GitHub Actions | `15368` | `rust / ubuntu-latest` | `.github/workflows/ci.yml`, `rust` matrix |
 | GitHub Actions | `15368` | `rust / windows-latest` | `.github/workflows/ci.yml`, `rust` matrix |
 | GitHub Actions | `15368` | `rust / macos-latest` | `.github/workflows/ci.yml`, `rust` matrix |
-| GitHub Actions | `15368` | `rust / msrv-1.88` | `.github/workflows/ci.yml`, `msrv` |
+| GitHub Actions | `15368` | `rust / msrv-1.88` | `.github/workflows/ci.yml`, `msrv`; root 1.88 + desktop 1.90 |
 | GitHub Actions | `15368` | `frontend (apps/desktop)` | `.github/workflows/ci.yml`, `frontend` |
 | GitHub Actions | `15368` | `security / cargo-audit` | `.github/workflows/ci.yml`, `security` |
 | GitHub Actions | `15368` | `security / dependency-review` | `.github/workflows/security.yml`, `dependency-review` |

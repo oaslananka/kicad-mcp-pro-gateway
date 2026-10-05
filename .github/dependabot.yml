@@ -16,9 +16,9 @@ updates:
     ignore:
       # #69: Tauri runtime/build and JS API/CLI minors must migrate together.
       - dependency-name: "tauri"
-        versions: [">=2.12.0, <3.0.0"]
+        versions: [">=2.13.0, <3.0.0"]
       - dependency-name: "tauri-build"
-        versions: [">=2.12.0, <3.0.0"]
+        versions: [">=2.13.0, <3.0.0"]
     groups:
       routine-cargo:
         patterns: ["*"]
@@ -42,11 +42,11 @@ updates:
           - version-update:semver-minor
           - version-update:semver-patch
     ignore:
-      # #69: the reviewed Rust/vendor/JS Tauri stack must migrate minors together.
+      # Keep future Tauri minor migrations reviewed across the Rust/vendor/JS stack together.
       - dependency-name: "@tauri-apps/api"
-        versions: [">=2.12.0 <3.0.0"]
+        versions: [">=2.13.0 <3.0.0"]
       - dependency-name: "@tauri-apps/cli"
-        versions: [">=2.12.0 <3.0.0"]
+        versions: [">=2.13.0 <3.0.0"]
     groups:
       routine-desktop:
         patterns: ["*"]

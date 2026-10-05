@@ -62,7 +62,7 @@ jobs:
       - name: Cache cargo (MSRV)
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: msrv-1.88
+          shared-key: msrv-core-1.88-desktop-1.90
 
       - name: Check workspace at MSRV
         run: cargo check --workspace --all-targets --locked
@@ -79,7 +79,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - name: Check desktop Tauri crate at MSRV
+      - name: Install Rust 1.90 for desktop Tauri MSRV
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master @ 2026-09-17
+        with:
+          toolchain: 1.90.0
+
+      - name: Check desktop Tauri crate at desktop MSRV
         working-directory: apps/desktop/src-tauri
         run: cargo check --all-targets --locked
 
