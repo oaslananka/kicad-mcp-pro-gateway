@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/core", "crates/storage", "crates/identity", "crates/workspace", "crates/policy", "crates/sessions", "crates/protocol", "crates/core-bridge", "crates/transport", "crates/audit", "crates/checkpoints", "apps/daemon", "apps/cli"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0-rc1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/oaslananka/kicad-mcp-pro-gateway"

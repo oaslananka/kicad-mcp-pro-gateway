@@ -11,6 +11,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > an actual tagged candidate plus external qualification evidence is still
 > required before promotion.
 
+> **2026-10-08 source preparation:** The source manifest version is prepared as
+> `1.0.0-rc1` for a future authorized release candidate. This is not a tagged
+> or signed candidate, does not create release assets, and does not satisfy the
+> independent clean-machine, cross-platform, or release-owner gates.
+
 ## [Unreleased]
 
 ### Added
