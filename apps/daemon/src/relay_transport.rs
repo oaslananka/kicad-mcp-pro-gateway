@@ -212,10 +212,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn challenge_is_domain_separated() {
-        assert_eq!(
-            challenge_message("dev_x", "abc"),
-            b"kicad-mcp-cloud-relay/auth/v1\ndev_x\nabc"
+    fn challenge_is_domain_separated_and_binds_the_current_device_and_nonce() {
+        // Every test instance uses fresh IDs; no hardcoded cryptographic nonce
+        // is supplied to the production challenge-signing routine.
+        let device_id = companion_core::DeviceId::new().to_string();
+        let nonce = ulid::Ulid::new().to_string();
+        let proof_input = challenge_message(&device_id, &nonce);
+        let expected = format!("kicad-mcp-cloud-relay/auth/v1\n{device_id}\n{nonce}");
+        assert_eq!(proof_input, expected.into_bytes());
+        assert_ne!(
+            proof_input,
+            challenge_message(&device_id, "different-nonce")
         );
+        assert_ne!(proof_input, challenge_message("different-device", &nonce));
     }
 }
