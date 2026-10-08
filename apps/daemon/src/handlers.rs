@@ -284,7 +284,10 @@ async fn status(state: &Arc<DaemonState>) -> IpcResponse {
             pending_approval_grant_count,
             workspace_count,
         ))) => {
-            let paired = identity.is_some();
+            // A local Ed25519 key is not cloud-account pairing. Until an
+            // owner-approved, durable production pairing record exists,
+            // every IPC view must agree that this device is NOT paired.
+            let paired = false;
             let core_bridge_reachable =
                 match CoreBridgeClient::new(state.core_health_probe_config.clone()) {
                     Ok(client) => client.connect("status-core-health").await.is_ok(),

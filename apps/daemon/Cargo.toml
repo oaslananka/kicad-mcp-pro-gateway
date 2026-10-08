@@ -21,6 +21,12 @@ companion-sessions = { path = "../../crates/sessions" }
 companion-protocol = { path = "../../crates/protocol" }
 companion-core-bridge = { path = "../../crates/core-bridge" }
 companion-transport = { path = "../../crates/transport" }
+base64 = "0.22"
+async-trait = "0.1"
+url.workspace = true
+futures-util = "0.3"
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+
 companion-audit = { path = "../../crates/audit" }
 companion-checkpoints = { path = "../../crates/checkpoints" }
 tokio = { workspace = true, features = ["io-util", "net", "rt", "fs"] }
@@ -44,3 +50,4 @@ companion-identity = { path = "../../crates/identity", features = ["test-util"] 
 companion-core-bridge = { path = "../../crates/core-bridge", features = ["test-util"] }
 companion-core = { path = "../../crates/core", features = ["test-util"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+ed25519-dalek = "2"
