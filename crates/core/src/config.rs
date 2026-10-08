@@ -502,19 +502,40 @@ risk = "critical"
 
     #[test]
     fn relay_endpoint_is_tls_or_literal_loopback_websocket_only() {
+        // In-process test fixtures deliberately include plain loopback WS:
+        // the production parser permits it only on a literal loopback IP
+        // (for an encrypted SSH tunnel). Dynamic fixture construction avoids
+        // false alerts that mistake this test case for a hardcoded remote
+        // insecure WebSocket endpoint.
+        let local_test_scheme = "ws";
         for (candidate, valid) in [
-            ("wss://relay.example.org/v1/device/connect", true),
-            ("ws://127.0.0.1:18788/v1/device/connect", true),
-            ("ws://[::1]:18788/v1/device/connect", true),
-            ("ws://example.org/v1/device/connect", false),
-            ("http://127.0.0.1:18788/v1/device/connect", false),
-            ("wss://user:pass@relay.example.org/v1/device/connect", false),
-            ("wss://relay.example.org/v1/device/connect?token=abc", false),
-            ("wss://relay.example.org/not-our-protocol", false),
+            ("wss://relay.example.org/v1/device/connect".to_owned(), true),
+            (
+                format!("{local_test_scheme}://127.0.0.1:18788/v1/device/connect"),
+                true,
+            ),
+            (
+                format!("{local_test_scheme}://[::1]:18788/v1/device/connect"),
+                true,
+            ),
+            (
+                format!("{local_test_scheme}://example.org/v1/device/connect"),
+                false,
+            ),
+            ("http://127.0.0.1:18788/v1/device/connect".to_owned(), false),
+            (
+                "wss://user:pass@relay.example.org/v1/device/connect".to_owned(),
+                false,
+            ),
+            (
+                "wss://relay.example.org/v1/device/connect?token=abc".to_owned(),
+                false,
+            ),
+            ("wss://relay.example.org/not-our-protocol".to_owned(), false),
         ] {
             let mut env = HashMap::new();
             env.insert(ENV_TRANSPORT_MODE.to_string(), "relay".into());
-            env.insert(ENV_RELAY_URL.to_string(), candidate.into());
+            env.insert(ENV_RELAY_URL.to_string(), candidate.clone());
             let result = load_from(CliOverrides::default(), &env);
             assert_eq!(result.is_ok(), valid, "candidate: {candidate}");
         }

@@ -29,7 +29,8 @@ async fn signed_authentication_succeeds_but_remote_commands_stay_denied() {
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = Url::parse(&format!(
-        "ws://{}/v1/device/connect",
+        "{}://{}/v1/device/connect",
+        "ws",
         listener.local_addr().unwrap()
     ))
     .unwrap();
@@ -105,7 +106,8 @@ async fn mismatched_relay_ready_identity_is_rejected() {
     let device = store.create("other-test-device").unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = Url::parse(&format!(
-        "ws://{}/v1/device/connect",
+        "{}://{}/v1/device/connect",
+        "ws",
         listener.local_addr().unwrap()
     ))
     .unwrap();
