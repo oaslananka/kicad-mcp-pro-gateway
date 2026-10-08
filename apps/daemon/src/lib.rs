@@ -5,6 +5,7 @@ pub mod errors;
 pub mod handlers;
 pub mod identity_backend;
 pub mod ipc_server;
+pub mod relay_transport;
 pub mod remote_processor;
 pub mod state;
 pub mod tool_reconciliation;
@@ -141,6 +142,7 @@ fn transport_for_mode(mode: TransportMode) -> Option<Arc<dyn Transport>> {
     match mode {
         TransportMode::Disabled => None,
         TransportMode::Mock => Some(Arc::new(MockTransport::new())),
+        TransportMode::Relay => None, // constructed with device identity below
     }
 }
 
@@ -318,7 +320,16 @@ pub async fn run(config: CompanionConfig) -> anyhow::Result<()> {
         );
     }
 
-    let transport = transport_for_mode(config.transport_mode);
+    let transport: Option<Arc<dyn Transport>> = match config.transport_mode {
+        TransportMode::Relay => Some(Arc::new(relay_transport::RelayTransport::new(
+            config
+                .relay_url
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("relay_url missing"))?,
+            Arc::clone(&state.identity_store),
+        ))),
+        other => transport_for_mode(other),
+    };
     match config.transport_mode {
         TransportMode::Disabled => {
             tracing::info!("outbound relay transport disabled; local IPC remains available");
@@ -327,6 +338,9 @@ pub async fn run(config: CompanionConfig) -> anyhow::Result<()> {
             tracing::warn!(
                 "explicit development mock transport enabled; no production relay is configured"
             );
+        }
+        TransportMode::Relay => {
+            tracing::info!("authenticated cloud heartbeat transport enabled; remote operations remain disabled");
         }
     }
 

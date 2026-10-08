@@ -157,7 +157,7 @@ async fn status_preserves_device_session_and_workspace_fields_while_probing_core
     let view = status(&state).await;
 
     assert_eq!(view.device_fingerprint, Some(identity.fingerprint.0));
-    assert!(view.paired);
+    assert!(!view.paired); // local device identity is not cloud pairing
     assert!(view.core_bridge_reachable);
     assert_eq!(view.active_session_count, 1);
     assert_eq!(view.workspace_count, 2);

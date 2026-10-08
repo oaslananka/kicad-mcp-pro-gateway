@@ -23,10 +23,13 @@ pairing, session negotiation, or the operation envelope is a secret format.
    before another request is forwarded. See
    [`daemon-lifecycle.md`](../development/daemon-lifecycle.md).
 3. **Gateway transport protocol**: the envelope Gateway uses to talk to
-   a relay/cloud. The normal daemon starts with outbound transport disabled;
-   an in-process mock is available only when explicitly selected for local
-   development/testing. A production hosted relay is out of scope for this
-   repository. See below.
+   a relay/cloud. The normal daemon starts with outbound transport disabled.
+   In-process mock and Ed25519-authenticated, heartbeat-only `relay` modes
+   both require explicit opt-in; the latter connects to a separate private
+   cloud service but **cannot carry remote sessions or operations** until
+   production principal verification and replay/idempotency are implemented.
+   See [the private relay pilot](../development/cloud-relay-pilot.md)
+   and the protocol below.
 
 ## Gateway transport envelope (V1)
 

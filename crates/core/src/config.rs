@@ -20,6 +20,7 @@ use crate::risk::RiskLevel;
 pub enum TransportMode {
     Disabled,
     Mock,
+    Relay,
 }
 
 impl TransportMode {
@@ -27,6 +28,7 @@ impl TransportMode {
         match self {
             TransportMode::Disabled => "disabled",
             TransportMode::Mock => "mock",
+            TransportMode::Relay => "relay",
         }
     }
 }
@@ -44,6 +46,7 @@ impl FromStr for TransportMode {
         match s {
             "disabled" => Ok(TransportMode::Disabled),
             "mock" => Ok(TransportMode::Mock),
+            "relay" => Ok(TransportMode::Relay),
             other => Err(ConfigError::InvalidTransportMode(other.to_string())),
         }
     }
@@ -162,6 +165,7 @@ pub struct CompanionConfig {
     pub log_level: String,
     pub core_bridge_endpoint: Url,
     pub transport_mode: TransportMode,
+    pub relay_url: Option<Url>,
     pub authorization_ttl: AuthorizationTtlConfig,
 }
 
@@ -171,6 +175,10 @@ pub enum ConfigError {
     InvalidEndpoint(String),
     #[error("invalid transport mode: {0}")]
     InvalidTransportMode(String),
+    #[error("invalid relay endpoint: {0}")]
+    InvalidRelayEndpoint(String),
+    #[error("relay mode requires a configured relay_url")]
+    MissingRelayEndpoint,
     #[error("invalid authorization TTL policy: {0}")]
     InvalidAuthorizationTtlPolicy(String),
     #[error("invalid config file")]
@@ -184,6 +192,8 @@ impl CompanionError for ConfigError {
         match self {
             ConfigError::InvalidEndpoint(_) => "CONFIG_INVALID_ENDPOINT",
             ConfigError::InvalidTransportMode(_) => "CONFIG_INVALID_TRANSPORT_MODE",
+            ConfigError::InvalidRelayEndpoint(_) => "CONFIG_INVALID_RELAY_ENDPOINT",
+            ConfigError::MissingRelayEndpoint => "CONFIG_MISSING_RELAY_ENDPOINT",
             ConfigError::InvalidAuthorizationTtlPolicy(_) => {
                 "CONFIG_INVALID_AUTHORIZATION_TTL_POLICY"
             }
@@ -207,6 +217,7 @@ const ENV_DATA_DIR: &str = "GATEWAY_DATA_DIR";
 const ENV_LOG_LEVEL: &str = "GATEWAY_LOG_LEVEL";
 const ENV_CORE_BRIDGE_ENDPOINT: &str = "GATEWAY_CORE_BRIDGE_ENDPOINT";
 const ENV_TRANSPORT_MODE: &str = "GATEWAY_TRANSPORT_MODE";
+const ENV_RELAY_URL: &str = "GATEWAY_RELAY_URL";
 
 /// Production entry point: layers real process environment variables under
 /// `overrides`.
@@ -241,6 +252,7 @@ struct FileConfig {
     log_level: Option<String>,
     core_bridge_endpoint: Option<String>,
     transport_mode: Option<String>,
+    relay_url: Option<String>,
     authorization_ttl: Option<AuthorizationTtlFileConfig>,
 }
 
@@ -367,6 +379,31 @@ fn load_from_sources(
         },
     };
 
+    let relay_url = env
+        .get(ENV_RELAY_URL)
+        .cloned()
+        .or(file.relay_url)
+        .map(|raw| {
+            let url = Url::parse(&raw).map_err(|_| ConfigError::InvalidRelayEndpoint(raw.clone()))?;
+            let is_loopback = matches!(url.host(), Some(url::Host::Ipv4(addr)) if addr.is_loopback())
+                || matches!(url.host(), Some(url::Host::Ipv6(addr)) if addr.is_loopback());
+            let allowed_scheme = url.scheme() == "wss" || (url.scheme() == "ws" && is_loopback);
+            if !allowed_scheme
+                || url.username() != ""
+                || url.password().is_some()
+                || url.query().is_some()
+                || url.fragment().is_some()
+                || url.path() != "/v1/device/connect"
+            {
+                return Err(ConfigError::InvalidRelayEndpoint(raw));
+            }
+            Ok(url)
+        })
+        .transpose()?;
+    if transport_mode == TransportMode::Relay && relay_url.is_none() {
+        return Err(ConfigError::MissingRelayEndpoint);
+    }
+
     let authorization_ttl = file
         .authorization_ttl
         .map(AuthorizationTtlConfig::try_from)
@@ -378,6 +415,7 @@ fn load_from_sources(
         log_level,
         core_bridge_endpoint,
         transport_mode,
+        relay_url,
         authorization_ttl,
     })
 }
@@ -450,6 +488,36 @@ risk = "critical"
         env.insert(ENV_TRANSPORT_MODE.to_string(), "mock".to_string());
         let config = load_from(CliOverrides::default(), &env).unwrap();
         assert_eq!(config.transport_mode, TransportMode::Mock);
+    }
+
+    #[test]
+    fn relay_requires_explicit_endpoint() {
+        let mut env = HashMap::new();
+        env.insert(ENV_TRANSPORT_MODE.to_string(), "relay".into());
+        assert_eq!(
+            load_from(CliOverrides::default(), &env),
+            Err(ConfigError::MissingRelayEndpoint)
+        );
+    }
+
+    #[test]
+    fn relay_endpoint_is_tls_or_literal_loopback_websocket_only() {
+        for (candidate, valid) in [
+            ("wss://relay.example.org/v1/device/connect", true),
+            ("ws://127.0.0.1:18788/v1/device/connect", true),
+            ("ws://[::1]:18788/v1/device/connect", true),
+            ("ws://example.org/v1/device/connect", false),
+            ("http://127.0.0.1:18788/v1/device/connect", false),
+            ("wss://user:pass@relay.example.org/v1/device/connect", false),
+            ("wss://relay.example.org/v1/device/connect?token=abc", false),
+            ("wss://relay.example.org/not-our-protocol", false),
+        ] {
+            let mut env = HashMap::new();
+            env.insert(ENV_TRANSPORT_MODE.to_string(), "relay".into());
+            env.insert(ENV_RELAY_URL.to_string(), candidate.into());
+            let result = load_from(CliOverrides::default(), &env);
+            assert_eq!(result.is_ok(), valid, "candidate: {candidate}");
+        }
     }
 
     #[test]

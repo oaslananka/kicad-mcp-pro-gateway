@@ -6,7 +6,11 @@ The contract is split into two parts:
 - **Current testable behavior**: What is implemented and testable in the repository (primarily in the mock transport and protocol crates).
 - **Normative production contract**: What a production relay must adhere to, and what the Gateway must enforce in a production deployment.
 
-Note: The repository currently contains a mock transport for testing. No production cloud transport is implemented in this repository.
+Note: The repository contains the mock transport and an opt-in,
+Ed25519-authenticated, **heartbeat-only** WebSocket pilot to a separate private
+cloud service. No production remote-agent MCP transport, actor attestation,
+durable replay/idempotency enforcement or live operation forwarding is enabled
+by that pilot. See [the pilot guide](../development/cloud-relay-pilot.md).
 
 ## Overview
 
@@ -25,8 +29,15 @@ The Gateway daemon initiates outbound connections to a relay (or cloud service) 
 
 ### Current implementation limits and enforced properties
 
-- **Production transport / TLS**: No production cloud transport or production TLS relay client exists in this repository. The normal daemon does not expose an inbound public relay listener; the test transport is in-process.
-- **Device / relay authentication**: The local Ed25519 device identity exists, but production pairing proof and relay TLS authentication are not implemented by the mock transport.
+- **Production transport / TLS**: A pilot client validates `wss://` with
+  normal WebPKI roots, or permits `ws://` only for literal loopback
+  over a separate SSH tunnel. There is no production OAuth/actor-verified
+  cloud data plane; the normal daemon still has no public inbound listener.
+- **Device / relay authentication**: The pilot uses a per-WebSocket
+  Ed25519 signed challenge checked against an offline owner-managed public-key
+  allowlist. This authenticates the device connection, not a remote user or
+  durable production pairing. Full enrollment/revocation and relay TLS
+  deployment are not yet implemented; the mock remains unauthenticated.
 - **Message size limits**: Envelopes exceeding `MAX_MESSAGE_BYTES` are rejected by the protocol codec; the current value is 1 MiB.
 - **Unknown message types**: Unknown `message_type` values fail deserialization instead of being ignored.
 - **Replay protection**: No production replay cache, durable dedupe store, or freshness-window enforcement exists yet. The envelope carries `message_id` and `timestamp` so the production transport can implement them.
