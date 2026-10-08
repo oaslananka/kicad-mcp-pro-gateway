@@ -4,12 +4,11 @@ All notable changes to this project are documented in this file. Format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-> **Release planning note:** On 2026-09-25 the repository recorded the
-> intent to use the current unreleased V1 implementation as the basis for a
-> future `1.0.0-rc1` candidate. No such candidate is release history yet:
-> as of the 2026-09-30 reconciliation, the workspace remains at `0.1.0` and
-> an actual tagged candidate plus external qualification evidence is still
-> required before promotion.
+> **Release preparation (2026-10-08):** The repository initially planned an
+> eventual `1.0.0-rc1` on 2026-09-25. The source manifests now declare
+> `1.0.0-rc1` for a future candidate. No tag, signed artifacts, or qualified
+> release exists; independent clean-machine, cross-platform, and release-owner
+> evidence is still required before any stable promotion.
 
 ## [Unreleased]
 

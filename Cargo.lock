@@ -401,7 +401,7 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "companion-audit"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "companion-storage",
@@ -415,7 +415,7 @@ dependencies = [
 
 [[package]]
 name = "companion-checkpoints"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "companion-storage",
@@ -430,7 +430,7 @@ dependencies = [
 
 [[package]]
 name = "companion-core"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "dirs",
  "serde",
@@ -444,7 +444,7 @@ dependencies = [
 
 [[package]]
 name = "companion-core-bridge"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "companion-core-bridge",
@@ -462,7 +462,7 @@ dependencies = [
 
 [[package]]
 name = "companion-identity"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "companion-identity",
@@ -481,7 +481,7 @@ dependencies = [
 
 [[package]]
 name = "companion-policy"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "companion-workspace",
@@ -496,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "companion-protocol"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "proptest",
@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "companion-sessions"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "companion-policy",
@@ -526,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "companion-storage"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "fs4",
@@ -539,7 +539,7 @@ dependencies = [
 
 [[package]]
 name = "companion-transport"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "async-trait",
  "companion-core",
@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "companion-workspace"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "companion-storage",
@@ -1391,7 +1391,7 @@ dependencies = [
 
 [[package]]
 name = "kicad-mcp-gateway-cli"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1412,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "kicad-mcp-gateway-daemon"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "anyhow",
  "companion-audit",

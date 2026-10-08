@@ -67,6 +67,28 @@ all of the following against the exact DMG contents:
 A missing certificate, wrong identity class, failed notarization, missing
 stapled ticket, or Gatekeeper rejection fails the release build.
 
+#### Windows MSI prerelease version ordering
+
+The canonical product version (root workspace, daemon inheritance, desktop
+Cargo, desktop `package.json`, and top-level Tauri `version`) remains
+`1.0.0-rc1` for the retained first RC. Windows Installer rejects non-numeric
+prerelease identifiers, so `tauri.conf.json` uses
+`bundle.windows.wix.version = "0.99.1"` **only for the RC's MSI
+ProductVersion**. This numeric Windows installer metadata is intentionally
+lower than the stable `1.0.0`; it is not a second canonical product version
+or an excuse to bypass the cross-source version/tag gate.
+
+For the separate `v1.0.0` source-version PR, **remove** that RC-specific
+`wix.version` override (or explicitly set it to `1.0.0`) before packaging.
+Verify the old RC MSI `ProductVersion=0.99.1`, the final stable MSI
+`ProductVersion=1.0.0`, and an in-place upgrade from the **exact retained
+RC artifact** to the **exact qualified final candidate**. Do not use a
+fourth-only Windows Installer version suffix: the installer compares only
+the first three numeric fields for an upgrade.
+
+References: [Tauri WiX version override](https://v2.tauri.app/reference/config/#wixconfig)
+and [Microsoft Windows Installer ProductVersion](https://learn.microsoft.com/en-us/windows/win32/msi/productversion).
+
 #### Windows Authenticode signing
 
 The Windows job imports a code-signing PFX into the ephemeral user certificate

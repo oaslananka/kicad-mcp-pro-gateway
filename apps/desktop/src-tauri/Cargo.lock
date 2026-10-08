@@ -356,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "companion-core"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -370,7 +370,7 @@ dependencies = [
 
 [[package]]
 name = "companion-protocol"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "serde",
@@ -1793,7 +1793,7 @@ dependencies = [
 
 [[package]]
 name = "kicad-mcp-gateway-desktop"
-version = "0.1.0"
+version = "1.0.0-rc1"
 dependencies = [
  "companion-core",
  "companion-protocol",
