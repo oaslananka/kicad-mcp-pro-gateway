@@ -94,3 +94,157 @@ impl Storage {
         Ok(())
     }
 }
+
+/// Opaque hashes of the Gateway's own authenticated local channel context.
+pub struct IssuedActorChallenge {
+    pub challenge_hash: [u8; 32],
+    pub device_hash: [u8; 32],
+    pub workspace_hash: [u8; 32],
+    pub epoch_hash: [u8; 32],
+    pub channel_hash: [u8; 32],
+    pub issued_at: i64,
+    pub expires_at: i64,
+}
+
+fn valid_issued_challenge(c: &IssuedActorChallenge) -> bool {
+    [
+        c.challenge_hash,
+        c.device_hash,
+        c.workspace_hash,
+        c.epoch_hash,
+        c.channel_hash,
+    ]
+    .into_iter()
+    .all(|digest| digest != [0; 32])
+        && c.issued_at > 0
+        && c.expires_at > c.issued_at
+        && c.expires_at.saturating_sub(c.issued_at) <= 60
+}
+
+impl Storage {
+    /// Call ONLY after the local Gateway creates a CSPRNG challenge for a
+    /// verified native device connection. Retains issued rows indefinitely:
+    /// a full store denies rather than expiring records across clock rollback.
+    pub fn register_actor_challenge(
+        &self,
+        c: &IssuedActorChallenge,
+    ) -> Result<(), ActorReplayError> {
+        if !valid_issued_challenge(c) {
+            return Err(ActorReplayError::Invalid);
+        }
+        let mut conn = self
+            .connection()
+            .lock()
+            .map_err(|_| ActorReplayError::Unavailable)?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|_| ActorReplayError::Unavailable)?;
+        let count: i64 = tx
+            .query_row("SELECT count(*) FROM gateway_actor_challenges", [], |row| {
+                row.get(0)
+            })
+            .map_err(|_| ActorReplayError::Unavailable)?;
+        if count >= 250_000 {
+            return Err(ActorReplayError::Unavailable);
+        }
+        tx.execute(
+            "INSERT INTO gateway_actor_challenges
+             (challenge_hash, device_hash, workspace_hash, epoch_hash, channel_hash, issued_at, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![c.challenge_hash.as_slice(), c.device_hash.as_slice(),
+                c.workspace_hash.as_slice(), c.epoch_hash.as_slice(),
+                c.channel_hash.as_slice(), c.issued_at, c.expires_at],
+        ).map_err(|e| match e {
+            rusqlite::Error::SqliteFailure(ref err, _) if err.code == ErrorCode::ConstraintViolation =>
+                ActorReplayError::Replay,
+            _ => ActorReplayError::Unavailable,
+        })?;
+        tx.commit().map_err(|_| ActorReplayError::Unavailable)?;
+        Ok(())
+    }
+
+    /// Challenge claim and all proof replay identifiers commit in ONE SQLite
+    /// IMMEDIATE transaction; either both are consumed or neither is.
+    pub fn consume_issued_actor_proof(
+        &self,
+        proof: &ActorReplayEvidence<'_>,
+        binding: &IssuedActorChallenge,
+        now_unix: i64,
+    ) -> Result<(), ActorReplayError> {
+        if !valid_issued_challenge(binding)
+            || now_unix < binding.issued_at
+            || now_unix > binding.expires_at
+            || proof.issuer.trim().is_empty()
+            || proof.issuer.len() > 256
+            || proof.expires_at < now_unix
+            || [
+                proof.nonce_hash,
+                proof.message_hash,
+                proof.challenge_hash,
+                proof.correlation_hash,
+            ]
+            .into_iter()
+            .any(|digest| digest == [0; 32])
+        {
+            return Err(ActorReplayError::Invalid);
+        }
+        let mut conn = self
+            .connection()
+            .lock()
+            .map_err(|_| ActorReplayError::Unavailable)?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|_| ActorReplayError::Unavailable)?;
+        let count: i64 = tx
+            .query_row("SELECT count(*) FROM verified_actor_replay", [], |row| {
+                row.get(0)
+            })
+            .map_err(|_| ActorReplayError::Unavailable)?;
+        if count >= 250_000 {
+            return Err(ActorReplayError::Unavailable);
+        }
+        let changed = tx
+            .execute(
+                "UPDATE gateway_actor_challenges SET consumed=1
+             WHERE challenge_hash=?1 AND device_hash=?2 AND workspace_hash=?3
+               AND epoch_hash=?4 AND channel_hash=?5 AND issued_at=?6 AND expires_at=?7
+               AND consumed=0",
+                params![
+                    binding.challenge_hash.as_slice(),
+                    binding.device_hash.as_slice(),
+                    binding.workspace_hash.as_slice(),
+                    binding.epoch_hash.as_slice(),
+                    binding.channel_hash.as_slice(),
+                    binding.issued_at,
+                    binding.expires_at
+                ],
+            )
+            .map_err(|_| ActorReplayError::Unavailable)?;
+        if changed != 1 {
+            return Err(ActorReplayError::Replay);
+        }
+        tx.execute(
+            "INSERT INTO verified_actor_replay
+             (issuer, nonce_hash, message_hash, challenge_hash, correlation_hash, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                proof.issuer,
+                proof.nonce_hash.as_slice(),
+                proof.message_hash.as_slice(),
+                proof.challenge_hash.as_slice(),
+                proof.correlation_hash.as_slice(),
+                proof.expires_at
+            ],
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::SqliteFailure(ref err, _)
+                if err.code == ErrorCode::ConstraintViolation =>
+            {
+                ActorReplayError::Replay
+            }
+            _ => ActorReplayError::Unavailable,
+        })?;
+        tx.commit().map_err(|_| ActorReplayError::Unavailable)?;
+        Ok(())
+    }
+}

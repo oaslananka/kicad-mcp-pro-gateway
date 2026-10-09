@@ -15,4 +15,4 @@ pub use connection::Storage;
 pub use error::StorageError;
 pub use migrations::{run_migrations, schema_version, SCHEMA_VERSION};
 
-pub use actor_replay::{ActorReplayError, ActorReplayEvidence};
+pub use actor_replay::{ActorReplayError, ActorReplayEvidence, IssuedActorChallenge};
