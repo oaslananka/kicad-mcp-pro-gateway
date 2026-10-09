@@ -20,6 +20,10 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 zeroize = "1"
 sha2 = "0.10"
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.22"
+serde_json_canonicalizer = "=0.3.2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
