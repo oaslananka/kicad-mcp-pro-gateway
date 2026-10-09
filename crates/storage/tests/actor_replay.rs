@@ -271,27 +271,77 @@ fn missing_or_corrupt_high_water_denies_without_new_reservations() {
 }
 
 #[test]
-fn schema_v8_seeds_high_water_from_oldest_unexpired_evidence_conservatively() {
-    let conn = rusqlite::Connection::open_in_memory().unwrap();
-    // Emulate the relevant minimal v7 tables and two kinds of recorded
-    // expiration; exercise the *actual* migration SQL, not a duplicate.
-    conn.execute_batch(
-        "CREATE TABLE gateway_actor_challenges (expires_at INTEGER NOT NULL);
-         CREATE TABLE verified_actor_replay (expires_at INTEGER NOT NULL);
-         INSERT INTO gateway_actor_challenges VALUES (1800000060);
-         INSERT INTO verified_actor_replay VALUES (1800000080);",
-    )
-    .unwrap();
-    conn.execute_batch(include_str!(
-        "../migrations/0008_actor_clock_high_water.sql"
-    ))
-    .unwrap();
-    let seeded: i64 = conn
-        .query_row(
-            "SELECT last_seen_unix FROM actor_clock_high_water WHERE singleton=1",
+fn schema_v8_seeds_high_water_from_old_v7_evidence_atomically() {
+    use rusqlite_migration::{Migrations, M};
+    // Build an actual valid v7 database with the *original* seven shipped
+    // migrations. Storage::open then exercises the real production v8 hook.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("gateway.db");
+    let mut connection = rusqlite::Connection::open(&file).unwrap();
+    let previous = Migrations::new(vec![
+        M::up(include_str!("../migrations/0001_init.sql")),
+        M::up(include_str!("../migrations/0002_authorization.sql")),
+        M::up(include_str!("../migrations/0003_verified_principal.sql")),
+        M::up(include_str!(
+            "../migrations/0004_audit_principal_verification.sql"
+        )),
+        M::up(include_str!("../migrations/0005_dynamic_risk.sql")),
+        M::up(include_str!("../migrations/0006_actor_replay.sql")),
+        M::up(include_str!(
+            "../migrations/0007_gateway_actor_challenges.sql"
+        )),
+    ]);
+    previous.to_latest(&mut connection).unwrap();
+    let old_schema: i64 = connection
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(old_schema, 7);
+    connection
+        .execute(
+            "INSERT INTO gateway_actor_challenges
+         (challenge_hash, device_hash, workspace_hash, epoch_hash,
+          channel_hash, issued_at, expires_at)
+         VALUES (zeroblob(32), zeroblob(32), zeroblob(32),
+                 zeroblob(32), zeroblob(32), 1800000000, 1800000060)",
             [],
-            |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(seeded, 1_800_000_080);
+    connection
+        .execute(
+            "INSERT INTO verified_actor_replay
+         (issuer, nonce_hash, message_hash, challenge_hash, correlation_hash, expires_at)
+         VALUES ('trusted', zeroblob(32), zeroblob(32), zeroblob(32),
+                 zeroblob(32), 1800000080)",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+
+    let storage = Storage::open(dir.path()).unwrap();
+    assert_eq!(high_water(&storage), 1_800_000_080);
+    let schema: i64 = storage
+        .connection()
+        .lock()
+        .unwrap()
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(schema, 8);
+    let old_challenges: i64 = storage
+        .connection()
+        .lock()
+        .unwrap()
+        .query_row("SELECT count(*) FROM gateway_actor_challenges", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(old_challenges, 1);
+    // A freshly issued timestamp earlier than the v7 evidence horizon
+    // must not resurrect any old proof on upgraded storage.
+    assert_eq!(
+        storage.register_actor_challenge(&issued(90)),
+        Err(ActorReplayError::Invalid),
+    );
+    drop(storage);
+    let reopened = Storage::open(dir.path()).unwrap();
+    assert_eq!(high_water(&reopened), 1_800_000_080);
 }

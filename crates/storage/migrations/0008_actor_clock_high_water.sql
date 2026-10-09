@@ -7,11 +7,8 @@ CREATE TABLE actor_clock_high_water (
     last_seen_unix INTEGER NOT NULL CHECK (last_seen_unix >= 0)
 );
 
--- Conservative upgrade from v7: previously issued challenges/proofs may
--- expire in the future, so do not accept a locally rewound clock earlier
--- than their most recent recorded expiry after migration.
-INSERT INTO actor_clock_high_water(singleton, last_seen_unix)
-SELECT 1, max(
-    coalesce((SELECT max(expires_at) FROM gateway_actor_challenges), 0),
-    coalesce((SELECT max(expires_at) FROM verified_actor_replay), 0)
-);
+-- The initial high-water value is inserted by the pinned rusqlite_migration
+-- v1.2 up_with_hook, in the SAME transaction as this DDL + user_version.
+-- It conservatively seeds from prior recorded proof/challenge expiration.
+-- A failed hook aborts the migration atomically, never leaving an
+-- uninitialized singleton row accepted by later operation code.

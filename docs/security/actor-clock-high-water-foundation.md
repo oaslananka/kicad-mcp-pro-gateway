@@ -4,6 +4,13 @@ Status: **library-only, unused by live Gateway/native transport**. This is
 not a clock synchronization service, independent trusted time authority,
 bounded replay-retention implementation or authorization for remote tools.
 
+The SQLite DDL and the conservative v7 history seed run within the
+**same** pinned `rusqlite_migration::M::up_with_hook` transaction.
+This ensures a failed migration hook cannot commit an uninitialized
+high-water sentinel or falsely advance the schema version. The v8
+SQL file contains only SQLite DDL; the nontrivial seed query resides in
+Rust migration logic rather than an unrelated SQL dialect checker.
+
 This additive SQLite v8 migration introduces a singleton
 `actor_clock_high_water.last_seen_unix`. It is advanced by the
 **locally authenticated Gateway clock**, never by assertion-supplied
