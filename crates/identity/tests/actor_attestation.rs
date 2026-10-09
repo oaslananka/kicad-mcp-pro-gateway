@@ -7,6 +7,7 @@ use companion_identity::actor_attestation::{
 use companion_identity::actor_issuer_policy::{
     ActorIssuerKeyState, OwnerPinnedActorIssuers, OwnerPinnedActorKey,
 };
+use companion_identity::owner_policy_authority::OwnerPolicyAuthority;
 use companion_storage::Storage;
 use ed25519_dalek::{Signer, SigningKey};
 use serde_json::json;
@@ -694,5 +695,45 @@ fn owner_signed_manifest_policy_controls_actual_offline_actor_verification() {
     assert_eq!(
         remaining, 1,
         "policy denials cannot spend a valid challenge"
+    );
+    // The authority never exposes the generation to the remote caller;
+    // a signed key revocation atomically replaces the in-memory policy.
+    let authority = OwnerPolicyAuthority::from_trusted_local_state(
+        owner_root.verifying_key(),
+        &make_manifest(50, "active"),
+        49,
+        NOW,
+    )
+    .unwrap();
+    let first_dir = tempfile::tempdir().unwrap();
+    let first_store = Storage::open(first_dir.path()).unwrap();
+    let first_issued = minted(&first_store);
+    let first_proof = sign(claims(&request, &first_issued));
+    assert!(authority
+        .verify_actor_and_consume(
+            &first_proof,
+            &context(&request, &first_issued),
+            &first_store
+        )
+        .is_ok());
+
+    assert_eq!(
+        authority.verify_candidate_and_replace_in_memory(&make_manifest(51, "revoked"), NOW),
+        Ok(51)
+    );
+    let denied_dir = tempfile::tempdir().unwrap();
+    let denied_store = Storage::open(denied_dir.path()).unwrap();
+    let denied_issued = minted(&denied_store);
+    let denied_proof = sign(claims(&request, &denied_issued));
+    assert_eq!(
+        authority
+            .verify_actor_and_consume(
+                &denied_proof,
+                &context(&request, &denied_issued),
+                &denied_store
+            )
+            .err(),
+        Some(ActorAttestationError::Invalid),
+        "new owner policy must revoke actor even for an otherwise valid proof"
     );
 }
