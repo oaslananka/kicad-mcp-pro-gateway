@@ -19,15 +19,12 @@ fn reconcile_command_writes_snapshot_and_reports_coverage() {
     )
     .unwrap();
 
-    let result = Command::new(
-        std::env::var("CARGO_BIN_EXE_reconcile-tool-registry")
-            .expect("reconcile binary path is available"),
-    )
-    .arg(&source)
-    .arg("abc123")
-    .arg(&output)
-    .output()
-    .unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_reconcile-tool-registry"))
+        .arg(&source)
+        .arg("abc123")
+        .arg(&output)
+        .output()
+        .unwrap();
 
     assert!(
         result.status.success(),

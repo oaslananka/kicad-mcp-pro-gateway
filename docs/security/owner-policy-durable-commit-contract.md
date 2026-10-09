@@ -7,15 +7,15 @@ or authorization for any remote operations.
 
 `OwnerPolicyAuthority` now accepts only a `TrustedOwnerPolicyStore`
 that returns an independently established owner Ed25519 verification
-root **and** the generation of the currently committed owner-signed
-manifest. Startup requires an exact match between that generation
+root, the generation **and SHA-256 of the exact canonical signed bytes**
+of the currently committed owner-signed manifest. Startup requires an exact match between that generation
 and the signed, canonical, unexpired manifest. There is no empty
 policy fallback, TOFU key import, first-run `generation=0` default
 or remote root enrollment.
 Before publishing the validated initial manifest, the constructor
-re-reads an atomic trusted-root/generation snapshot and rejects if
+re-reads an atomic trusted-root/generation/manifest-digest snapshot and rejects if
 either differs from the values used for signature verification. Tests
-inject both generation and owner-root changes between these reads.
+inject generation, owner-root and same-generation manifest-digest changes between these reads.
 All external writers must honor the provider's cross-process
 serialization contract: a new externally committed update after the
 recheck cannot be safely handled without that broader guarantee.
@@ -25,12 +25,14 @@ The `compare_and_commit` contract is deliberately stronger than an
 ordinary file write or SQLite transaction in the local Gateway data
 directory:
 
-1. Verify the currently bound owner root and exact previous generation;
+1. Verify the currently bound owner root, exact previous generation
+   and expected signed-manifest SHA-256;
    reject any stale expected generation or root change. Serialize this
    across all processes and any other owner-policy administrative client.
-2. Atomically commit a **strictly increasing** generation to an
-   independently trusted, durable and rollback-resistant source, then
-   return success only after that commit is complete.
+2. Atomically commit a **strictly increasing** generation **bound to
+   the exact new signed-manifest SHA-256** to an independently trusted,
+   durable and rollback-resistant source. Return success only after the
+   complete logical commitment is durable.
 3. After power loss or a crash, return exactly the committed root and
    generation; no silent downgrade to an earlier database snapshot.
 4. Missing, unreadable, disputed or untrusted root/generation values fail
@@ -82,3 +84,11 @@ The live private VPS pilot and Cloud Relay have not been changed.
 References:
 - [Rust RwLock exclusive-write poisoning](https://doc.rust-lang.org/std/sync/struct.RwLock.html)
 - [SQLite atomic commit scope and storage assumptions](https://www.sqlite.org/atomiccommit.html)
+
+## Versioned provider protocol and eligibility
+
+See [Owner-policy commitment v1](owner-policy-commitment-v1.md) for the
+mandatory bound signed-manifest digest, owner-approved enrollment,
+platform eligibility, crash/recovery matrix and deployment stop conditions.
+The existing trait now rejects a different owner-signed manifest at the
+same committed generation, not just a changed root/generation.

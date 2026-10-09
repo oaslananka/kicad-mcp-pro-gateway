@@ -245,8 +245,8 @@ fn active_test_authority() -> (
     OwnerPolicyAuthority,
     Vec<u8>,
 ) {
-    let store = TestOwnerStore::new(owner().verifying_key(), 12);
     let active = wrap(&owner(), &payload());
+    let store = TestOwnerStore::new(owner().verifying_key(), 12, &active);
     let authority = OwnerPolicyAuthority::from_trusted_store(store.clone(), &active, NOW).unwrap();
     (store, authority, active)
 }
@@ -299,11 +299,10 @@ fn forged_and_expired_owner_updates_preserve_current_in_memory_policy() {
 #[test]
 fn simultaneous_owner_updates_serialize_and_never_decrease_generation() {
     use std::sync::Arc;
-    let store = TestOwnerStore::new(owner().verifying_key(), 12);
-    let authority = Arc::new(
-        OwnerPolicyAuthority::from_trusted_store(store.clone(), &wrap(&owner(), &payload()), NOW)
-            .unwrap(),
-    );
+    let active = wrap(&owner(), &payload());
+    let store = TestOwnerStore::new(owner().verifying_key(), 12, &active);
+    let authority =
+        Arc::new(OwnerPolicyAuthority::from_trusted_store(store.clone(), &active, NOW).unwrap());
     let manifests: Vec<Vec<u8>> = (13..21)
         .map(|generation| {
             let mut v = payload();
@@ -326,15 +325,19 @@ fn simultaneous_owner_updates_serialize_and_never_decrease_generation() {
 #[test]
 fn trusted_store_requires_exact_active_generation_and_no_tofu_bootstrap() {
     let envelope = wrap(&owner(), &payload());
-    let zero = TestOwnerStore::new(owner().verifying_key(), 0);
+    let zero = TestOwnerStore::new(owner().verifying_key(), 0, &envelope);
     assert!(OwnerPolicyAuthority::from_trusted_store(zero, &envelope, NOW).is_err());
-    let stale = TestOwnerStore::new(owner().verifying_key(), 11);
+    let stale = TestOwnerStore::new(owner().verifying_key(), 11, &envelope);
     assert!(OwnerPolicyAuthority::from_trusted_store(stale, &envelope, NOW).is_err());
-    let advanced = TestOwnerStore::new(owner().verifying_key(), 13);
+    let advanced = TestOwnerStore::new(owner().verifying_key(), 13, &envelope);
     assert!(OwnerPolicyAuthority::from_trusted_store(advanced, &envelope, NOW).is_err());
-    let rogue = TestOwnerStore::new(SigningKey::from_bytes(&[97; 32]).verifying_key(), 12);
+    let rogue = TestOwnerStore::new(
+        SigningKey::from_bytes(&[97; 32]).verifying_key(),
+        12,
+        &envelope,
+    );
     assert!(OwnerPolicyAuthority::from_trusted_store(rogue, &envelope, NOW).is_err());
-    let trusted = TestOwnerStore::new(owner().verifying_key(), 12);
+    let trusted = TestOwnerStore::new(owner().verifying_key(), 12, &envelope);
     assert_eq!(
         OwnerPolicyAuthority::from_trusted_store(trusted, &envelope, NOW)
             .unwrap()
@@ -397,11 +400,62 @@ fn ambiguous_postcommit_error_disables_old_policy_and_needs_new_manifest_after_r
 }
 
 #[test]
-fn bootstrap_rechecks_atomic_trusted_root_and_generation_before_publication() {
+fn different_valid_owner_signed_manifest_at_same_generation_is_not_equivalent() {
+    let committed = wrap(&owner(), &payload());
+    let mut alternative = payload();
+    alternative["keys"][0]["state"] = json!("revoked");
+    let alternative = wrap(&owner(), &alternative);
+    assert_eq!(
+        load(&alternative, 11),
+        Ok(12),
+        "both manifests are genuinely owner-signed"
+    );
+    assert_ne!(committed, alternative);
+
+    let trusted = TestOwnerStore::new(owner().verifying_key(), 12, &committed);
+    assert!(OwnerPolicyAuthority::from_trusted_store(trusted.clone(), &alternative, NOW).is_err());
+    assert_eq!(
+        OwnerPolicyAuthority::from_trusted_store(trusted, &committed, NOW)
+            .unwrap()
+            .active_generation(),
+        Ok(12)
+    );
+}
+
+#[test]
+fn recovery_refuses_other_signed_policy_even_when_generation_matches() {
+    let (trusted, authority, _) = active_test_authority();
+    let mut next = payload();
+    next["generation"] = json!(13);
+    next["keys"][0]["state"] = json!("revoked");
+    let committed = wrap(&owner(), &next);
+    assert_eq!(
+        authority.verify_candidate_commit_and_activate(&committed, NOW),
+        Ok(13)
+    );
+    let mut alternate = next;
+    alternate["keys"][1]["state"] = json!("revoked");
+    let signed_alternate = wrap(&owner(), &alternate);
+    assert_eq!(load(&signed_alternate, 12), Ok(13));
+    assert!(
+        OwnerPolicyAuthority::from_trusted_store(trusted.clone(), &signed_alternate, NOW).is_err(),
+        "disk restore must not substitute another same-generation policy"
+    );
+    assert_eq!(
+        OwnerPolicyAuthority::from_trusted_store(trusted, &committed, NOW)
+            .unwrap()
+            .active_generation(),
+        Ok(13)
+    );
+}
+
+#[test]
+fn bootstrap_rechecks_atomic_root_generation_and_manifest_digest_before_publication() {
     use companion_identity::owner_policy_authority::{
         TrustedOwnerPolicyState, TrustedOwnerPolicyStore,
     };
     use ed25519_dalek::VerifyingKey;
+    use sha2::Digest;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct ChangingTrustedStore {
@@ -419,13 +473,16 @@ fn bootstrap_rechecks_atomic_trusted_root_and_generation_before_publication() {
             Ok(TrustedOwnerPolicyState {
                 root: s.root,
                 committed_generation: s.committed_generation,
+                committed_manifest_sha256: s.committed_manifest_sha256,
             })
         }
         fn compare_and_commit(
             &self,
             _: &VerifyingKey,
             _: u64,
+            _: &[u8; 32],
             _: u64,
+            _: &[u8; 32],
         ) -> Result<(), ActorAttestationError> {
             Err(ActorAttestationError::StorageUnavailable)
         }
@@ -435,23 +492,31 @@ fn bootstrap_rechecks_atomic_trusted_root_and_generation_before_publication() {
         TrustedOwnerPolicyState {
             root: owner().verifying_key(),
             committed_generation: 13,
+            committed_manifest_sha256: sha2::Sha256::digest(&envelope).into(),
         },
         TrustedOwnerPolicyState {
             root: SigningKey::from_bytes(&[99; 32]).verifying_key(),
             committed_generation: 12,
+            committed_manifest_sha256: sha2::Sha256::digest(&envelope).into(),
+        },
+        TrustedOwnerPolicyState {
+            root: owner().verifying_key(),
+            committed_generation: 12,
+            committed_manifest_sha256: [0u8; 32],
         },
     ] {
         let store = std::sync::Arc::new(ChangingTrustedStore {
             first: TrustedOwnerPolicyState {
                 root: owner().verifying_key(),
                 committed_generation: 12,
+                committed_manifest_sha256: sha2::Sha256::digest(&envelope).into(),
             },
             later: changed,
             reads: AtomicUsize::new(0),
         });
         assert!(
             OwnerPolicyAuthority::from_trusted_store(store.clone(), &envelope, NOW).is_err(),
-            "initial owner root/generation changed mid-verification"
+            "initial owner root/generation/manifest digest changed mid-verification"
         );
         assert_eq!(store.reads.load(Ordering::SeqCst), 2);
     }

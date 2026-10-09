@@ -7,6 +7,7 @@ use companion_identity::{
     owner_policy_authority::{TrustedOwnerPolicyState, TrustedOwnerPolicyStore},
 };
 use ed25519_dalek::VerifyingKey;
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Copy)]
 pub enum Failure {
@@ -18,6 +19,7 @@ pub enum Failure {
 struct State {
     root: VerifyingKey,
     generation: u64,
+    manifest_sha256: [u8; 32],
     failure: Failure,
 }
 
@@ -26,11 +28,12 @@ pub struct TestOwnerStore {
 }
 
 impl TestOwnerStore {
-    pub fn new(root: VerifyingKey, generation: u64) -> Arc<Self> {
+    pub fn new(root: VerifyingKey, generation: u64, signed_manifest: &[u8]) -> Arc<Self> {
         Arc::new(Self {
             inner: Mutex::new(State {
                 root,
                 generation,
+                manifest_sha256: Sha256::digest(signed_manifest).into(),
                 failure: Failure::None,
             }),
         })
@@ -54,6 +57,7 @@ impl TrustedOwnerPolicyStore for TestOwnerStore {
         Ok(TrustedOwnerPolicyState {
             root: locked.root,
             committed_generation: locked.generation,
+            committed_manifest_sha256: locked.manifest_sha256,
         })
     }
 
@@ -61,7 +65,9 @@ impl TrustedOwnerPolicyStore for TestOwnerStore {
         &self,
         pinned_owner_root: &VerifyingKey,
         expected_generation: u64,
+        expected_manifest_sha256: &[u8; 32],
         next_generation: u64,
+        next_manifest_sha256: &[u8; 32],
     ) -> Result<(), ActorAttestationError> {
         let mut locked = self
             .inner
@@ -69,6 +75,7 @@ impl TrustedOwnerPolicyStore for TestOwnerStore {
             .map_err(|_| ActorAttestationError::StorageUnavailable)?;
         if locked.root != *pinned_owner_root
             || locked.generation != expected_generation
+            || &locked.manifest_sha256 != expected_manifest_sha256
             || next_generation <= expected_generation
         {
             return Err(ActorAttestationError::StorageUnavailable);
@@ -77,6 +84,7 @@ impl TrustedOwnerPolicyStore for TestOwnerStore {
             return Err(ActorAttestationError::StorageUnavailable);
         }
         locked.generation = next_generation;
+        locked.manifest_sha256 = *next_manifest_sha256;
         if matches!(locked.failure, Failure::AfterCommit) {
             return Err(ActorAttestationError::StorageUnavailable);
         }

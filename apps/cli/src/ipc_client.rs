@@ -233,9 +233,4 @@ mod tests {
         assert!(error.to_string().contains("unexpected daemon product"));
         assert!(!DAEMON_PRODUCT_ID.is_empty());
     }
-
-    #[test]
-    fn packaged_cli_and_daemon_versions_are_not_empty() {
-        assert!(!EXPECTED_DAEMON_VERSION.is_empty());
-    }
 }

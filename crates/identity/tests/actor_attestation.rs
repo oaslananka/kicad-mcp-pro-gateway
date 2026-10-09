@@ -701,7 +701,8 @@ fn owner_signed_manifest_policy_controls_actual_offline_actor_verification() {
     );
     // The authority never exposes the generation to the remote caller;
     // a signed key revocation atomically replaces the in-memory policy.
-    let trusted_policy_store = TestOwnerStore::new(owner_root.verifying_key(), 50);
+    let trusted_policy_store =
+        TestOwnerStore::new(owner_root.verifying_key(), 50, &make_manifest(50, "active"));
     let authority = OwnerPolicyAuthority::from_trusted_store(
         trusted_policy_store.clone(),
         &make_manifest(50, "active"),
@@ -758,7 +759,11 @@ fn owner_signed_manifest_policy_controls_actual_offline_actor_verification() {
     );
     // Ambiguous status after an actual committed owner update also
     // permanently disables the old process, rather than reviving keys.
-    let separate_store = TestOwnerStore::new(owner_root.verifying_key(), 51);
+    let separate_store = TestOwnerStore::new(
+        owner_root.verifying_key(),
+        51,
+        &make_manifest(51, "revoked"),
+    );
     let separate = OwnerPolicyAuthority::from_trusted_store(
         separate_store.clone(),
         &make_manifest(51, "revoked"),
