@@ -137,9 +137,11 @@ owner authentication, zero challenge/session nonce, mismatched session,
 challenge, owner-root fingerprint, exact signed-manifest digest, device domain,
 or intent; cancelled, expired, future-clock, excessively long and replayed
 consent also deny. A rejected presentation burns the pending ceremony rather
-than leaving a guessable replay window. Enrollment consent does not authorize
-recovery or owner-root rotation. An ambiguous commit cannot reuse the approval;
-restart must reconcile the exact signed manifest commitment.
+than leaving a guessable replay window. The model grant is ALSO atomically
+consumed at the enrollment use site: copying it into a second model instance or
+racing two first-use attempts cannot enroll twice. Recovery-purpose consent
+never authorizes first enrollment. An ambiguous commit cannot reuse the
+approval; restart must reconcile the exact signed manifest commitment.
 
 This is a **contract model, NOT a credential protocol**: fixed test nonces,
 in-memory locks, simulated Boolean owner authentication, test approval objects

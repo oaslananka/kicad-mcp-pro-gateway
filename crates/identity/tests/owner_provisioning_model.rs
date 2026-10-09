@@ -61,6 +61,7 @@ struct ModelOwnerApproval {
     reviewed_manifest_sha256: [u8; 32],
     device_domain: &'static str,
     purpose: CeremonyPurpose,
+    spent: Mutex<bool>,
 }
 fn owner_test_ceremony(key: &SigningKey, reviewed_manifest: &[u8]) -> ModelOwnerApproval {
     ModelOwnerApproval {
@@ -68,6 +69,7 @@ fn owner_test_ceremony(key: &SigningKey, reviewed_manifest: &[u8]) -> ModelOwner
         reviewed_manifest_sha256: digest(reviewed_manifest),
         device_domain: DEVICE_DOMAIN,
         purpose: CeremonyPurpose::FirstEnrollment,
+        spent: Mutex::new(false),
     }
 }
 
@@ -248,6 +250,15 @@ impl ProvisioningModel {
         {
             return ModelResult::Denied;
         }
+        // The model grant must be spent at the enrollment use site, not
+        // merely when extracted from the simulated ceremony. This prevents
+        // replay against a different model instance with the same scope.
+        let mut spent = approval.spent.lock().unwrap();
+        if *spent {
+            return ModelResult::Denied;
+        }
+        *spent = true;
+        drop(spent);
         let Ok(valid) = verify_owner_signed_issuer_manifest(signed, &approval.root, 0, NOW) else {
             return ModelResult::Denied;
         };
@@ -342,7 +353,6 @@ fn owner_must_review_exact_signed_manifest_and_correct_device() {
 fn interrupted_enrollment_has_only_explicit_recovery_outcomes() {
     let signer = owner(78);
     let signed = signed_manifest(&signer, 7, "active");
-    let approval = owner_test_ceremony(&signer, &signed);
     for cut in [
         PowerCut::BeforePrepare,
         PowerCut::AfterPrepare,
@@ -350,6 +360,7 @@ fn interrupted_enrollment_has_only_explicit_recovery_outcomes() {
         PowerCut::AfterCommit,
         PowerCut::None,
     ] {
+        let approval = owner_test_ceremony(&signer, &signed);
         let mut device = ProvisioningModel::new(true);
         let result = device.enroll(Some(&approval), &signed, cut);
         match cut {
@@ -556,6 +567,7 @@ impl TestOwnerCeremony {
             reviewed_manifest_sha256: presented.signed_manifest_sha256,
             device_domain: presented.device_domain,
             purpose: presented.purpose,
+            spent: Mutex::new(false),
         })
     }
 }
@@ -763,4 +775,41 @@ fn recovery_scoped_consent_never_becomes_first_enrollment_authority() {
     );
     assert!(!device.anchor.present());
     assert!(device.disk_manifest.is_none());
+}
+
+#[test]
+fn approval_cannot_be_reused_on_another_fresh_device_model() {
+    let signer = owner(78);
+    let signed = signed_manifest(&signer, 7, "active");
+    let grant = owner_test_ceremony(&signer, &signed);
+    let mut first = ProvisioningModel::new(true);
+    let mut second = ProvisioningModel::new(true);
+    assert_eq!(
+        first.enroll(Some(&grant), &signed, PowerCut::None),
+        ModelResult::CommittedButNotActivated
+    );
+    assert_eq!(
+        second.enroll(Some(&grant), &signed, PowerCut::None),
+        ModelResult::Denied,
+        "a copied approval cannot enroll a second independent model"
+    );
+}
+
+#[test]
+fn racing_enrollment_attempts_can_spend_one_grant_only_once() {
+    let signer = owner(78);
+    let signed = signed_manifest(&signer, 7, "active");
+    let grant = Arc::new(owner_test_ceremony(&signer, &signed));
+    let mut a = ProvisioningModel::new(true);
+    let mut b = ProvisioningModel::new(true);
+    let grant_a = Arc::clone(&grant);
+    let signed_a = signed.clone();
+    let first = std::thread::spawn(move || a.enroll(Some(&grant_a), &signed_a, PowerCut::None));
+    let second = b.enroll(Some(&grant), &signed, PowerCut::None);
+    let first = first.join().unwrap();
+    assert_ne!(
+        first == ModelResult::CommittedButNotActivated,
+        second == ModelResult::CommittedButNotActivated,
+        "two concurrent first-use attempts must never both spend a grant"
+    );
 }
