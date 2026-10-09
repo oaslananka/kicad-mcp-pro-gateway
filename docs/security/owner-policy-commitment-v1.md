@@ -58,3 +58,74 @@ Issuer key rotation/revocation requires a newer owner-signed manifest with a dif
 Current source-only tests cover same-generation divergent valid owner signatures, digest drift at bootstrap, generation update ordering, pre/post-commit ambiguous failure and exact-manifest restart reconciliation using only an in-memory test fake. They do not prove TPM/Keychain behavior, privileged competing processes, power-loss atomicity, monotonic full-disk rollback resistance, trusted time, or real owner enrollment.
 
 Production implementation remains blocked until provider eligibility, authenticated owner provisioning and destructive recovery tests on qualified non-production hardware are explicitly authorized. Independent OAuth actor signer, authenticated Gateway request/channel binding, local workspace/grant/effect/risk policy, audit-before-execution and hostile E2E remain mandatory before any remote KiCad operation. No public ingress, live SQLite migration, VPS rollout, tag or release follows from this change.
+
+## Enrollment and recovery v1 — modeled state machine (no production adapter)
+
+The test-only executable model lives in
+crates/identity/tests/owner_provisioning_model.rs. It uses real canonical JCS,
+Ed25519 manifest verification and the existing OwnerPolicyAuthority constructor,
+but deliberately keeps its owner approval, trusted commit and disk snapshots
+inside a non-shipping test harness. It does NOT simulate OS-backed trust,
+privileged writes, real power failures, secure UI, or device attestation.
+
+### Owner approval contract (future adapter responsibility)
+
+An actual onboarding UI must independently authenticate the human owner,
+present the local device identity, owner root fingerprint, policy generation,
+issuer list, key status/revocations, expiry, and the exact canonical signed
+manifest digest for explicit review. Its authorization artifact must be
+authenticated, one-time, session-/device-bound, expire promptly, resist
+replay and *not* be constructible by a network caller or recovery file.
+Declining, timing out, canceling, or failing identity verification causes
+DENY. A hash comparison against a fake struct alone is NOT owner consent.
+The test-only ModelOwnerApproval stands in for a qualified local ceremony.
+
+The first enrollment MUST bind one qualifying device/provider domain,
+owner root, positive manifest generation and SHA-256 of the exact signed
+manifest, atomically in an independently rollback-resistant authority.
+The existing production Rust trait contains no enrollment or reset API.
+It must NOT add an automatic create-if-missing path.
+
+### States and transition requirements
+
+| State | Entry | Permitted next action | Remote actor authority |
+| --- | --- | --- | --- |
+| UNENROLLED | No independently trusted record | Verify eligible device/provider + explicit owner review; prepare only | DENY |
+| PREPARING | Correct signature and matching local approval, candidate durable preparation incomplete | Abort and deny; repeat only with fresh owner approval | DENY |
+| PREPARED | Exact canonical signed manifest durably prepared, anchor not yet committed | Commit under qualified all-writer fencing; else deny | DENY |
+| COMMIT_UNKNOWN | Commit error, lost response, or crash at linearization | No in-process retry/activation; independently re-read complete anchor + exact blob after restart | DENY |
+| COMMITTED_OFFLINE | Trusted anchor committed exact tuple | Reconstruct and verify exact policy; no privilege until separate OAuth/channel/grant/audit gates | DENY for remote tools |
+| RECOVERY_REQUIRED | Wrong/missing manifest, trust reset, conflicting root/digest, stale backup, trusted clock/provider unavailable | Deny; separately authenticate owner to a distinct recovery process | DENY |
+| ROOT_ROTATION_PENDING | Owner intends to replace pinned root | Not supported by current trait; require new versioned dual-authenticated/root-revocation protocol | DENY |
+
+COMMIT_UNKNOWN can resolve only to *the current independently trusted tuple*
+after boot; an old uncommitted prepared file is not evidence. If a counter
+advanced but the manifest is missing, remain unavailable rather than use the
+old root/key list. A verified source-only model restart is not production
+authorization.
+
+### Negative evidence and remaining hard problems
+
+Tests reject unsigned/unapproved bootstrap, unqualified provider, forged
+owner root, another valid owner-signed same-generation policy, wrong device
+domain, crash before/after prepared/committed state, backup rollback after
+revocation, missing policy file, external authority outage, reset followed by
+silent re-enrollment, and racing stale CAS writers. A simulated independent
+reset latch is intentionally *not* a hardware guarantee. A TPM clear or
+independent witness rollback must be detectable outside the restored disk,
+otherwise a freshly empty local store is indistinguishable from first-run
+enrollment; no production rollout is acceptable.
+
+The true implementation must separately demonstrate: independently bound
+owner interaction, attested device/witness identity, all-writer fencing during
+verification and actor use, atomic verified root+generation+manifest digest CAS,
+rollback-resistant journal recovery, platform reset behavior, trusted time,
+prevention of policy resurrection after key revocation, and negative E2E
+when any authority source disappears. Physical fault injection requires
+separate owner approval on isolated non-production hardware.
+
+Stop conditions: any automatic trust-on-first-use, mutable local counter
+masquerading as anti-rollback, unbounded privilege on root reset, recovery
+by copied SQLite/Keychain files, cloud relay self-attestation, missing actor
+authentication, or audit/grant bypass. No rollout, public ingress, database
+migration, release, or remote tool execution is authorized by this tranche.
