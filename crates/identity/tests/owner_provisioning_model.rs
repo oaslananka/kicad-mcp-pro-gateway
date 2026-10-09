@@ -77,6 +77,16 @@ struct Commitment {
     device_domain: &'static str,
 }
 
+// The test model treats this as an independently protected history latch.
+// Neither an untrusted disk snapshot nor an empty TPM index proves a pristine
+// device. Actual reset provenance is a platform/witness qualification gate.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TrustHistory {
+    VerifiedNeverEnrolled,
+    PreviouslyEnrolled,
+    Unverifiable,
+}
+
 // Test-only substitute for ONE qualified, independently anchored, atomic
 // root+generation+manifest-digest authority. This mutex is neither durable
 // nor privileged, and MUST NEVER be installed as a production provider.
@@ -86,6 +96,7 @@ struct ModelAnchor {
     // Simulated independent hardware reset evidence. A real provider needs
     // a stronger, independently verified reset/re-enrollment protocol.
     reset_detected: Mutex<bool>,
+    history: Mutex<TrustHistory>,
 }
 impl Default for ModelAnchor {
     fn default() -> Self {
@@ -93,6 +104,7 @@ impl Default for ModelAnchor {
             value: Mutex::new(None),
             reachable: Mutex::new(true),
             reset_detected: Mutex::new(false),
+            history: Mutex::new(TrustHistory::VerifiedNeverEnrolled),
         }
     }
 }
@@ -103,6 +115,7 @@ impl ModelAnchor {
     fn provision_for_test(&self, next: Commitment) -> Result<(), ActorAttestationError> {
         if !*self.reachable.lock().unwrap()
             || *self.reset_detected.lock().unwrap()
+            || *self.history.lock().unwrap() != TrustHistory::VerifiedNeverEnrolled
             || next.generation == 0
             || next.device_domain != DEVICE_DOMAIN
         {
@@ -113,6 +126,7 @@ impl ModelAnchor {
             return Err(ActorAttestationError::StorageUnavailable);
         }
         *guard = Some(next);
+        *self.history.lock().unwrap() = TrustHistory::PreviouslyEnrolled;
         Ok(())
     }
     fn set_reachable(&self, reachable: bool) {
@@ -121,6 +135,15 @@ impl ModelAnchor {
     fn clear_for_fault_injection(&self) {
         *self.reset_detected.lock().unwrap() = true;
         *self.value.lock().unwrap() = None;
+    }
+    fn lose_anchor_without_reset_evidence(&self) {
+        // A restored disk can omit a formerly committed anchor but cannot
+        // rewrite the modeled independent history.
+        *self.value.lock().unwrap() = None;
+    }
+    fn lose_independent_provenance(&self) {
+        *self.value.lock().unwrap() = None;
+        *self.history.lock().unwrap() = TrustHistory::Unverifiable;
     }
 }
 impl TrustedOwnerPolicyStore for ModelAnchor {
@@ -210,6 +233,7 @@ impl ProvisioningModel {
         if !self.qualified_provider
             || self.anchor.present()
             || *self.anchor.reset_detected.lock().unwrap()
+            || *self.anchor.history.lock().unwrap() != TrustHistory::VerifiedNeverEnrolled
         {
             return ModelResult::Denied;
         }
@@ -437,4 +461,282 @@ fn conflicting_process_compare_and_commit_is_rejected_by_exact_snapshot_cas() {
     };
     device.disk_manifest = Some(valid);
     assert_eq!(device.restart_verified_generation(), Ok(8));
+}
+
+// Simulated LOCAL ceremony boundary. The test owns the pending record and
+// simulates independently authenticated human review. In production a real
+// platform authenticator must prove owner presence and verifier binding;
+// none of these in-process fields or fixed challenge bytes are credentials.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CeremonyPurpose {
+    FirstEnrollment,
+    Recovery,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CeremonyBinding {
+    session_nonce: [u8; 32],
+    challenge: [u8; 32],
+    device_domain: &'static str,
+    owner_root: [u8; 32],
+    signed_manifest_sha256: [u8; 32],
+    purpose: CeremonyPurpose,
+}
+
+#[derive(Clone, Copy)]
+struct PendingCeremony {
+    binding: CeremonyBinding,
+    opened_at: i64,
+    expires_at: i64,
+}
+
+#[derive(Default)]
+struct TestOwnerCeremony {
+    pending: Mutex<Option<PendingCeremony>>,
+}
+
+impl TestOwnerCeremony {
+    fn begin_with_simulated_owner_auth(
+        &self,
+        human_owner_authenticated_for_test: bool,
+        binding: CeremonyBinding,
+        opened_at: i64,
+        expires_at: i64,
+    ) -> bool {
+        // A Boolean deliberately cannot prove owner presence; this is a
+        // controlled model fixture, not a public or production API.
+        if !human_owner_authenticated_for_test
+            || opened_at <= 0
+            || expires_at <= opened_at
+            || expires_at - opened_at > 60
+            || binding.challenge == [0; 32]
+            || binding.session_nonce == [0; 32]
+        {
+            return false;
+        }
+        let mut guard = self.pending.lock().unwrap();
+        if guard.is_some() {
+            return false;
+        }
+        *guard = Some(PendingCeremony {
+            binding,
+            opened_at,
+            expires_at,
+        });
+        true
+    }
+
+    fn cancel(&self) {
+        *self.pending.lock().unwrap() = None;
+    }
+
+    fn spend(
+        &self,
+        presented: CeremonyBinding,
+        expected_purpose: CeremonyPurpose,
+        independently_trusted_now: i64,
+    ) -> Option<ModelOwnerApproval> {
+        // Atomically consume the pending record even on an invalid attempt.
+        // A failed check must never fall back to using the same approval.
+        let current = self.pending.lock().unwrap().take()?;
+        if current.binding != presented
+            || presented.purpose != expected_purpose
+            || independently_trusted_now < current.opened_at
+            || independently_trusted_now > current.expires_at
+            || independently_trusted_now <= 0
+        {
+            return None;
+        }
+        let root = VerifyingKey::from_bytes(&presented.owner_root).ok()?;
+        Some(ModelOwnerApproval {
+            root,
+            reviewed_manifest_sha256: presented.signed_manifest_sha256,
+            device_domain: presented.device_domain,
+        })
+    }
+}
+
+fn test_binding(signer: &SigningKey, signed: &[u8], purpose: CeremonyPurpose) -> CeremonyBinding {
+    CeremonyBinding {
+        session_nonce: [3; 32], // deterministic in tests ONLY
+        challenge: [7; 32],     // deterministic in tests ONLY
+        device_domain: DEVICE_DOMAIN,
+        owner_root: signer.verifying_key().to_bytes(),
+        signed_manifest_sha256: digest(signed),
+        purpose,
+    }
+}
+
+#[test]
+fn ceremony_is_single_use_and_binds_owner_device_manifest_session_challenge() {
+    let signer = owner(78);
+    let signed = signed_manifest(&signer, 7, "active");
+    let binding = test_binding(&signer, &signed, CeremonyPurpose::FirstEnrollment);
+    let gate = TestOwnerCeremony::default();
+    assert!(!gate.begin_with_simulated_owner_auth(false, binding, NOW, NOW + 30));
+    assert!(gate
+        .spend(binding, CeremonyPurpose::FirstEnrollment, NOW)
+        .is_none());
+    assert!(gate.begin_with_simulated_owner_auth(true, binding, NOW, NOW + 30));
+    assert!(!gate.begin_with_simulated_owner_auth(true, binding, NOW, NOW + 30));
+    let approved = gate
+        .spend(binding, CeremonyPurpose::FirstEnrollment, NOW + 1)
+        .unwrap();
+    let mut device = ProvisioningModel::new(true);
+    assert_eq!(
+        device.enroll(Some(&approved), &signed, PowerCut::None),
+        ModelResult::CommittedButNotActivated
+    );
+    assert_eq!(device.restart_verified_generation(), Ok(7));
+    assert!(gate
+        .spend(binding, CeremonyPurpose::FirstEnrollment, NOW + 2)
+        .is_none());
+    assert_eq!(
+        device.enroll(Some(&approved), &signed, PowerCut::None),
+        ModelResult::Denied,
+        "a copied grant cannot enroll a previously enrolled device"
+    );
+}
+
+#[test]
+fn mismatched_challenge_session_digest_device_root_and_purpose_burn_ceremony() {
+    let signer = owner(78);
+    let signed = signed_manifest(&signer, 7, "active");
+    let valid = test_binding(&signer, &signed, CeremonyPurpose::FirstEnrollment);
+    for wrong in [
+        CeremonyBinding {
+            challenge: [8; 32],
+            ..valid
+        },
+        CeremonyBinding {
+            session_nonce: [4; 32],
+            ..valid
+        },
+        CeremonyBinding {
+            signed_manifest_sha256: digest(b"different"),
+            ..valid
+        },
+        CeremonyBinding {
+            device_domain: "offline-test-device-b",
+            ..valid
+        },
+        CeremonyBinding {
+            owner_root: owner(79).verifying_key().to_bytes(),
+            ..valid
+        },
+        CeremonyBinding {
+            purpose: CeremonyPurpose::Recovery,
+            ..valid
+        },
+    ] {
+        let gate = TestOwnerCeremony::default();
+        assert!(gate.begin_with_simulated_owner_auth(true, valid, NOW, NOW + 30));
+        assert!(gate
+            .spend(wrong, CeremonyPurpose::FirstEnrollment, NOW)
+            .is_none());
+        assert!(gate
+            .spend(valid, CeremonyPurpose::FirstEnrollment, NOW)
+            .is_none());
+        let device = ProvisioningModel::new(true);
+        assert!(!device.anchor.present());
+    }
+    let gate = TestOwnerCeremony::default();
+    assert!(gate.begin_with_simulated_owner_auth(true, valid, NOW, NOW + 30));
+    assert!(gate.spend(valid, CeremonyPurpose::Recovery, NOW).is_none());
+    assert!(gate
+        .spend(valid, CeremonyPurpose::FirstEnrollment, NOW)
+        .is_none());
+}
+
+#[test]
+fn cancelled_expired_invalid_clock_and_invalid_challenge_never_issue_grant() {
+    let signer = owner(78);
+    let signed = signed_manifest(&signer, 7, "active");
+    let valid = test_binding(&signer, &signed, CeremonyPurpose::FirstEnrollment);
+    let gate = TestOwnerCeremony::default();
+    assert!(!gate.begin_with_simulated_owner_auth(
+        true,
+        CeremonyBinding {
+            challenge: [0; 32],
+            ..valid
+        },
+        NOW,
+        NOW + 30
+    ));
+    assert!(!gate.begin_with_simulated_owner_auth(true, valid, NOW, NOW + 61));
+    assert!(gate.begin_with_simulated_owner_auth(true, valid, NOW, NOW + 30));
+    gate.cancel();
+    assert!(gate
+        .spend(valid, CeremonyPurpose::FirstEnrollment, NOW + 1)
+        .is_none());
+    for bad_time in [0, NOW - 1, NOW + 31] {
+        assert!(gate.begin_with_simulated_owner_auth(true, valid, NOW, NOW + 30));
+        assert!(gate
+            .spend(valid, CeremonyPurpose::FirstEnrollment, bad_time)
+            .is_none());
+        assert!(gate
+            .spend(valid, CeremonyPurpose::FirstEnrollment, NOW + 1)
+            .is_none());
+    }
+    assert!(gate.begin_with_simulated_owner_auth(true, valid, NOW, NOW + 30));
+    assert!(gate
+        .spend(valid, CeremonyPurpose::FirstEnrollment, NOW + 30)
+        .is_some());
+}
+
+#[test]
+fn missing_anchor_with_prior_or_unknown_history_cannot_become_fresh_enrollment() {
+    let signer = owner(78);
+    let signed = signed_manifest(&signer, 7, "active");
+    let approved = owner_test_ceremony(&signer, &signed);
+    let mut model = ProvisioningModel::new(true);
+    assert_eq!(
+        model.enroll(Some(&approved), &signed, PowerCut::None),
+        ModelResult::CommittedButNotActivated
+    );
+    model.anchor.lose_anchor_without_reset_evidence();
+    assert!(!model.anchor.present());
+    assert!(model.restart_verified_generation().is_err());
+    assert_eq!(
+        model.enroll(Some(&approved), &signed, PowerCut::None),
+        ModelResult::Denied,
+        "an empty trust anchor after prior enrollment is NOT first-run"
+    );
+
+    let mut uncertain = ProvisioningModel::new(true);
+    uncertain.anchor.lose_independent_provenance();
+    assert_eq!(
+        uncertain.enroll(Some(&approved), &signed, PowerCut::None),
+        ModelResult::Denied,
+        "unknown hardware/witness history must deny"
+    );
+    assert!(uncertain.restart_verified_generation().is_err());
+}
+
+#[test]
+fn ambiguous_commit_burns_one_time_ceremony_and_reconciles_exact_state_only() {
+    let signer = owner(78);
+    let signed = signed_manifest(&signer, 7, "active");
+    let binding = test_binding(&signer, &signed, CeremonyPurpose::FirstEnrollment);
+    let gate = TestOwnerCeremony::default();
+    let mut model = ProvisioningModel::new(true);
+    assert!(gate.begin_with_simulated_owner_auth(true, binding, NOW, NOW + 30));
+    let approved = gate
+        .spend(binding, CeremonyPurpose::FirstEnrollment, NOW + 1)
+        .unwrap();
+    assert_eq!(
+        model.enroll(Some(&approved), &signed, PowerCut::AfterCommit),
+        ModelResult::Interrupted
+    );
+    assert!(gate
+        .spend(binding, CeremonyPurpose::FirstEnrollment, NOW + 2)
+        .is_none());
+    assert!(model.anchor.present());
+    assert_eq!(model.restart_verified_generation(), Ok(7));
+    model.disk_manifest = Some(signed_manifest(&signer, 7, "revoked"));
+    assert!(model.restart_verified_generation().is_err());
+    assert_eq!(
+        model.enroll(Some(&approved), &signed, PowerCut::None),
+        ModelResult::Denied
+    );
 }
