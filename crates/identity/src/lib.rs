@@ -2,6 +2,7 @@
 //! abstraction, and fingerprinting. See `docs/security/secure-storage.md`.
 
 pub mod actor_attestation;
+pub mod actor_issuer_policy;
 pub mod device;
 pub mod secret_store;
 

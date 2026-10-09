@@ -4,6 +4,9 @@ use companion_identity::actor_attestation::{
     ActorClaims, ExpectedActorRequest, GatewayIssuedChallenge, LocalGatewayChannel,
     PinnedActorIssuer, SignedActorClaims,
 };
+use companion_identity::actor_issuer_policy::{
+    ActorIssuerKeyState, OwnerPinnedActorIssuers, OwnerPinnedActorKey,
+};
 use companion_storage::Storage;
 use ed25519_dalek::{Signer, SigningKey};
 use serde_json::json;
@@ -98,16 +101,31 @@ fn claims(request: &[u8], issued: &GatewayIssuedChallenge) -> ActorClaims {
     }
 }
 
-fn sign(payload: ActorClaims) -> Vec<u8> {
+fn sign_with_key(payload: ActorClaims, key: &SigningKey) -> Vec<u8> {
     let canonical = serde_json_canonicalizer::to_vec(&payload).unwrap();
     let mut signed_bytes = DOMAIN.to_vec();
     signed_bytes.extend_from_slice(&canonical);
-    let signature = issuer_key().sign(&signed_bytes);
+    let signature = key.sign(&signed_bytes);
     serde_json_canonicalizer::to_vec(&SignedActorClaims {
         payload,
         signature: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
     })
     .unwrap()
+}
+
+fn sign(payload: ActorClaims) -> Vec<u8> {
+    sign_with_key(payload, &issuer_key())
+}
+
+fn owner_key(id: &str, seed: u8, state: ActorIssuerKeyState) -> OwnerPinnedActorKey {
+    OwnerPinnedActorKey {
+        issuer: "trusted-issuer".into(),
+        key_id: id.into(),
+        public_key: SigningKey::from_bytes(&[seed; 32]).verifying_key(),
+        valid_from_unix: NOW - 100,
+        valid_until_unix: NOW + 500,
+        state,
+    }
 }
 
 fn verify(
@@ -424,4 +442,127 @@ fn unsigned_unissued_and_oversized_challenges_fail_closed() {
     );
     // Failed attempts cannot invalidate a correctly signed original.
     assert!(verify(&valid, &context(&request, &issued), &store).is_ok());
+}
+
+#[test]
+fn owner_pinned_rotation_overlap_accepts_both_distinct_verified_signers() {
+    let keys = OwnerPinnedActorIssuers::new(vec![
+        owner_key("owner-pinned-key", 31, ActorIssuerKeyState::Active),
+        owner_key("replacement-key", 32, ActorIssuerKeyState::Active),
+    ])
+    .unwrap();
+    let request = operation();
+    let store_a_dir = tempfile::tempdir().unwrap();
+    let store_a = Storage::open(store_a_dir.path()).unwrap();
+    let issued_a = minted(&store_a);
+    let old_assertion = sign(claims(&request, &issued_a));
+    let old = keys
+        .verify_and_consume(&old_assertion, &context(&request, &issued_a), &store_a)
+        .unwrap();
+    assert_eq!(old.subject, "account-subject-1");
+    assert_eq!(
+        keys.verify_and_consume(&old_assertion, &context(&request, &issued_a), &store_a)
+            .err(),
+        Some(ActorAttestationError::Replay)
+    );
+
+    let store_b_dir = tempfile::tempdir().unwrap();
+    let store_b = Storage::open(store_b_dir.path()).unwrap();
+    let issued_b = minted(&store_b);
+    let mut rotated = claims(&request, &issued_b);
+    rotated.key_id = "replacement-key".into();
+    let new_assertion = sign_with_key(rotated, &SigningKey::from_bytes(&[32; 32]));
+    let new = keys
+        .verify_and_consume(&new_assertion, &context(&request, &issued_b), &store_b)
+        .unwrap();
+    assert_eq!(new.subject, old.subject);
+}
+
+#[test]
+fn revoked_unknown_and_out_of_window_issuer_keys_deny_without_consuming_challenge() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Storage::open(dir.path()).unwrap();
+    let request = operation();
+    let issued = minted(&store);
+    let proof = sign(claims(&request, &issued));
+    let revoked = OwnerPinnedActorIssuers::new(vec![owner_key(
+        "owner-pinned-key",
+        31,
+        ActorIssuerKeyState::Revoked,
+    )])
+    .unwrap();
+    assert_eq!(
+        revoked
+            .verify_and_consume(&proof, &context(&request, &issued), &store)
+            .err(),
+        Some(ActorAttestationError::Invalid)
+    );
+    let missing = OwnerPinnedActorIssuers::new(vec![owner_key(
+        "unrelated-key",
+        33,
+        ActorIssuerKeyState::Active,
+    )])
+    .unwrap();
+    assert_eq!(
+        missing
+            .verify_and_consume(&proof, &context(&request, &issued), &store)
+            .err(),
+        Some(ActorAttestationError::Invalid)
+    );
+    let mut future_key = owner_key("owner-pinned-key", 31, ActorIssuerKeyState::Active);
+    future_key.valid_from_unix = NOW + 20;
+    let inactive = OwnerPinnedActorIssuers::new(vec![future_key]).unwrap();
+    assert_eq!(
+        inactive
+            .verify_and_consume(&proof, &context(&request, &issued), &store)
+            .err(),
+        Some(ActorAttestationError::Invalid)
+    );
+    let mut expired = owner_key("owner-pinned-key", 31, ActorIssuerKeyState::Active);
+    expired.valid_until_unix = NOW - 1;
+    assert_eq!(
+        OwnerPinnedActorIssuers::new(vec![expired])
+            .unwrap()
+            .verify_and_consume(&proof, &context(&request, &issued), &store)
+            .err(),
+        Some(ActorAttestationError::Invalid)
+    );
+    // Failed policy checks must never consume a valid Gateway challenge.
+    let trusted = OwnerPinnedActorIssuers::new(vec![owner_key(
+        "owner-pinned-key",
+        31,
+        ActorIssuerKeyState::Active,
+    )])
+    .unwrap();
+    assert!(trusted
+        .verify_and_consume(&proof, &context(&request, &issued), &store)
+        .is_ok());
+}
+
+#[test]
+fn owner_pin_policy_rejects_duplicate_ids_reused_key_material_and_empty_trust() {
+    assert!(OwnerPinnedActorIssuers::new(vec![]).is_err());
+    assert!(OwnerPinnedActorIssuers::new(vec![
+        owner_key("owner-pinned-key", 31, ActorIssuerKeyState::Active),
+        owner_key("owner-pinned-key", 32, ActorIssuerKeyState::Active),
+    ])
+    .is_err());
+    assert!(OwnerPinnedActorIssuers::new(vec![
+        owner_key("owner-pinned-key", 31, ActorIssuerKeyState::Active),
+        owner_key("other-key-id", 31, ActorIssuerKeyState::Active),
+    ])
+    .is_err());
+    let mut invalid = owner_key("owner-pinned-key", 31, ActorIssuerKeyState::Active);
+    invalid.valid_until_unix = invalid.valid_from_unix;
+    assert!(OwnerPinnedActorIssuers::new(vec![invalid]).is_err());
+    assert!(
+        OwnerPinnedActorIssuers::new(vec![owner_key(" ", 31, ActorIssuerKeyState::Active),])
+            .is_err()
+    );
+    assert!(OwnerPinnedActorIssuers::new(
+        (1..=33)
+            .map(|n| { owner_key(&format!("key-{n}"), n, ActorIssuerKeyState::Active) })
+            .collect()
+    )
+    .is_err());
 }
