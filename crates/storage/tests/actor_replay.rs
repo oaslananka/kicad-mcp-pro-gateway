@@ -16,7 +16,9 @@ fn all_replay_dimensions_are_unique_and_atomic() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Storage::open(dir.path()).unwrap();
     let original = proof(10);
-    storage.consume_actor_proof(&original).unwrap();
+    storage
+        .consume_actor_proof(&original, 1_800_000_000)
+        .unwrap();
     for dimension in 0..4 {
         let mut altered = proof(20);
         match dimension {
@@ -26,20 +28,22 @@ fn all_replay_dimensions_are_unique_and_atomic() {
             _ => altered.correlation_hash = original.correlation_hash,
         }
         assert_eq!(
-            storage.consume_actor_proof(&altered),
+            storage.consume_actor_proof(&altered, 1_800_000_000),
             Err(ActorReplayError::Replay)
         );
     }
     // Each conflict rolls back entirely and must not reserve other keys.
-    storage.consume_actor_proof(&proof(20)).unwrap();
+    storage
+        .consume_actor_proof(&proof(20), 1_800_000_000)
+        .unwrap();
     drop(storage);
     let reopened = Storage::open(dir.path()).unwrap();
     assert_eq!(
-        reopened.consume_actor_proof(&original),
+        reopened.consume_actor_proof(&original, 1_800_000_000),
         Err(ActorReplayError::Replay)
     );
     assert_eq!(
-        reopened.consume_actor_proof(&proof(20)),
+        reopened.consume_actor_proof(&proof(20), 1_800_000_000),
         Err(ActorReplayError::Replay)
     );
 }
@@ -51,7 +55,7 @@ fn broken_storage_and_invalid_inputs_are_fail_closed() {
     let mut invalid = proof(30);
     invalid.nonce_hash = [0; 32];
     assert_eq!(
-        storage.consume_actor_proof(&invalid),
+        storage.consume_actor_proof(&invalid, 1_800_000_000),
         Err(ActorReplayError::Invalid)
     );
     storage
@@ -61,7 +65,7 @@ fn broken_storage_and_invalid_inputs_are_fail_closed() {
         .execute("DROP TABLE verified_actor_replay", [])
         .unwrap();
     assert_eq!(
-        storage.consume_actor_proof(&proof(30)),
+        storage.consume_actor_proof(&proof(30), 1_800_000_000),
         Err(ActorReplayError::Unavailable)
     );
 }
@@ -344,4 +348,27 @@ fn schema_v8_seeds_high_water_from_old_v7_evidence_atomically() {
     drop(storage);
     let reopened = Storage::open(dir.path()).unwrap();
     assert_eq!(high_water(&reopened), 1_800_000_080);
+}
+
+#[test]
+fn legacy_replay_insert_also_requires_persisted_local_clock_high_water() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Storage::open(dir.path()).unwrap();
+    let start = 1_800_000_000;
+    store.consume_actor_proof(&proof(11), start).unwrap();
+    assert_eq!(high_water(&store), start);
+    assert_eq!(
+        store.consume_actor_proof(&proof(21), start - 1),
+        Err(ActorReplayError::Invalid)
+    );
+    drop(store);
+    let reopened = Storage::open(dir.path()).unwrap();
+    assert_eq!(high_water(&reopened), start);
+    assert_eq!(
+        reopened.consume_actor_proof(&proof(21), start - 1),
+        Err(ActorReplayError::Invalid),
+        "legacy replay API must not bypass persisted time across restart"
+    );
+    reopened.consume_actor_proof(&proof(21), start).unwrap();
+    assert_eq!(high_water(&reopened), start);
 }

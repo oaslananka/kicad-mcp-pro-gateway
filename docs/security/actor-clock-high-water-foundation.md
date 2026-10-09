@@ -20,6 +20,9 @@ challenge plus its replay identifiers.
 
 ## Security invariants
 
+- The older, offline-only `consume_actor_proof` replay reservation API
+  also now requires trusted local time and the same bounded IMMEDIATE
+  high-water transaction; it is NOT an actor authentication substitute.
 - On each issuance/consumption, reject nonpositive local time, time
   **strictly earlier** than the last committed local time, a missing
   sentinel, or unreadable/locked persistence. Equal timestamps are
