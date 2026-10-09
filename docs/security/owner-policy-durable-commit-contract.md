@@ -12,6 +12,14 @@ manifest. Startup requires an exact match between that generation
 and the signed, canonical, unexpired manifest. There is no empty
 policy fallback, TOFU key import, first-run `generation=0` default
 or remote root enrollment.
+Before publishing the validated initial manifest, the constructor
+re-reads an atomic trusted-root/generation snapshot and rejects if
+either differs from the values used for signature verification. Tests
+inject both generation and owner-root changes between these reads.
+All external writers must honor the provider's cross-process
+serialization contract: a new externally committed update after the
+recheck cannot be safely handled without that broader guarantee.
+
 
 The `compare_and_commit` contract is deliberately stronger than an
 ordinary file write or SQLite transaction in the local Gateway data

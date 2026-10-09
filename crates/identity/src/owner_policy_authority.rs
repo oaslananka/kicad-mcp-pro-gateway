@@ -75,6 +75,17 @@ impl OwnerPolicyAuthority {
         if active.generation != committed.committed_generation {
             return Err(ActorAttestationError::Invalid);
         }
+        // The trusted store may have changed while the signature/JCS parser
+        // ran. Recheck root AND generation immediately before publishing an
+        // active authority; the store contract must make each read an
+        // atomic, version-bound snapshot. External writers must also honor
+        // the provider's cross-process serialization requirements.
+        let latest = trusted_store.read_committed()?;
+        if latest.root != committed.root
+            || latest.committed_generation != committed.committed_generation
+        {
+            return Err(ActorAttestationError::StorageUnavailable);
+        }
         Ok(Self {
             root: committed.root,
             trusted_store,
