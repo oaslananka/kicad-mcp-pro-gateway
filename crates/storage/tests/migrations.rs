@@ -28,6 +28,7 @@ fn fresh_open_creates_all_expected_tables() {
         "access_grants",
         "authorization_leases",
         "verified_actor_replay",
+        "gateway_actor_challenges",
     ] {
         assert!(
             names.iter().any(|n| n == expected),
@@ -59,7 +60,7 @@ fn a_fresh_database_reports_the_current_schema_version() {
             .unwrap_or_else(|_| panic!("{table}.{column} must exist after migration"));
     }
     assert_eq!(
-        SCHEMA_VERSION, 6,
+        SCHEMA_VERSION, 7,
         "one migration per schema version; bump this with the migration"
     );
 }

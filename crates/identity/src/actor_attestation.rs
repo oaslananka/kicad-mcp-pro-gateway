@@ -6,8 +6,9 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use companion_core::{PrincipalVerificationSource, VerifiedPrincipal};
-use companion_storage::{ActorReplayError, ActorReplayEvidence, Storage};
+use companion_storage::{ActorReplayError, ActorReplayEvidence, IssuedActorChallenge, Storage};
 use ed25519_dalek::{Signature, VerifyingKey};
+use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -70,11 +71,90 @@ pub struct ExpectedActorRequest<'a> {
     pub message_id: &'a str,
     pub correlation_id: &'a str,
     pub challenge: &'a str,
+    pub challenge_issued_at: i64,
+    pub challenge_expires_at: i64,
     pub connection_epoch: &'a str,
     pub transport_binding: &'a str,
     pub audience: &'a str,
     pub resource: &'a str,
     pub now_unix: i64,
+}
+
+/// Authenticated device channel parameters are supplied ONLY by Gateway's
+/// native transport after device proof, never by the untrusted relay.
+pub struct LocalGatewayChannel<'a> {
+    pub device_id: &'a str,
+    pub workspace_id: &'a str,
+    pub connection_epoch: &'a str,
+    pub transport_binding: &'a str,
+    pub now_unix: i64,
+}
+
+#[derive(Clone)]
+pub struct GatewayIssuedChallenge {
+    pub challenge: String,
+    pub issued_at: i64,
+    pub expires_at: i64,
+}
+
+fn issue_binding(
+    challenge: &str,
+    device_id: &str,
+    workspace_id: &str,
+    connection_epoch: &str,
+    transport_binding: &str,
+    issued_at: i64,
+    expires_at: i64,
+) -> IssuedActorChallenge {
+    IssuedActorChallenge {
+        challenge_hash: fingerprint(&["gateway-actor-challenge-v1", challenge]),
+        device_hash: fingerprint(&["device", device_id]),
+        workspace_hash: fingerprint(&["workspace", workspace_id]),
+        epoch_hash: fingerprint(&["epoch", connection_epoch]),
+        channel_hash: fingerprint(&["channel", transport_binding]),
+        issued_at,
+        expires_at,
+    }
+}
+
+/// Generate 256 bits of OS entropy and persist a one-time, channel-bound
+/// challenge before returning it. No raw challenge is persisted in SQLite.
+/// Caller MUST provide trusted local channel identifiers and wall-clock time.
+pub fn issue_gateway_challenge(
+    storage: &Storage,
+    local: &LocalGatewayChannel<'_>,
+) -> Result<GatewayIssuedChallenge, ActorAttestationError> {
+    use ActorAttestationError::Invalid;
+    if !safe_claim(local.device_id)
+        || !safe_claim(local.workspace_id)
+        || !safe_claim(local.connection_epoch)
+        || !safe_claim(local.transport_binding)
+        || local.now_unix <= 0
+    {
+        return Err(Invalid);
+    }
+    let expires_at = local.now_unix.checked_add(60).ok_or(Invalid)?;
+    let mut bytes = [0u8; 32];
+    OsRng
+        .try_fill_bytes(&mut bytes)
+        .map_err(|_| ActorAttestationError::StorageUnavailable)?;
+    let challenge = URL_SAFE_NO_PAD.encode(bytes);
+    storage
+        .register_actor_challenge(&issue_binding(
+            &challenge,
+            local.device_id,
+            local.workspace_id,
+            local.connection_epoch,
+            local.transport_binding,
+            local.now_unix,
+            expires_at,
+        ))
+        .map_err(error_from_replay)?;
+    Ok(GatewayIssuedChallenge {
+        challenge,
+        issued_at: local.now_unix,
+        expires_at,
+    })
 }
 
 /// A local, owner-pinned independently trusted public signing key.
@@ -245,6 +325,17 @@ pub fn verify_and_consume_actor_assertion(
     check_local_binding(claims, expected)?;
     check_claim_shapes(claims, expected)?;
     check_freshness(claims, expected.now_unix)?;
+    if claims.issued_at
+        < expected
+            .challenge_issued_at
+            .saturating_sub(MAX_CLOCK_SKEW_SECONDS)
+        || claims.expires_at
+            > expected
+                .challenge_expires_at
+                .saturating_add(MAX_CLOCK_SKEW_SECONDS)
+    {
+        return Err(Invalid);
+    }
     check_canonical_request(claims, expected)?;
     let signature_bytes = URL_SAFE_NO_PAD
         .decode(&proof.signature)
@@ -261,25 +352,37 @@ pub fn verify_and_consume_actor_assertion(
 
     let issuer = claims.issuer.as_str();
     storage
-        .consume_actor_proof(&ActorReplayEvidence {
-            issuer,
-            nonce_hash: fingerprint(&[issuer, &claims.nonce]),
-            message_hash: fingerprint(&[issuer, &claims.message_id]),
-            challenge_hash: fingerprint(&[
+        .consume_issued_actor_proof(
+            &ActorReplayEvidence {
                 issuer,
-                &claims.device_id,
-                &claims.connection_epoch,
-                &claims.gateway_challenge,
-            ]),
-            correlation_hash: fingerprint(&[
-                issuer,
-                &claims.subject,
-                &claims.device_id,
-                &claims.connection_epoch,
-                &claims.correlation_id,
-            ]),
-            expires_at: claims.expires_at,
-        })
+                nonce_hash: fingerprint(&[issuer, &claims.nonce]),
+                message_hash: fingerprint(&[issuer, &claims.message_id]),
+                challenge_hash: fingerprint(&[
+                    issuer,
+                    &claims.device_id,
+                    &claims.connection_epoch,
+                    &claims.gateway_challenge,
+                ]),
+                correlation_hash: fingerprint(&[
+                    issuer,
+                    &claims.subject,
+                    &claims.device_id,
+                    &claims.connection_epoch,
+                    &claims.correlation_id,
+                ]),
+                expires_at: claims.expires_at,
+            },
+            &issue_binding(
+                expected.challenge,
+                expected.device_id,
+                expected.workspace_id,
+                expected.connection_epoch,
+                expected.transport_binding,
+                expected.challenge_issued_at,
+                expected.challenge_expires_at,
+            ),
+            expected.now_unix,
+        )
         .map_err(error_from_replay)?;
 
     let binding = fingerprint(&[

@@ -23,11 +23,17 @@ to refuse remote operation envelopes.
   wrong signer, expired/too-long/future proofs, wrong policy or channel,
   mismatched request hash, wrong device/workspace/message/challenge, and
   missing fields. An unsigned client display label cannot become identity.
-- Before yielding a provider-neutral VerifiedPrincipal, SQLite atomically
+- Before yielding a provider-neutral VerifiedPrincipal, SQLite v7 now
+  also requires a Gateway-issued, durable, short-lived challenge bound to
+  the authenticated local device/workspace/channel/connection epoch; the
+  issuance and atomic claim contract is described in
+  [owner-issued-challenge-foundation.md](owner-issued-challenge-foundation.md).
+  This challenge is **not yet connected to a live transport**.
+- SQLite atomically
   records independently hashed nonce, message, challenge and correlation
   identifiers with four uniqueness constraints, surviving process restarts.
   A second use, concurrent reuse or SQLite failure returns an error.
-- New migration 0006 creates only non-secret proof fingerprints and expiry.
+- Migrations 0006 and 0007 create only non-secret proof/challenge hashes and expiry.
   The store deliberately **never auto-deletes** replay history without a
   separately qualified persistent clock high-water and retention scheme.
   When 250,000 records are reached, further claims **fail closed**; this
@@ -59,8 +65,8 @@ Production work still required before any transport activation:
 
 ## Schema and rollback
 
-Schema version goes from v5 to **v6**, additively. A Gateway executable
-expecting only schema v5 intentionally refuses the newer database: do not
+Schema version is now **v7** (v6 replay + v7 challenge), additively. A Gateway executable
+expecting an older schema (v5 or v6) intentionally refuses the newer database: do not
 bypass this protection or downgrade schema manually. Back up the local
 Gateway database before any *future authorized* application upgrade and
 plan a compatible forward fix or operator-approved restore, preserving
