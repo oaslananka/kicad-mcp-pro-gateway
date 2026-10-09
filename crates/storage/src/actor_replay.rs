@@ -41,17 +41,20 @@ impl CompanionError for ActorReplayError {
 }
 
 impl Storage {
-    /// Atomically reserves ALL four identifiers or none. Persistence failure
-    /// denies verification. Records deliberately do not auto-expire: doing
-    /// so without a crash-safe clock high-water mark could resurrect proofs
-    /// after system clock rollback. Retention policy is a separate gate.
+    /// Legacy offline replay reservation only: does NOT grant a verified
+    /// principal or replace the Gateway-issued challenge path. It still
+    /// requires trusted Gateway-local time and the SAME transactional
+    /// high-water protection as all other replay mutation paths.
+    /// Records never auto-expire or bypass the bounded capacity gate.
     pub fn consume_actor_proof(
         &self,
         proof: &ActorReplayEvidence<'_>,
+        trusted_now_unix: i64,
     ) -> Result<(), ActorReplayError> {
-        if proof.issuer.is_empty()
+        if proof.issuer.trim().is_empty()
             || proof.issuer.len() > 256
-            || proof.expires_at <= 0
+            || trusted_now_unix <= 0
+            || proof.expires_at < trusted_now_unix
             || proof.nonce_hash == [0; 32]
             || proof.message_hash == [0; 32]
             || proof.challenge_hash == [0; 32]
@@ -59,22 +62,12 @@ impl Storage {
         {
             return Err(ActorReplayError::Invalid);
         }
-        let conn = self
+        let mut conn = self
             .connection()
             .lock()
             .map_err(|_| ActorReplayError::Unavailable)?;
-        // No unsafe clock-based eviction until monotonic high-water tracking
-        // has been separately qualified. A bounded store fails closed rather
-        // than accepting proofs with discarded replay evidence.
-        let count: i64 = conn
-            .query_row("SELECT count(*) FROM verified_actor_replay", [], |row| {
-                row.get(0)
-            })
-            .map_err(|_| ActorReplayError::Unavailable)?;
-        if count >= 250_000 {
-            return Err(ActorReplayError::Unavailable);
-        }
-        conn.execute(
+        let tx = begin_limited_write(&mut conn, ReplayTable::VerifiedProofs, trusted_now_unix)?;
+        tx.execute(
             "INSERT INTO verified_actor_replay (issuer, nonce_hash, message_hash, challenge_hash, correlation_hash, expires_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
@@ -91,6 +84,7 @@ impl Storage {
                 if e.code == ErrorCode::ConstraintViolation => ActorReplayError::Replay,
             _ => ActorReplayError::Unavailable,
         })?;
+        tx.commit().map_err(|_| ActorReplayError::Unavailable)?;
         Ok(())
     }
 }
@@ -100,15 +94,42 @@ enum ReplayTable {
     VerifiedProofs,
 }
 
+/// Advance the Gateway-owned local wall-clock high-water mark INSIDE the
+/// transaction which issues or consumes proof evidence. Never trust an
+/// assertion-provided timestamp for this purpose. Any rollback, missing
+/// sentinel row or broken database denies the operation without weakening
+/// replay protection or deleting records.
+fn require_nondecreasing_local_clock(
+    tx: &Transaction<'_>,
+    now_unix: i64,
+) -> Result<(), ActorReplayError> {
+    if now_unix <= 0 {
+        return Err(ActorReplayError::Invalid);
+    }
+    let updated = tx
+        .execute(
+            "UPDATE actor_clock_high_water SET last_seen_unix = ?1
+             WHERE singleton = 1 AND last_seen_unix <= ?1",
+            params![now_unix],
+        )
+        .map_err(|_| ActorReplayError::Unavailable)?;
+    if updated != 1 {
+        return Err(ActorReplayError::Invalid);
+    }
+    Ok(())
+}
+
 /// Begin an exclusive writer reservation and check the table-specific fixed
 /// fail-closed capacity in the SAME transaction, eliminating divergent caps.
 fn begin_limited_write(
     conn: &mut Connection,
     table: ReplayTable,
+    trusted_now_unix: i64,
 ) -> Result<Transaction<'_>, ActorReplayError> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_| ActorReplayError::Unavailable)?;
+    require_nondecreasing_local_clock(&tx, trusted_now_unix)?;
     let count_sql = match table {
         ReplayTable::IssuedChallenges => "SELECT count(*) FROM gateway_actor_challenges",
         ReplayTable::VerifiedProofs => "SELECT count(*) FROM verified_actor_replay",
@@ -163,7 +184,7 @@ impl Storage {
             .connection()
             .lock()
             .map_err(|_| ActorReplayError::Unavailable)?;
-        let tx = begin_limited_write(&mut conn, ReplayTable::IssuedChallenges)?;
+        let tx = begin_limited_write(&mut conn, ReplayTable::IssuedChallenges, c.issued_at)?;
         tx.execute(
             "INSERT INTO gateway_actor_challenges
              (challenge_hash, device_hash, workspace_hash, epoch_hash, channel_hash, issued_at, expires_at)
@@ -209,7 +230,7 @@ impl Storage {
             .connection()
             .lock()
             .map_err(|_| ActorReplayError::Unavailable)?;
-        let tx = begin_limited_write(&mut conn, ReplayTable::VerifiedProofs)?;
+        let tx = begin_limited_write(&mut conn, ReplayTable::VerifiedProofs, now_unix)?;
         let changed = tx
             .execute(
                 "UPDATE gateway_actor_challenges SET consumed=1

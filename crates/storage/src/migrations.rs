@@ -6,7 +6,7 @@ use crate::error::StorageError;
 /// The schema version this build expects to find, i.e. the number of applied
 /// migrations. Bump this by adding a migration file, never by editing an
 /// already-released one.
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
@@ -21,7 +21,34 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!(
             "../migrations/0007_gateway_actor_challenges.sql"
         )),
+        M::up_with_hook(
+            include_str!("../migrations/0008_actor_clock_high_water.sql"),
+            seed_actor_clock_high_water_v8,
+        ),
     ])
+}
+
+/// Runs inside the *same migration transaction* as the v8 CREATE TABLE
+/// and schema version bump (rusqlite_migration::M::up_with_hook).
+/// A failed SELECT/INSERT aborts everything; v7 replay evidence is not
+/// silently ignored after a crash between DDL and initialization.
+fn seed_actor_clock_high_water_v8(
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite_migration::HookResult {
+    let conservative_seed: i64 = tx.query_row(
+        "SELECT max(
+            coalesce((SELECT max(expires_at) FROM gateway_actor_challenges), 0),
+            coalesce((SELECT max(expires_at) FROM verified_actor_replay), 0)
+        )",
+        [],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "INSERT INTO actor_clock_high_water (singleton, last_seen_unix)
+         VALUES (1, ?1)",
+        [conservative_seed],
+    )?;
+    Ok(())
 }
 
 /// The version the database file itself records, kept in `PRAGMA
