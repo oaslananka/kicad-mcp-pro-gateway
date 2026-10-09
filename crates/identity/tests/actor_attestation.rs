@@ -578,3 +578,97 @@ fn owner_pin_policy_rejects_duplicate_ids_reused_key_material_and_empty_trust() 
     )
     .is_err());
 }
+
+#[test]
+fn owner_signed_manifest_policy_controls_actual_offline_actor_verification() {
+    use companion_identity::owner_manifest::verify_owner_signed_issuer_manifest;
+    let owner_root = SigningKey::from_bytes(&[89; 32]);
+    let make_manifest = |generation: u64, key_state: &str| {
+        let payload = json!({
+            "contract_version": "owner-issuer-manifest/v1",
+            "generation": generation,
+            "issued_at": NOW - 50,
+            "expires_at": NOW + 100,
+            "keys": [{
+                "issuer": "trusted-issuer",
+                "key_id": "owner-pinned-key",
+                "public_key": URL_SAFE_NO_PAD.encode(issuer_key().verifying_key().to_bytes()),
+                "valid_from_unix": NOW - 100,
+                "valid_until_unix": NOW + 500,
+                "state": key_state
+            }]
+        });
+        let mut signed_bytes = b"kicad-mcp/owner-issuer-manifest/v1\n".to_vec();
+        signed_bytes.extend_from_slice(&serde_json_canonicalizer::to_vec(&payload).unwrap());
+        let signature = owner_root.sign(&signed_bytes);
+        serde_json_canonicalizer::to_vec(&json!({
+            "payload":payload,
+            "signature":URL_SAFE_NO_PAD.encode(signature.to_bytes())
+        }))
+        .unwrap()
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let storage = Storage::open(dir.path()).unwrap();
+    let request = operation();
+    let issued = minted(&storage);
+    let actor_assertion = sign(claims(&request, &issued));
+
+    let trusted = verify_owner_signed_issuer_manifest(
+        &make_manifest(40, "active"),
+        &owner_root.verifying_key(),
+        39,
+        NOW,
+    )
+    .unwrap();
+    assert_eq!(trusted.generation, 40);
+    assert!(trusted
+        .issuers
+        .verify_and_consume(&actor_assertion, &context(&request, &issued), &storage)
+        .is_ok());
+
+    let second_dir = tempfile::tempdir().unwrap();
+    let second_store = Storage::open(second_dir.path()).unwrap();
+    let second_issued = issue_gateway_challenge(
+        &second_store,
+        &LocalGatewayChannel {
+            device_id: "dev_trusted",
+            workspace_id: "ws_trusted",
+            connection_epoch: "trusted-connection-1",
+            transport_binding: "local-channel-binding-1",
+            now_unix: NOW,
+        },
+    )
+    .unwrap();
+    let second_assertion = sign(claims(&request, &second_issued));
+    let revoked = verify_owner_signed_issuer_manifest(
+        &make_manifest(41, "revoked"),
+        &owner_root.verifying_key(),
+        40,
+        NOW,
+    )
+    .unwrap();
+    assert_eq!(
+        revoked
+            .issuers
+            .verify_and_consume(
+                &second_assertion,
+                &context(&request, &second_issued),
+                &second_store
+            )
+            .err(),
+        Some(ActorAttestationError::Invalid),
+        "a genuinely signed actor assertion must still be refused after owner revocation"
+    );
+    assert!(
+        trusted
+            .issuers
+            .verify_and_consume(
+                &second_assertion,
+                &context(&request, &second_issued),
+                &second_store
+            )
+            .is_ok(),
+        "a rejected proof must not silently consume the issued challenge"
+    );
+}
