@@ -6,6 +6,7 @@
 //! `docs/security/secure-storage.md` and the `companion-identity` crate's
 //! `SecretStore`.
 
+mod actor_replay;
 mod connection;
 mod error;
 mod migrations;
@@ -13,3 +14,5 @@ mod migrations;
 pub use connection::Storage;
 pub use error::StorageError;
 pub use migrations::{run_migrations, schema_version, SCHEMA_VERSION};
+
+pub use actor_replay::{ActorReplayError, ActorReplayEvidence};
