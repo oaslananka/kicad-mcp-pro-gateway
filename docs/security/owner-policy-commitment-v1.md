@@ -129,3 +129,45 @@ masquerading as anti-rollback, unbounded privilege on root reset, recovery
 by copied SQLite/Keychain files, cloud relay self-attestation, missing actor
 authentication, or audit/grant bypass. No rollout, public ingress, database
 migration, release, or remote tool execution is authorized by this tranche.
+### Local owner ceremony v1 — replay/expiry and provenance test model
+
+The offline `TestOwnerCeremony` fixture now models a **single outstanding,
+one-use, purpose-scoped** owner consent ceremony. It rejects absent simulated
+owner authentication, zero challenge/session nonce, mismatched session,
+challenge, owner-root fingerprint, exact signed-manifest digest, device domain,
+or intent; cancelled, expired, future-clock, excessively long and replayed
+consent also deny. A rejected presentation burns the pending ceremony rather
+than leaving a guessable replay window. The model grant is ALSO atomically
+consumed at the enrollment use site: copying it into a second model instance or
+racing two first-use attempts cannot enroll twice. Recovery-purpose consent
+never authorizes first enrollment. An ambiguous commit cannot reuse the
+approval; restart must reconcile the exact signed manifest commitment.
+
+This is a **contract model, NOT a credential protocol**: fixed test nonces,
+in-memory locks, simulated Boolean owner authentication, test approval objects
+and test time do not establish secure consent, authenticated UI, device
+binding or trusted time. No real WebAuthn/platform authenticator is wired to
+Gateway. A future implementer must qualify verifier-generated unpredictable
+challenges, origin/verifier binding, owner presence/user verification,
+device/session/purpose/exact signed-manifest binding, durable one-time
+consumption, maximum age and trusted-time semantics. The actual ceremony
+must remain on an independently authenticated owner-controlled LOCAL channel.
+
+The test anchor also maintains separately simulated history:
+`VerifiedNeverEnrolled`, `PreviouslyEnrolled`, or `Unverifiable`.
+An empty store after previous enrollment, or missing history, is NOT evidence
+of a virgin device and MUST NOT trigger silent enrollment. This simulated
+history is not real hardware/witness qualification. TPM clear, profile/device
+migration, lost hardware identity, restored backup, witness replacement, and
+recovery remain independently owner-gated and fail closed.
+
+Protocol research, not implementation evidence:
+- W3C WebAuthn Level 3 (2026-08-25):
+  https://www.w3.org/TR/2026/REC-webauthn-3-20260825/
+- NIST SP 800-63B-4 (2025):
+  https://csrc.nist.gov/pubs/sp/800/63/b/4/final
+
+Do not turn this fixture into a production token or API. Real owner identity
+proof, trusted platform/witness provenance, cross-process all-writer fencing,
+independent trusted clock, root rotation, abuse-case validation and remote
+Gateway authorization remain independent non-bypassable security gates.
