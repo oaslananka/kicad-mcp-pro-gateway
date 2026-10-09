@@ -19,7 +19,9 @@ use crate::{
 /// Only an owner-trusted signer can update the immutable policy snapshot.
 /// A read lock remains held through entire proof validation so an update
 /// cannot revoke keys mid-verification and then let an old proof return.
-/// A failed or panicking write poisons the lock: ALL subsequent calls deny.
+/// Ordinary rejected updates leave the lock usable and policy unchanged.
+/// Only a panic during an exclusive write poisons the lock; in that case
+/// ALL later reads/writes deny instead of recovering untrusted state.
 pub struct OwnerPolicyAuthority {
     root: VerifyingKey,
     active: RwLock<VerifiedOwnerIssuerManifest>,
@@ -93,5 +95,61 @@ impl OwnerPolicyAuthority {
             .read()
             .map_err(|_| ActorAttestationError::StorageUnavailable)?;
         Ok(guard.generation)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use ed25519_dalek::{Signer, SigningKey};
+    use serde_json::json;
+
+    #[test]
+    fn poisoned_owner_policy_lock_always_denies_instead_of_recovering() {
+        let owner = SigningKey::from_bytes(&[88; 32]);
+        let payload = json!({
+            "contract_version": "owner-issuer-manifest/v1",
+            "generation": 12,
+            "issued_at": 1799999980,
+            "expires_at": 1800000200,
+            "keys": [{
+                "issuer": "known-issuer",
+                "key_id": "known-id",
+                "public_key": URL_SAFE_NO_PAD.encode(SigningKey::from_bytes(&[91;32]).verifying_key().as_bytes()),
+                "valid_from_unix": 1799999900,
+                "valid_until_unix": 1800000400,
+                "state": "active"
+            }]
+        });
+        let mut signed_bytes = b"kicad-mcp/owner-issuer-manifest/v1\n".to_vec();
+        signed_bytes.extend_from_slice(&serde_json_canonicalizer::to_vec(&payload).unwrap());
+        let signature = owner.sign(&signed_bytes);
+        let envelope = serde_json_canonicalizer::to_vec(&json!({
+            "payload":payload,
+            "signature":URL_SAFE_NO_PAD.encode(signature.to_bytes())
+        }))
+        .unwrap();
+        let authority = OwnerPolicyAuthority::from_trusted_local_state(
+            owner.verifying_key(),
+            &envelope,
+            11,
+            1800000000,
+        )
+        .unwrap();
+
+        let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _write = authority.active.write().unwrap();
+            panic!("intentional test-only poisoned exclusive owner policy lock");
+        }));
+        assert!(panic_result.is_err());
+        assert_eq!(
+            authority.active_generation(),
+            Err(ActorAttestationError::StorageUnavailable)
+        );
+        assert_eq!(
+            authority.verify_candidate_and_replace_in_memory(&envelope, 1800000000),
+            Err(ActorAttestationError::StorageUnavailable)
+        );
     }
 }
