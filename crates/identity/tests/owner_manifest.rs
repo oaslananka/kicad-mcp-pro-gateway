@@ -2,7 +2,10 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use companion_identity::actor_attestation::ActorAttestationError;
 use companion_identity::owner_manifest::verify_owner_signed_issuer_manifest;
 use companion_identity::owner_policy_authority::OwnerPolicyAuthority;
+#[path = "support/owner_store.rs"]
+mod owner_store;
 use ed25519_dalek::{Signer, SigningKey};
+use owner_store::{Failure, TestOwnerStore};
 use serde_json::{json, Value};
 
 const NOW: i64 = 1_800_000_000;
@@ -237,14 +240,23 @@ fn invalid_signature_format_is_uniformly_denied() {
     }
 }
 
+fn active_test_authority() -> (
+    std::sync::Arc<TestOwnerStore>,
+    OwnerPolicyAuthority,
+    Vec<u8>,
+) {
+    let store = TestOwnerStore::new(owner().verifying_key(), 12);
+    let active = wrap(&owner(), &payload());
+    let authority = OwnerPolicyAuthority::from_trusted_store(store.clone(), &active, NOW).unwrap();
+    (store, authority, active)
+}
+
 #[test]
 fn owner_authority_rejects_stale_updates_and_commits_only_strictly_higher_generation() {
-    let root = owner().verifying_key();
-    let first = wrap(&owner(), &payload());
-    let authority = OwnerPolicyAuthority::from_trusted_local_state(root, &first, 11, NOW).unwrap();
+    let (_store, authority, first) = active_test_authority();
     assert_eq!(authority.active_generation(), Ok(12));
     assert_eq!(
-        authority.verify_candidate_and_replace_in_memory(&first, NOW),
+        authority.verify_candidate_commit_and_activate(&first, NOW),
         Err(ActorAttestationError::Invalid),
         "owner replay cannot revert an already active policy generation"
     );
@@ -253,12 +265,12 @@ fn owner_authority_rejects_stale_updates_and_commits_only_strictly_higher_genera
     next["generation"] = json!(13);
     next["keys"][0]["state"] = json!("revoked");
     assert_eq!(
-        authority.verify_candidate_and_replace_in_memory(&wrap(&owner(), &next), NOW),
+        authority.verify_candidate_commit_and_activate(&wrap(&owner(), &next), NOW),
         Ok(13)
     );
     assert_eq!(authority.active_generation(), Ok(13));
     assert_eq!(
-        authority.verify_candidate_and_replace_in_memory(&first, NOW),
+        authority.verify_candidate_commit_and_activate(&first, NOW),
         Err(ActorAttestationError::Invalid)
     );
     assert_eq!(authority.active_generation(), Ok(13));
@@ -266,25 +278,19 @@ fn owner_authority_rejects_stale_updates_and_commits_only_strictly_higher_genera
 
 #[test]
 fn forged_and_expired_owner_updates_preserve_current_in_memory_policy() {
-    let authority = OwnerPolicyAuthority::from_trusted_local_state(
-        owner().verifying_key(),
-        &wrap(&owner(), &payload()),
-        11,
-        NOW,
-    )
-    .unwrap();
+    let (_store, authority, _active) = active_test_authority();
     let mut next = payload();
     next["generation"] = json!(13);
     let rogue = SigningKey::from_bytes(&[100u8; 32]);
     assert_eq!(
-        authority.verify_candidate_and_replace_in_memory(&wrap(&rogue, &next), NOW),
+        authority.verify_candidate_commit_and_activate(&wrap(&rogue, &next), NOW),
         Err(ActorAttestationError::Invalid)
     );
     assert_eq!(authority.active_generation(), Ok(12));
 
     next["expires_at"] = json!(NOW);
     assert_eq!(
-        authority.verify_candidate_and_replace_in_memory(&wrap(&owner(), &next), NOW),
+        authority.verify_candidate_commit_and_activate(&wrap(&owner(), &next), NOW),
         Err(ActorAttestationError::Invalid)
     );
     assert_eq!(authority.active_generation(), Ok(12));
@@ -293,14 +299,10 @@ fn forged_and_expired_owner_updates_preserve_current_in_memory_policy() {
 #[test]
 fn simultaneous_owner_updates_serialize_and_never_decrease_generation() {
     use std::sync::Arc;
+    let store = TestOwnerStore::new(owner().verifying_key(), 12);
     let authority = Arc::new(
-        OwnerPolicyAuthority::from_trusted_local_state(
-            owner().verifying_key(),
-            &wrap(&owner(), &payload()),
-            11,
-            NOW,
-        )
-        .unwrap(),
+        OwnerPolicyAuthority::from_trusted_store(store.clone(), &wrap(&owner(), &payload()), NOW)
+            .unwrap(),
     );
     let manifests: Vec<Vec<u8>> = (13..21)
         .map(|generation| {
@@ -314,9 +316,143 @@ fn simultaneous_owner_updates_serialize_and_never_decrease_generation() {
         for signed in &manifests {
             let authority = Arc::clone(&authority);
             scope.spawn(move || {
-                let _ = authority.verify_candidate_and_replace_in_memory(signed, NOW);
+                let _ = authority.verify_candidate_commit_and_activate(signed, NOW);
             });
         }
     });
     assert_eq!(authority.active_generation(), Ok(20));
+}
+
+#[test]
+fn trusted_store_requires_exact_active_generation_and_no_tofu_bootstrap() {
+    let envelope = wrap(&owner(), &payload());
+    let zero = TestOwnerStore::new(owner().verifying_key(), 0);
+    assert!(OwnerPolicyAuthority::from_trusted_store(zero, &envelope, NOW).is_err());
+    let stale = TestOwnerStore::new(owner().verifying_key(), 11);
+    assert!(OwnerPolicyAuthority::from_trusted_store(stale, &envelope, NOW).is_err());
+    let advanced = TestOwnerStore::new(owner().verifying_key(), 13);
+    assert!(OwnerPolicyAuthority::from_trusted_store(advanced, &envelope, NOW).is_err());
+    let rogue = TestOwnerStore::new(SigningKey::from_bytes(&[97; 32]).verifying_key(), 12);
+    assert!(OwnerPolicyAuthority::from_trusted_store(rogue, &envelope, NOW).is_err());
+    let trusted = TestOwnerStore::new(owner().verifying_key(), 12);
+    assert_eq!(
+        OwnerPolicyAuthority::from_trusted_store(trusted, &envelope, NOW)
+            .unwrap()
+            .active_generation(),
+        Ok(12)
+    );
+}
+
+#[test]
+fn failed_precommit_disables_entire_authority_without_advancing_test_store() {
+    let (trusted, authority, active) = active_test_authority();
+    let mut next = payload();
+    next["generation"] = json!(13);
+    trusted.set_failure(Failure::BeforeCommit);
+    assert_eq!(
+        authority.verify_candidate_commit_and_activate(&wrap(&owner(), &next), NOW),
+        Err(ActorAttestationError::StorageUnavailable)
+    );
+    assert_eq!(trusted.generation(), 12);
+    assert_eq!(
+        authority.active_generation(),
+        Err(ActorAttestationError::StorageUnavailable)
+    );
+    trusted.set_failure(Failure::None);
+    assert_eq!(
+        authority.verify_candidate_commit_and_activate(&wrap(&owner(), &next), NOW),
+        Err(ActorAttestationError::StorageUnavailable),
+        "a failed operation must NEVER permit in-process resurrection"
+    );
+    assert_eq!(trusted.generation(), 12);
+    let after_restart = OwnerPolicyAuthority::from_trusted_store(trusted, &active, NOW).unwrap();
+    assert_eq!(after_restart.active_generation(), Ok(12));
+}
+
+#[test]
+fn ambiguous_postcommit_error_disables_old_policy_and_needs_new_manifest_after_restart() {
+    let (trusted, authority, active) = active_test_authority();
+    let mut next = payload();
+    next["generation"] = json!(13);
+    next["keys"][0]["state"] = json!("revoked");
+    let signed_next = wrap(&owner(), &next);
+    trusted.set_failure(Failure::AfterCommit);
+    assert_eq!(
+        authority.verify_candidate_commit_and_activate(&signed_next, NOW),
+        Err(ActorAttestationError::StorageUnavailable)
+    );
+    assert_eq!(
+        trusted.generation(),
+        13,
+        "the fake committed before returning an error"
+    );
+    assert_eq!(
+        authority.active_generation(),
+        Err(ActorAttestationError::StorageUnavailable)
+    );
+    assert!(OwnerPolicyAuthority::from_trusted_store(trusted.clone(), &active, NOW).is_err());
+    trusted.set_failure(Failure::None);
+    let recovered = OwnerPolicyAuthority::from_trusted_store(trusted, &signed_next, NOW).unwrap();
+    assert_eq!(recovered.active_generation(), Ok(13));
+}
+
+#[test]
+fn bootstrap_rechecks_atomic_trusted_root_and_generation_before_publication() {
+    use companion_identity::owner_policy_authority::{
+        TrustedOwnerPolicyState, TrustedOwnerPolicyStore,
+    };
+    use ed25519_dalek::VerifyingKey;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct ChangingTrustedStore {
+        first: TrustedOwnerPolicyState,
+        later: TrustedOwnerPolicyState,
+        reads: AtomicUsize,
+    }
+    impl TrustedOwnerPolicyStore for ChangingTrustedStore {
+        fn read_committed(&self) -> Result<TrustedOwnerPolicyState, ActorAttestationError> {
+            let s = if self.reads.fetch_add(1, Ordering::SeqCst) == 0 {
+                &self.first
+            } else {
+                &self.later
+            };
+            Ok(TrustedOwnerPolicyState {
+                root: s.root,
+                committed_generation: s.committed_generation,
+            })
+        }
+        fn compare_and_commit(
+            &self,
+            _: &VerifyingKey,
+            _: u64,
+            _: u64,
+        ) -> Result<(), ActorAttestationError> {
+            Err(ActorAttestationError::StorageUnavailable)
+        }
+    }
+    let envelope = wrap(&owner(), &payload());
+    for changed in [
+        TrustedOwnerPolicyState {
+            root: owner().verifying_key(),
+            committed_generation: 13,
+        },
+        TrustedOwnerPolicyState {
+            root: SigningKey::from_bytes(&[99; 32]).verifying_key(),
+            committed_generation: 12,
+        },
+    ] {
+        let store = std::sync::Arc::new(ChangingTrustedStore {
+            first: TrustedOwnerPolicyState {
+                root: owner().verifying_key(),
+                committed_generation: 12,
+            },
+            later: changed,
+            reads: AtomicUsize::new(0),
+        });
+        assert!(
+            OwnerPolicyAuthority::from_trusted_store(store.clone(), &envelope, NOW).is_err(),
+            "initial owner root/generation changed mid-verification"
+        );
+        assert_eq!(store.reads.load(Ordering::SeqCst), 2);
+    }
 }

@@ -1,8 +1,11 @@
 # Offline owner-policy generation and revocation serialization
 
-Status: **UNUSED, PROCESS-LOCAL ONLY**. This adds NO production trust root
-enrollment, no persistent monotonic counter, no OAuth issuer, no user grants,
-no native Gateway operation, no release, and no public network access.
+Status: **UNUSED OFFLINE TRUSTED-STORE CONTRACT**. There is NO
+production independently trusted root/counter provider, OAuth issuer,
+user grant, native tool execution or public listener. Policy updates
+are no longer permitted through an in-memory-only setter.
+See [trusted durable commit contract](owner-policy-durable-commit-contract.md)
+for mandatory third-party store guarantees and rollback limits.
 
 The existing owner-signed strict JCS policy manifest cannot safely be used
 by a caller that supplies an arbitrary `active_generation` on each actor
@@ -11,15 +14,17 @@ The new `OwnerPolicyAuthority` owns the already verified active policy,
 immutable owner Ed25519 verifying root and process-local generation. No
 per-request generation or raw policy key vector is accepted from a request.
 
-- `from_trusted_local_state` accepts an **already locally authenticated**
-  owner root and durable prior generation from a *future external trust
-  provider*; the new manifest must be valid, owner-signed and strictly
-  newer. Neither trust root nor prior generation can be supplied by a
-  relay or unsigned actor. No loader or fallback is provided here.
-- `verify_candidate_and_replace_in_memory` holds a writer lock across
-  signature/JCS verification and the strictly monotonic generation check.
-  Valid replacements are swapped atomically; invalid, stale, unknown or
-  expired updates cannot mutate the active policy.
+- `from_trusted_store` reads a **previously authenticated committed**
+  root and active generation via a hypothetical `TrustedOwnerPolicyStore`.
+  Startup requires the exact matching owner-signed, unexpired manifest.
+  Neither trust root nor generation can be provided by a remote relay,
+  unsigned actor or manifest; no trusted store implementation is shipped.
+- `verify_candidate_commit_and_activate` holds a writer lock across
+  signature/JCS verification, generation validation and the store's
+  compare-and-commit. Only a successfully committed, higher generation is
+  published. A rejected candidate changes nothing; ANY durable-store
+  error permanently disables the authority, because its commit outcome
+  may be ambiguous. No in-memory-only update API remains.
 - `verify_actor_and_consume` holds the matching reader lock until
   verified actor request/channel/challenge/replay consumption finishes.
   A writer cannot publish a revocation while an old-key read is in flight.
@@ -32,16 +37,14 @@ per-request generation or raw policy key vector is accepted from a request.
   discovery, dynamic JWKS, on-disk policy caching, database migration or
   mobile/cloud OAuth. It grants zero tool execution capability.
 
-**Critical non-guarantees:** The root and last accepted generation are
-still only provided as call arguments from a presumed trusted external
-source. There is NO OS-vetted bootstrap or durable compare-and-swap
-implementation. After restart, the module itself knows nothing of old
-generations; restoring all database files can roll back replay evidence
-and locally stored counters. Trusted root custody, cross-restart
-anti-rollback and crash-atomic durable policy update MUST be implemented
-and reviewed before wiring this module into the live Gateway. An invalid
-or missing external trust source must deny, never substitute a zero
-generation or a key supplied by remote devices.
+**Critical non-guarantees:** The trusted store is only a Rust trait,
+with no production implementation or authenticated initial enrollment.
+Even a secure OS keyring and an ordinary SQLite transaction do not
+independently prove power-loss durability or monotonic protection after
+restoring full-disk backups. The current module assumes the external
+provider performs an atomic cross-process, root-bound compare-and-commit
+and no uncoordinated external revocation bypasses it. Failure to establish
+these guarantees means **no production actor verification or tools**.
 
 Tests cover strictly monotonic updates, owner-signature forgery,
 expired updates, concurrent updates that serialize, and actual

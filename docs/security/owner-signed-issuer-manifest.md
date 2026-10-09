@@ -72,7 +72,9 @@ The companion
 [offline owner-policy authority](owner-policy-authority-offline.md)
 serializes signed manifest activation and actor verification, so remote
 requests cannot independently supply an old current-generation number.
-It is **not** a durable trusted generation store.
+It now requires an external durable trusted-store contract and denies
+all verification on ambiguous commit failures; the interface itself
+**is not** an implemented or verified durable trust provider.
 
 Valid manifest signatures install only **public verification keys**.
 A manifest is NOT an actor's credential or consent, does NOT establish
