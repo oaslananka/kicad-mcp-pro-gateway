@@ -33,10 +33,16 @@ operations. The existing outbound relay pilot remains **heartbeat only**.
 
 The signature domain is version-separated, e.g.
 `kicad-mcp/actor-attestation/v1\n` followed by fixed, canonical bytes.
-Canonical JSON can be based on RFC 8785 if its exact encoding, duplicate key,
-numeric and Unicode handling is independently interoperable. Do not sign
-platform-dependent serialization or trust a relayed hash without computing
-it from the validated request.
+**RFC 8785 JSON Canonicalization Scheme (JCS) is REQUIRED for v1**, with
+strict I-JSON constraints, deterministic numeric/Unicode handling, duplicate
+JSON member rejection and identical interoperable serialized test vectors.
+Reject noncanonical or ambiguously encoded input; never sign arbitrary
+platform-dependent serialization. Compute request hashes locally from the
+validated canonical request, never from an untrusted relayed digest.
+**Signature algorithm selection MUST come exclusively from locally pinned
+issuer/key policy**, not from a caller-controlled `alg`, JWT header or payload.
+Reject `none`, unexpected algorithms, mismatched key types and algorithm/key
+confusion; every accepted key ID has one explicit approved algorithm.
 
 **Open architecture decision:** choose an independent trust root, proof
 issuance flow, key lifecycle and provision of Gateway challenges. The
