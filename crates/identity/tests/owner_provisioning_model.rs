@@ -60,12 +60,14 @@ struct ModelOwnerApproval {
     root: VerifyingKey,
     reviewed_manifest_sha256: [u8; 32],
     device_domain: &'static str,
+    purpose: CeremonyPurpose,
 }
 fn owner_test_ceremony(key: &SigningKey, reviewed_manifest: &[u8]) -> ModelOwnerApproval {
     ModelOwnerApproval {
         root: key.verifying_key(),
         reviewed_manifest_sha256: digest(reviewed_manifest),
         device_domain: DEVICE_DOMAIN,
+        purpose: CeremonyPurpose::FirstEnrollment,
     }
 }
 
@@ -240,7 +242,8 @@ impl ProvisioningModel {
         let Some(approval) = approval else {
             return ModelResult::Denied;
         };
-        if approval.device_domain != DEVICE_DOMAIN
+        if approval.purpose != CeremonyPurpose::FirstEnrollment
+            || approval.device_domain != DEVICE_DOMAIN
             || approval.reviewed_manifest_sha256 != digest(signed)
         {
             return ModelResult::Denied;
@@ -552,6 +555,7 @@ impl TestOwnerCeremony {
             root,
             reviewed_manifest_sha256: presented.signed_manifest_sha256,
             device_domain: presented.device_domain,
+            purpose: presented.purpose,
         })
     }
 }
@@ -739,4 +743,24 @@ fn ambiguous_commit_burns_one_time_ceremony_and_reconciles_exact_state_only() {
         model.enroll(Some(&approved), &signed, PowerCut::None),
         ModelResult::Denied
     );
+}
+
+#[test]
+fn recovery_scoped_consent_never_becomes_first_enrollment_authority() {
+    let signer = owner(78);
+    let signed = signed_manifest(&signer, 7, "active");
+    let recovery = test_binding(&signer, &signed, CeremonyPurpose::Recovery);
+    let gate = TestOwnerCeremony::default();
+    assert!(gate.begin_with_simulated_owner_auth(true, recovery, NOW, NOW + 30));
+    let approval = gate
+        .spend(recovery, CeremonyPurpose::Recovery, NOW + 1)
+        .unwrap();
+    let mut device = ProvisioningModel::new(true);
+    assert_eq!(
+        device.enroll(Some(&approval), &signed, PowerCut::None),
+        ModelResult::Denied,
+        "a recovery purpose must never enroll a purportedly new device"
+    );
+    assert!(!device.anchor.present());
+    assert!(device.disk_manifest.is_none());
 }
