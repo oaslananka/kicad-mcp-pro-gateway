@@ -623,9 +623,18 @@ fn owner_signed_manifest_policy_controls_actual_offline_actor_verification() {
     .unwrap();
     assert_eq!(trusted.generation, 40);
     assert!(trusted
-        .issuers
-        .verify_and_consume(&actor_assertion, &context(&request, &issued), &storage)
+        .verify_and_consume(&actor_assertion, &context(&request, &issued), &storage, 40)
         .is_ok());
+
+    let mut expired_manifest_context = context(&request, &issued);
+    expired_manifest_context.now_unix = NOW + 101;
+    assert_eq!(
+        trusted
+            .verify_and_consume(&actor_assertion, &expired_manifest_context, &storage, 40,)
+            .err(),
+        Some(ActorAttestationError::Invalid),
+        "an in-memory owner policy must not authorize anything after manifest expiry"
+    );
 
     let second_dir = tempfile::tempdir().unwrap();
     let second_store = Storage::open(second_dir.path()).unwrap();
@@ -650,25 +659,40 @@ fn owner_signed_manifest_policy_controls_actual_offline_actor_verification() {
     .unwrap();
     assert_eq!(
         revoked
-            .issuers
             .verify_and_consume(
                 &second_assertion,
                 &context(&request, &second_issued),
-                &second_store
+                &second_store,
+                41
             )
             .err(),
         Some(ActorAttestationError::Invalid),
         "a genuinely signed actor assertion must still be refused after owner revocation"
     );
-    assert!(
+    assert_eq!(
         trusted
-            .issuers
             .verify_and_consume(
                 &second_assertion,
                 &context(&request, &second_issued),
-                &second_store
+                &second_store,
+                41,
             )
-            .is_ok(),
-        "a rejected proof must not silently consume the issued challenge"
+            .err(),
+        Some(ActorAttestationError::Invalid),
+        "old signed owner manifest must deny when the trusted active generation advances"
+    );
+    let remaining: i64 = second_store
+        .connection()
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM gateway_actor_challenges WHERE consumed = 0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        remaining, 1,
+        "policy denials cannot spend a valid challenge"
     );
 }

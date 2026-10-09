@@ -54,6 +54,20 @@ current SQLite v8 local wall-clock high-water does **not** protect against
 restoring its entire database. Production owner-key lifecycle and an
 independent credential-vetted OAuth actor signer are separately required.
 
+In addition to checking manifest expiry for each assertion, the
+`verify_and_consume` API requires the **current owner-policy generation**
+from trusted local state on each attempt. An old in-memory active-key
+snapshot cannot silently outlive an owner-signed revocation when the
+trusted current generation advances. A caller that supplies the old
+generation defeats this protection; secure provenance/atomic persistence
+of that value remains a mandatory integration gate.
+
+The verified policy keeps its key list **private** and exposes only
+`verify_and_consume`, which rechecks the signed manifest's validity
+window against trusted Gateway-local time on **every actor proof**.
+Previously accepted manifests must not keep granting actor verification
+after expiry, even if an issuer key itself remains active.
+
 Valid manifest signatures install only **public verification keys**.
 A manifest is NOT an actor's credential or consent, does NOT establish
 a remote principal until the *separate* actor signature, channel/request
