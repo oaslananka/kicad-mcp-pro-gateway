@@ -5,6 +5,7 @@ pub mod actor_attestation;
 pub mod actor_issuer_policy;
 pub mod device;
 pub mod owner_manifest;
+pub mod owner_policy_authority;
 pub mod secret_store;
 
 pub use device::{DeviceIdentityStore, IdentityError, SqliteDeviceIdentityStore};

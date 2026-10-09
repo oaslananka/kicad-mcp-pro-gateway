@@ -68,6 +68,12 @@ window against trusted Gateway-local time on **every actor proof**.
 Previously accepted manifests must not keep granting actor verification
 after expiry, even if an issuer key itself remains active.
 
+The companion
+[offline owner-policy authority](owner-policy-authority-offline.md)
+serializes signed manifest activation and actor verification, so remote
+requests cannot independently supply an old current-generation number.
+It is **not** a durable trusted generation store.
+
 Valid manifest signatures install only **public verification keys**.
 A manifest is NOT an actor's credential or consent, does NOT establish
 a remote principal until the *separate* actor signature, channel/request

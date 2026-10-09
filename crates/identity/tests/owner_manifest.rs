@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use companion_identity::actor_attestation::ActorAttestationError;
 use companion_identity::owner_manifest::verify_owner_signed_issuer_manifest;
+use companion_identity::owner_policy_authority::OwnerPolicyAuthority;
 use ed25519_dalek::{Signer, SigningKey};
 use serde_json::{json, Value};
 
@@ -234,4 +235,88 @@ fn invalid_signature_format_is_uniformly_denied() {
         let raw = serde_json_canonicalizer::to_vec(&envelope).unwrap();
         assert_eq!(load(&raw, 11), Err(ActorAttestationError::Invalid));
     }
+}
+
+#[test]
+fn owner_authority_rejects_stale_updates_and_commits_only_strictly_higher_generation() {
+    let root = owner().verifying_key();
+    let first = wrap(&owner(), &payload());
+    let authority = OwnerPolicyAuthority::from_trusted_local_state(root, &first, 11, NOW).unwrap();
+    assert_eq!(authority.active_generation(), Ok(12));
+    assert_eq!(
+        authority.verify_candidate_and_replace_in_memory(&first, NOW),
+        Err(ActorAttestationError::Invalid),
+        "owner replay cannot revert an already active policy generation"
+    );
+    assert_eq!(authority.active_generation(), Ok(12));
+    let mut next = payload();
+    next["generation"] = json!(13);
+    next["keys"][0]["state"] = json!("revoked");
+    assert_eq!(
+        authority.verify_candidate_and_replace_in_memory(&wrap(&owner(), &next), NOW),
+        Ok(13)
+    );
+    assert_eq!(authority.active_generation(), Ok(13));
+    assert_eq!(
+        authority.verify_candidate_and_replace_in_memory(&first, NOW),
+        Err(ActorAttestationError::Invalid)
+    );
+    assert_eq!(authority.active_generation(), Ok(13));
+}
+
+#[test]
+fn forged_and_expired_owner_updates_preserve_current_in_memory_policy() {
+    let authority = OwnerPolicyAuthority::from_trusted_local_state(
+        owner().verifying_key(),
+        &wrap(&owner(), &payload()),
+        11,
+        NOW,
+    )
+    .unwrap();
+    let mut next = payload();
+    next["generation"] = json!(13);
+    let rogue = SigningKey::from_bytes(&[100u8; 32]);
+    assert_eq!(
+        authority.verify_candidate_and_replace_in_memory(&wrap(&rogue, &next), NOW),
+        Err(ActorAttestationError::Invalid)
+    );
+    assert_eq!(authority.active_generation(), Ok(12));
+
+    next["expires_at"] = json!(NOW);
+    assert_eq!(
+        authority.verify_candidate_and_replace_in_memory(&wrap(&owner(), &next), NOW),
+        Err(ActorAttestationError::Invalid)
+    );
+    assert_eq!(authority.active_generation(), Ok(12));
+}
+
+#[test]
+fn simultaneous_owner_updates_serialize_and_never_decrease_generation() {
+    use std::sync::Arc;
+    let authority = Arc::new(
+        OwnerPolicyAuthority::from_trusted_local_state(
+            owner().verifying_key(),
+            &wrap(&owner(), &payload()),
+            11,
+            NOW,
+        )
+        .unwrap(),
+    );
+    let manifests: Vec<Vec<u8>> = (13..21)
+        .map(|generation| {
+            let mut v = payload();
+            v["generation"] = json!(generation);
+            wrap(&owner(), &v)
+        })
+        .collect();
+
+    std::thread::scope(|scope| {
+        for signed in &manifests {
+            let authority = Arc::clone(&authority);
+            scope.spawn(move || {
+                let _ = authority.verify_candidate_and_replace_in_memory(signed, NOW);
+            });
+        }
+    });
+    assert_eq!(authority.active_generation(), Ok(20));
 }
