@@ -8,7 +8,7 @@ trusted **public** Ed25519 verification keys. Claims supply untrusted
 `issuer`/`key_id` lookup hints, but cannot provision any key, request a
 different signature algorithm or redirect to an arbitrary JWKS URL.
 
-- At most 32 locally owner-approved keys; no empty issuers/IDs, duplicate
+- At most 32 locally owner-approved keys; no empty or whitespace-padded issuers/IDs, duplicate
   issuer-and-key IDs, reused signing public keys (even across issuers), or
   invalid validity ranges. Every key has an explicit `Active` or `Revoked`
   state, and `valid_from_unix` / `valid_until_unix` bounds.
@@ -38,3 +38,13 @@ states, rotation overlap, and successful real Ed25519 signatures bound
 to previously issued, single-use Gateway challenges. No database
 migration, secret persistence, production Gateway restart, Cloud Relay
 deployment, release/tag or public listener is included.
+
+
+## Non-oracular rejection and operational diagnostics
+
+Unknown keys, revoked keys, out-of-window proofs and malformed owner
+pins intentionally return the same `ActorAttestationError::Invalid` to
+the caller, avoiding an information oracle on the owner trust registry.
+A future local owner-only, authenticated, redacted diagnostic channel
+can separately categorize rejections; this unused offline module does
+not emit key IDs, raw proofs or token claims to logs.

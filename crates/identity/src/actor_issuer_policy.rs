@@ -38,7 +38,10 @@ pub struct OwnerPinnedActorIssuers {
 }
 
 fn allowed_id(value: &str) -> bool {
-    !value.trim().is_empty() && value.len() <= 256 && !value.chars().any(char::is_control)
+    !value.is_empty()
+        && value == value.trim()
+        && value.len() <= 256
+        && !value.chars().any(char::is_control)
 }
 
 impl OwnerPinnedActorIssuers {
@@ -53,19 +56,27 @@ impl OwnerPinnedActorIssuers {
         let mut names = HashSet::new();
         let mut public_keys = HashSet::new();
         for key in &keys {
-            if !allowed_id(&key.issuer)
-                || !allowed_id(&key.key_id)
-                || key.valid_from_unix <= 0
-                || key.valid_until_unix <= key.valid_from_unix
-                || !names.insert((key.issuer.clone(), key.key_id.clone()))
-                || !public_keys.insert(key.public_key.to_bytes())
-            {
+            let valid_identifiers = allowed_id(&key.issuer) && allowed_id(&key.key_id);
+            let valid_window =
+                key.valid_from_unix > 0 && key.valid_until_unix > key.valid_from_unix;
+            if !valid_identifiers || !valid_window {
+                return Err(ActorAttestationError::Invalid);
+            }
+            let unique_name = names.insert((key.issuer.clone(), key.key_id.clone()));
+            let unique_public_key = public_keys.insert(key.public_key.to_bytes());
+            if !unique_name || !unique_public_key {
                 return Err(ActorAttestationError::Invalid);
             }
         }
         Ok(Self { keys })
     }
 
+    /// Deliberately non-oracular: revoked keys, unknown issuers and
+    /// invalid time windows produce the SAME Invalid error. Distinguishing
+    /// them to a future remote caller would reveal the owner's trust
+    /// configuration or key revocation state. Owner-only diagnostics must
+    /// be designed separately, with redaction and authenticated access.
+    ///
     /// Untrusted issuer/key IDs are lookup *hints*, not authorization.
     /// Time validity is measured against BOTH actual verified assertion
     /// times and trusted Gateway local time; revoked keys are never allowed.

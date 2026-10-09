@@ -559,6 +559,18 @@ fn owner_pin_policy_rejects_duplicate_ids_reused_key_material_and_empty_trust() 
         OwnerPinnedActorIssuers::new(vec![owner_key(" ", 31, ActorIssuerKeyState::Active),])
             .is_err()
     );
+    assert!(OwnerPinnedActorIssuers::new(vec![owner_key(
+        " leading",
+        31,
+        ActorIssuerKeyState::Active
+    ),])
+    .is_err());
+    assert!(OwnerPinnedActorIssuers::new(vec![owner_key(
+        "trailing ",
+        31,
+        ActorIssuerKeyState::Active
+    ),])
+    .is_err());
     assert!(OwnerPinnedActorIssuers::new(
         (1..=33)
             .map(|n| { owner_key(&format!("key-{n}"), n, ActorIssuerKeyState::Active) })
