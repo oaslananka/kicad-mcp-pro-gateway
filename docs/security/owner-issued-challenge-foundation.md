@@ -52,7 +52,10 @@ issued challenges, replay collision mid-transaction, restoration of the
 unconsumed second challenge, wrong persisted binding, restart and deleted
 challenge tables.
 
-Migration **v6 to v7 is additive**. Existing v5/v6 binaries must continue to
+Migration **v6 to v7 is additive**. The later offline
+[clock high-water v8 foundation](actor-clock-high-water-foundation.md)
+now rejects locally observed clock rollback during issuance and proof
+consumption; it does **not** enable record deletion or live transport. Existing v5/v6 binaries must continue to
 reject an upgraded v7 database. No live database is migrated by this PR;
 any future approved deployment requires data backup, migration/rollback
 compatibility review and a verified restoration plan.

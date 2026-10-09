@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn confirmed_overwrite_evidence_round_trips_on_current_schema() {
-        assert_eq!(companion_storage::SCHEMA_VERSION, 7);
+        assert_eq!(companion_storage::SCHEMA_VERSION, 8);
 
         let repository = repo();
         let mut event = sample_event(OperationId::new(), SessionId::new());

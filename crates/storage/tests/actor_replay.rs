@@ -140,3 +140,158 @@ fn challenge_binding_expiry_and_missing_persistence_deny() {
         Err(ActorReplayError::Unavailable)
     );
 }
+
+fn high_water(store: &Storage) -> i64 {
+    store
+        .connection()
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT last_seen_unix FROM actor_clock_high_water WHERE singleton = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn persistent_high_water_denies_local_clock_rollback_across_reopen() {
+    const START: i64 = 1_800_000_000;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Storage::open(dir.path()).unwrap();
+    let first = issued(101);
+    let mut old_clock = issued(102);
+    old_clock.issued_at = START - 1;
+    old_clock.expires_at = START + 59;
+    store.register_actor_challenge(&first).unwrap();
+    assert_eq!(high_water(&store), START);
+    assert_eq!(
+        store.register_actor_challenge(&old_clock),
+        Err(ActorReplayError::Invalid)
+    );
+    assert_eq!(high_water(&store), START);
+
+    let second = issued(103);
+    store.register_actor_challenge(&second).unwrap();
+    store
+        .consume_issued_actor_proof(&proof(110), &first, START + 5)
+        .unwrap();
+    assert_eq!(high_water(&store), START + 5);
+    assert_eq!(
+        store.consume_issued_actor_proof(&proof(120), &second, START + 4),
+        Err(ActorReplayError::Invalid),
+        "a valid unconsumed challenge cannot be accepted after clock rollback"
+    );
+    drop(store);
+
+    let reopened = Storage::open(dir.path()).unwrap();
+    assert_eq!(high_water(&reopened), START + 5);
+    assert_eq!(
+        reopened.consume_issued_actor_proof(&proof(120), &second, START + 4),
+        Err(ActorReplayError::Invalid),
+        "persisted high-water must survive restart"
+    );
+    reopened
+        .consume_issued_actor_proof(&proof(120), &second, START + 5)
+        .unwrap();
+    assert_eq!(high_water(&reopened), START + 5);
+}
+
+#[test]
+fn failed_mid_transaction_never_advances_high_water_or_spends_challenge() {
+    const START: i64 = 1_800_000_000;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Storage::open(dir.path()).unwrap();
+    let first = issued(131);
+    let second = issued(132);
+    store.register_actor_challenge(&first).unwrap();
+    store.register_actor_challenge(&second).unwrap();
+    let duplicate = proof(141);
+    store
+        .consume_issued_actor_proof(&duplicate, &first, START + 5)
+        .unwrap();
+    assert_eq!(high_water(&store), START + 5);
+
+    assert_eq!(
+        store.consume_issued_actor_proof(&duplicate, &second, START + 20),
+        Err(ActorReplayError::Replay),
+        "duplicate evidence must roll back both challenge and high-water writes"
+    );
+    assert_eq!(high_water(&store), START + 5);
+    store
+        .consume_issued_actor_proof(&proof(151), &second, START + 6)
+        .unwrap();
+    assert_eq!(high_water(&store), START + 6);
+    // Neither expiry nor rollback safeguards permit evidence eviction.
+    assert_eq!(
+        store
+            .connection()
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM gateway_actor_challenges", [], |r| r
+                .get::<_, i64>(
+                0
+            ))
+            .unwrap(),
+        2
+    );
+}
+
+#[test]
+fn missing_or_corrupt_high_water_denies_without_new_reservations() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Storage::open(dir.path()).unwrap();
+    let entry = issued(201);
+    store.register_actor_challenge(&entry).unwrap();
+    let original = high_water(&store);
+    store
+        .connection()
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE actor_clock_high_water SET last_seen_unix = ?1 WHERE singleton=1",
+            [original + 100],
+        )
+        .unwrap();
+    assert_eq!(
+        store.consume_issued_actor_proof(&proof(211), &entry, original + 1),
+        Err(ActorReplayError::Invalid)
+    );
+    store
+        .connection()
+        .lock()
+        .unwrap()
+        .execute("DELETE FROM actor_clock_high_water WHERE singleton=1", [])
+        .unwrap();
+    assert_eq!(
+        store.register_actor_challenge(&issued(202)),
+        Err(ActorReplayError::Invalid),
+        "missing singleton row must never reset the clock to zero"
+    );
+}
+
+#[test]
+fn schema_v8_seeds_high_water_from_oldest_unexpired_evidence_conservatively() {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    // Emulate the relevant minimal v7 tables and two kinds of recorded
+    // expiration; exercise the *actual* migration SQL, not a duplicate.
+    conn.execute_batch(
+        "CREATE TABLE gateway_actor_challenges (expires_at INTEGER NOT NULL);
+         CREATE TABLE verified_actor_replay (expires_at INTEGER NOT NULL);
+         INSERT INTO gateway_actor_challenges VALUES (1800000060);
+         INSERT INTO verified_actor_replay VALUES (1800000080);",
+    )
+    .unwrap();
+    conn.execute_batch(include_str!(
+        "../migrations/0008_actor_clock_high_water.sql"
+    ))
+    .unwrap();
+    let seeded: i64 = conn
+        .query_row(
+            "SELECT last_seen_unix FROM actor_clock_high_water WHERE singleton=1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(seeded, 1_800_000_080);
+}

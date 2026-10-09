@@ -34,6 +34,9 @@ to refuse remote operation envelopes.
   identifiers with four uniqueness constraints, surviving process restarts.
   A second use, concurrent reuse or SQLite failure returns an error.
 - Migrations 0006 and 0007 create only non-secret proof/challenge hashes and expiry.
+  Migration 0008 stores only locally observed clock high-water; this
+  [offline guard](actor-clock-high-water-foundation.md) denies clock
+  rollback but is not a safe deletion policy or signed time source.
   The store deliberately **never auto-deletes** replay history without a
   separately qualified persistent clock high-water and retention scheme.
   When 250,000 records are reached, further claims **fail closed**; this
@@ -65,7 +68,7 @@ Production work still required before any transport activation:
 
 ## Schema and rollback
 
-Schema version is now **v7** (v6 replay + v7 challenge), additively. A Gateway executable
+Schema version is now **v8** (v6 replay + v7 challenge + v8 persisted local clock high-water), additively. A Gateway executable
 expecting an older schema (v5 or v6) intentionally refuses the newer database: do not
 bypass this protection or downgrade schema manually. Back up the local
 Gateway database before any *future authorized* application upgrade and

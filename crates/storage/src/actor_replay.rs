@@ -100,15 +100,42 @@ enum ReplayTable {
     VerifiedProofs,
 }
 
+/// Advance the Gateway-owned local wall-clock high-water mark INSIDE the
+/// transaction which issues or consumes proof evidence. Never trust an
+/// assertion-provided timestamp for this purpose. Any rollback, missing
+/// sentinel row or broken database denies the operation without weakening
+/// replay protection or deleting records.
+fn require_nondecreasing_local_clock(
+    tx: &Transaction<'_>,
+    now_unix: i64,
+) -> Result<(), ActorReplayError> {
+    if now_unix <= 0 {
+        return Err(ActorReplayError::Invalid);
+    }
+    let updated = tx
+        .execute(
+            "UPDATE actor_clock_high_water SET last_seen_unix = ?1
+             WHERE singleton = 1 AND last_seen_unix <= ?1",
+            params![now_unix],
+        )
+        .map_err(|_| ActorReplayError::Unavailable)?;
+    if updated != 1 {
+        return Err(ActorReplayError::Invalid);
+    }
+    Ok(())
+}
+
 /// Begin an exclusive writer reservation and check the table-specific fixed
 /// fail-closed capacity in the SAME transaction, eliminating divergent caps.
 fn begin_limited_write(
     conn: &mut Connection,
     table: ReplayTable,
+    trusted_now_unix: i64,
 ) -> Result<Transaction<'_>, ActorReplayError> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_| ActorReplayError::Unavailable)?;
+    require_nondecreasing_local_clock(&tx, trusted_now_unix)?;
     let count_sql = match table {
         ReplayTable::IssuedChallenges => "SELECT count(*) FROM gateway_actor_challenges",
         ReplayTable::VerifiedProofs => "SELECT count(*) FROM verified_actor_replay",
@@ -163,7 +190,7 @@ impl Storage {
             .connection()
             .lock()
             .map_err(|_| ActorReplayError::Unavailable)?;
-        let tx = begin_limited_write(&mut conn, ReplayTable::IssuedChallenges)?;
+        let tx = begin_limited_write(&mut conn, ReplayTable::IssuedChallenges, c.issued_at)?;
         tx.execute(
             "INSERT INTO gateway_actor_challenges
              (challenge_hash, device_hash, workspace_hash, epoch_hash, channel_hash, issued_at, expires_at)
@@ -209,7 +236,7 @@ impl Storage {
             .connection()
             .lock()
             .map_err(|_| ActorReplayError::Unavailable)?;
-        let tx = begin_limited_write(&mut conn, ReplayTable::VerifiedProofs)?;
+        let tx = begin_limited_write(&mut conn, ReplayTable::VerifiedProofs, now_unix)?;
         let changed = tx
             .execute(
                 "UPDATE gateway_actor_challenges SET consumed=1
