@@ -2,7 +2,7 @@
 //! This store is deliberately not an authorization engine or a token signer.
 
 use companion_core::CompanionError;
-use rusqlite::{params, ErrorCode};
+use rusqlite::{params, Connection, ErrorCode, Transaction, TransactionBehavior};
 
 use crate::Storage;
 
@@ -95,6 +95,33 @@ impl Storage {
     }
 }
 
+enum ReplayTable {
+    IssuedChallenges,
+    VerifiedProofs,
+}
+
+/// Begin an exclusive writer reservation and check the table-specific fixed
+/// fail-closed capacity in the SAME transaction, eliminating divergent caps.
+fn begin_limited_write(
+    conn: &mut Connection,
+    table: ReplayTable,
+) -> Result<Transaction<'_>, ActorReplayError> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_| ActorReplayError::Unavailable)?;
+    let count_sql = match table {
+        ReplayTable::IssuedChallenges => "SELECT count(*) FROM gateway_actor_challenges",
+        ReplayTable::VerifiedProofs => "SELECT count(*) FROM verified_actor_replay",
+    };
+    let count: i64 = tx
+        .query_row(count_sql, [], |row| row.get(0))
+        .map_err(|_| ActorReplayError::Unavailable)?;
+    if count >= 250_000 {
+        return Err(ActorReplayError::Unavailable);
+    }
+    Ok(tx)
+}
+
 /// Opaque hashes of the Gateway's own authenticated local channel context.
 pub struct IssuedActorChallenge {
     pub challenge_hash: [u8; 32],
@@ -136,17 +163,7 @@ impl Storage {
             .connection()
             .lock()
             .map_err(|_| ActorReplayError::Unavailable)?;
-        let tx = conn
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|_| ActorReplayError::Unavailable)?;
-        let count: i64 = tx
-            .query_row("SELECT count(*) FROM gateway_actor_challenges", [], |row| {
-                row.get(0)
-            })
-            .map_err(|_| ActorReplayError::Unavailable)?;
-        if count >= 250_000 {
-            return Err(ActorReplayError::Unavailable);
-        }
+        let tx = begin_limited_write(&mut conn, ReplayTable::IssuedChallenges)?;
         tx.execute(
             "INSERT INTO gateway_actor_challenges
              (challenge_hash, device_hash, workspace_hash, epoch_hash, channel_hash, issued_at, expires_at)
@@ -192,17 +209,7 @@ impl Storage {
             .connection()
             .lock()
             .map_err(|_| ActorReplayError::Unavailable)?;
-        let tx = conn
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|_| ActorReplayError::Unavailable)?;
-        let count: i64 = tx
-            .query_row("SELECT count(*) FROM verified_actor_replay", [], |row| {
-                row.get(0)
-            })
-            .map_err(|_| ActorReplayError::Unavailable)?;
-        if count >= 250_000 {
-            return Err(ActorReplayError::Unavailable);
-        }
+        let tx = begin_limited_write(&mut conn, ReplayTable::VerifiedProofs)?;
         let changed = tx
             .execute(
                 "UPDATE gateway_actor_challenges SET consumed=1
