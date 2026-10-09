@@ -171,3 +171,5 @@ Do not turn this fixture into a production token or API. Real owner identity
 proof, trusted platform/witness provenance, cross-process all-writer fencing,
 independent trusted clock, root rotation, abuse-case validation and remote
 Gateway authorization remain independent non-bypassable security gates.
+
+Additional source-only provider eligibility and independent witness model: [owner-provider-eligibility-v1.md](owner-provider-eligibility-v1.md). This does not authorize production enrollment.
