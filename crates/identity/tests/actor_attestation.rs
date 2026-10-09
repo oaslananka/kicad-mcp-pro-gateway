@@ -8,8 +8,11 @@ use companion_identity::actor_issuer_policy::{
     ActorIssuerKeyState, OwnerPinnedActorIssuers, OwnerPinnedActorKey,
 };
 use companion_identity::owner_policy_authority::OwnerPolicyAuthority;
+#[path = "support/owner_store.rs"]
+mod owner_store;
 use companion_storage::Storage;
 use ed25519_dalek::{Signer, SigningKey};
+use owner_store::{Failure, TestOwnerStore};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -698,10 +701,10 @@ fn owner_signed_manifest_policy_controls_actual_offline_actor_verification() {
     );
     // The authority never exposes the generation to the remote caller;
     // a signed key revocation atomically replaces the in-memory policy.
-    let authority = OwnerPolicyAuthority::from_trusted_local_state(
-        owner_root.verifying_key(),
+    let trusted_policy_store = TestOwnerStore::new(owner_root.verifying_key(), 50);
+    let authority = OwnerPolicyAuthority::from_trusted_store(
+        trusted_policy_store.clone(),
         &make_manifest(50, "active"),
-        49,
         NOW,
     )
     .unwrap();
@@ -718,7 +721,7 @@ fn owner_signed_manifest_policy_controls_actual_offline_actor_verification() {
         .is_ok());
 
     assert_eq!(
-        authority.verify_candidate_and_replace_in_memory(&make_manifest(51, "revoked"), NOW),
+        authority.verify_candidate_commit_and_activate(&make_manifest(51, "revoked"), NOW),
         Ok(51)
     );
     let denied_dir = tempfile::tempdir().unwrap();
@@ -735,5 +738,41 @@ fn owner_signed_manifest_policy_controls_actual_offline_actor_verification() {
             .err(),
         Some(ActorAttestationError::Invalid),
         "new owner policy must revoke actor even for an otherwise valid proof"
+    );
+    assert_eq!(trusted_policy_store.generation(), 51);
+    trusted_policy_store.set_failure(Failure::BeforeCommit);
+    assert_eq!(
+        authority.verify_candidate_commit_and_activate(&make_manifest(52, "active"), NOW),
+        Err(ActorAttestationError::StorageUnavailable)
+    );
+    assert_eq!(
+        authority
+            .verify_actor_and_consume(
+                &denied_proof,
+                &context(&request, &denied_issued),
+                &denied_store
+            )
+            .err(),
+        Some(ActorAttestationError::StorageUnavailable),
+        "even a pre-commit failure must permanently disable the existing authority"
+    );
+    // Ambiguous status after an actual committed owner update also
+    // permanently disables the old process, rather than reviving keys.
+    let separate_store = TestOwnerStore::new(owner_root.verifying_key(), 51);
+    let separate = OwnerPolicyAuthority::from_trusted_store(
+        separate_store.clone(),
+        &make_manifest(51, "revoked"),
+        NOW,
+    )
+    .unwrap();
+    separate_store.set_failure(Failure::AfterCommit);
+    assert_eq!(
+        separate.verify_candidate_commit_and_activate(&make_manifest(52, "active"), NOW),
+        Err(ActorAttestationError::StorageUnavailable)
+    );
+    assert_eq!(separate_store.generation(), 52);
+    assert_eq!(
+        separate.active_generation(),
+        Err(ActorAttestationError::StorageUnavailable)
     );
 }
