@@ -116,33 +116,31 @@ fn error_from_replay(error: ActorReplayError) -> ActorAttestationError {
     }
 }
 
-/// Verifies signature and exact request/channel binding, THEN atomically
-/// consumes replay evidence in durable SQLite before returning any identity.
-/// It does not perform local grant, workspace, risk or audit authorization.
-pub fn verify_and_consume_actor_assertion(
-    proof_bytes: &[u8],
+// Keep validation stages separate and auditable. No single stage can
+// convert untrusted claims into identity without signature + replay gates.
+fn check_signer_policy(
+    claims: &ActorClaims,
     policy: &PinnedActorIssuer,
-    expected: &ExpectedActorRequest<'_>,
-    storage: &Storage,
-) -> Result<VerifiedPrincipal, ActorAttestationError> {
+) -> Result<(), ActorAttestationError> {
     use ActorAttestationError::Invalid;
-    if proof_bytes.len() > MAX_ASSERTION_BYTES
-        || expected.canonical_operation.len() > MAX_REQUEST_BYTES
-    {
-        return Err(Invalid);
-    }
-    let proof: SignedActorClaims = serde_json::from_slice(proof_bytes).map_err(|_| Invalid)?;
-    // Exact JCS bytes reject duplicate keys, whitespace, reordered fields,
-    // ambiguous encodings and noncanonical numeric serialization.
-    if serde_json_canonicalizer::to_vec(&proof).map_err(|_| Invalid)? != proof_bytes {
-        return Err(Invalid);
-    }
-    let claims = &proof.payload;
     if claims.contract_version != "actor-attestation/v1"
         || claims.alg != "Ed25519"
         || claims.issuer != policy.issuer
         || claims.key_id != policy.key_id
-        || claims.audience != expected.audience
+        || !safe_claim(&policy.issuer)
+        || !safe_claim(&policy.key_id)
+    {
+        return Err(Invalid);
+    }
+    Ok(())
+}
+
+fn check_local_binding(
+    claims: &ActorClaims,
+    expected: &ExpectedActorRequest<'_>,
+) -> Result<(), ActorAttestationError> {
+    use ActorAttestationError::Invalid;
+    if claims.audience != expected.audience
         || claims.resource != expected.resource
         || claims.device_id != expected.device_id
         || claims.workspace_id != expected.workspace_id
@@ -150,9 +148,18 @@ pub fn verify_and_consume_actor_assertion(
         || claims.correlation_id != expected.correlation_id
         || claims.gateway_challenge != expected.challenge
         || claims.connection_epoch != expected.connection_epoch
-        || !safe_claim(&policy.issuer)
-        || !safe_claim(&policy.key_id)
-        || !safe_claim(&claims.subject)
+    {
+        return Err(Invalid);
+    }
+    Ok(())
+}
+
+fn check_claim_shapes(
+    claims: &ActorClaims,
+    expected: &ExpectedActorRequest<'_>,
+) -> Result<(), ActorAttestationError> {
+    use ActorAttestationError::Invalid;
+    if !safe_claim(&claims.subject)
         || !safe_claim(&claims.client_id)
         || !safe_claim(&claims.nonce)
         || !safe_claim(&claims.gateway_challenge)
@@ -165,15 +172,28 @@ pub fn verify_and_consume_actor_assertion(
     {
         return Err(Invalid);
     }
-    if claims.issued_at > expected.now_unix.saturating_add(MAX_CLOCK_SKEW_SECONDS)
-        || claims.expires_at < expected.now_unix
+    Ok(())
+}
+
+fn check_freshness(claims: &ActorClaims, now_unix: i64) -> Result<(), ActorAttestationError> {
+    use ActorAttestationError::Invalid;
+    if claims.issued_at > now_unix.saturating_add(MAX_CLOCK_SKEW_SECONDS)
+        || claims.expires_at < now_unix
         || claims.expires_at <= claims.issued_at
         || claims.expires_at.saturating_sub(claims.issued_at) > MAX_LIFETIME_SECONDS
     {
         return Err(Invalid);
     }
-    // Only an exact canonical validated request is accepted. Tools are NOT
-    // enabled by this check; the Gateway still must apply normal policy.
+    Ok(())
+}
+
+fn check_canonical_request(
+    claims: &ActorClaims,
+    expected: &ExpectedActorRequest<'_>,
+) -> Result<(), ActorAttestationError> {
+    use ActorAttestationError::Invalid;
+    // Caller must already have validated the operation's effective policy.
+    // These parsing checks never enable tools/call.
     let operation: CanonicalOperation =
         serde_json::from_slice(expected.canonical_operation).map_err(|_| Invalid)?;
     if serde_json_canonicalizer::to_vec(&operation).map_err(|_| Invalid)?
@@ -196,6 +216,36 @@ pub fn verify_and_consume_actor_assertion(
     if claims.request_sha256 != expected_digest || claims.channel_binding_sha256 != channel_hex {
         return Err(Invalid);
     }
+    Ok(())
+}
+
+/// Verifies signature and exact request/channel binding, THEN atomically
+/// consumes replay evidence in durable SQLite before returning any identity.
+/// It does not perform local grant, workspace, risk or audit authorization.
+pub fn verify_and_consume_actor_assertion(
+    proof_bytes: &[u8],
+    policy: &PinnedActorIssuer,
+    expected: &ExpectedActorRequest<'_>,
+    storage: &Storage,
+) -> Result<VerifiedPrincipal, ActorAttestationError> {
+    use ActorAttestationError::Invalid;
+    if proof_bytes.len() > MAX_ASSERTION_BYTES
+        || expected.canonical_operation.len() > MAX_REQUEST_BYTES
+    {
+        return Err(Invalid);
+    }
+    let proof: SignedActorClaims = serde_json::from_slice(proof_bytes).map_err(|_| Invalid)?;
+    // Exact JCS bytes reject duplicate keys, whitespace, reordered fields,
+    // ambiguous encodings and noncanonical numeric serialization.
+    if serde_json_canonicalizer::to_vec(&proof).map_err(|_| Invalid)? != proof_bytes {
+        return Err(Invalid);
+    }
+    let claims = &proof.payload;
+    check_signer_policy(claims, policy)?;
+    check_local_binding(claims, expected)?;
+    check_claim_shapes(claims, expected)?;
+    check_freshness(claims, expected.now_unix)?;
+    check_canonical_request(claims, expected)?;
     let signature_bytes = URL_SAFE_NO_PAD
         .decode(&proof.signature)
         .map_err(|_| Invalid)?;
