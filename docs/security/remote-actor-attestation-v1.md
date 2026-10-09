@@ -27,8 +27,10 @@ operations. The existing outbound relay pilot remains **heartbeat only**.
 `contract_version=actor-attestation/v1`, `issuer`, trusted `key_id`,
 `subject`, `client_id`, exact `audience`/`resource`, `device_id`,
 `workspace_id`, `message_id`, `correlation_id`, SHA-256 over the
-**Gateway-recomputed canonical request bytes**, a locally issued one-time
-`gateway_challenge` and authenticated `connection_epoch`, signed
+**Gateway-recomputed canonical request bytes**, a signed
+`channel_binding_sha256` over the locally authenticated channel binding,
+a locally issued one-time `gateway_challenge` and authenticated
+`connection_epoch`, signed
 `issued_at`, `expires_at` and `nonce`, and a vetted algorithm/signature.
 
 The signature domain is version-separated, e.g.
@@ -95,3 +97,12 @@ References: `docs/security/outbound-relay-contract.md`,
 `docs/security/trust-boundaries.md`,
 `crates/transport/src/transport.rs`, RFC 7515 §10.10, RFC 8707,
 RFC 9728, RFC 8785, and MCP authorization/HTTP transport 2026-07-28.
+
+## Offline implementation progress
+
+The unused Gateway-only [verifier foundation](actor-attestation-verifier-foundation.md)
+now performs strict JCS/Ed25519 signature verification and an atomic,
+durable SQLite replay reservation. **This is not a production authentication
+integration:** the native heartbeat transport still refuses remote tool
+operations; external signer trust, local issuance of per-request challenges,
+clock-safe replay retention and OAuth acceptance remain unimplemented.
