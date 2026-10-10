@@ -1,0 +1,174 @@
+name: Unsigned Installer Native QA (manual)
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: unsigned-native-installer-qa
+  cancel-in-progress: false
+
+env:
+  TEST_TAG: test-unsigned-v1.0.0-rc1-b31fcf1700ee
+  TEST_SOURCE_SHA: b31fcf1700eeb4d7e353add233ac1be338314967
+
+jobs:
+  windows-msi:
+    if: github.ref == 'refs/heads/main'
+    name: Windows Server 2022 / MSI install and uninstall
+    runs-on: windows-2022
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Download published immutable unsigned test files
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'gateway-qa'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          gh release download $env:TEST_TAG --repo $env:GITHUB_REPOSITORY -D $dir -p '*.msi' -p 'SHA256SUMS.txt' -p 'UNSIGNED-TEST-MANIFEST.json'
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release download failed' }
+
+      - name: Verify exact source, file hash and perform real MSI lifecycle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'gateway-qa'
+          $manifest = Get-Content -LiteralPath (Join-Path $dir 'UNSIGNED-TEST-MANIFEST.json') -Raw | ConvertFrom-Json
+          if ($manifest.classification -ne 'UNSIGNED TEST ONLY - NOT AN OFFICIAL RELEASE') { throw 'Incorrect release class' }
+          if ($manifest.source_commit -ne $env:TEST_SOURCE_SHA -or $manifest.ci_run -ne 38014469877) { throw 'Unexpected release provenance' }
+          $record = @($manifest.artifacts | Where-Object { $_.name -eq 'KiCad-MCP-Pro-Gateway-UNSIGNED-TEST-windows-amd64.msi' })
+          if ($record.Count -ne 1) { throw 'Expected exactly one Windows installer manifest entry' }
+          $msi = Join-Path $dir $record[0].name
+          if ((Get-Item -LiteralPath $msi).Length -ne $record[0].bytes) { throw 'MSI size mismatch' }
+          $hash = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $record[0].sha256) { throw 'MSI SHA256 mismatch' }
+          $sums = Get-Content -LiteralPath (Join-Path $dir 'SHA256SUMS.txt')
+          if (-not ($sums | Where-Object { $_ -eq "$hash  $($record[0].name)" })) { throw 'SHA256SUMS mismatch' }
+          $signature = (Get-AuthenticodeSignature -LiteralPath $msi).Status
+          Write-Host "Installer signature status: $signature (not trusted production signing)"
+          $installLog = Join-Path $dir 'msi-install.log'
+          $uninstallLog = Join-Path $dir 'msi-uninstall.log'
+          $installed = $false
+          $registryPaths = @(
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+            'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+          )
+          function Find-GatewayRegistration {
+            @(foreach ($path in $registryPaths) {
+              Get-ItemProperty -Path $path -ErrorAction SilentlyContinue | Where-Object {
+                $_.DisplayName -like '*KiCad*MCP*Pro*Gateway*'
+              }
+            })
+          }
+          try {
+            $args = "/i `"$msi`" /qn /norestart /l*v `"$installLog`""
+            $result = Start-Process -FilePath 'msiexec.exe' -ArgumentList $args -Wait -PassThru
+            if ($result.ExitCode -eq 0 -or $result.ExitCode -eq 3010) { $installed = $true }
+            if ($result.ExitCode -ne 0) { throw "MSI install returned $($result.ExitCode) (reboot or error)" }
+            $registrations = @(Find-GatewayRegistration)
+            if ($registrations.Count -eq 0) { throw 'MSI installed without a discoverable uninstall registration' }
+            Write-Host "MSI installed and registered: $($registrations[0].DisplayName)"
+            'MSI_INSTALL_SUCCESS' >> $env:GITHUB_STEP_SUMMARY
+          }
+          finally {
+            if ($installed) {
+              $args = "/x `"$msi`" /qn /norestart /l*v `"$uninstallLog`""
+              $result = Start-Process -FilePath 'msiexec.exe' -ArgumentList $args -Wait -PassThru
+              if ($result.ExitCode -ne 0) { throw "MSI removal failed with $($result.ExitCode)" }
+              if (@(Find-GatewayRegistration).Count -gt 0) { throw 'MSI left an uninstall registration behind' }
+              Write-Host 'Windows MSI install and uninstall completed'
+              'MSI_UNINSTALL_SUCCESS' >> $env:GITHUB_STEP_SUMMARY
+            }
+          }
+
+  macos-dmg:
+    if: github.ref == 'refs/heads/main'
+    name: Apple Silicon macOS 14 / DMG, native daemon and Gatekeeper assessment
+    runs-on: macos-14
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Download published immutable unsigned test files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/gateway-qa"
+          gh release download "${TEST_TAG}" --repo "${GITHUB_REPOSITORY}" \
+            -D "${RUNNER_TEMP}/gateway-qa" -p '*.dmg' \
+            -p 'SHA256SUMS.txt' -p 'UNSIGNED-TEST-MANIFEST.json'
+
+      - name: Verify exact release, DMG metadata, bundle copy and local-only daemon
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP}/gateway-qa"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "gateway-qa"
+          manifest = json.loads((root / "UNSIGNED-TEST-MANIFEST.json").read_text())
+          assert manifest["classification"] == "UNSIGNED TEST ONLY - NOT AN OFFICIAL RELEASE"
+          assert manifest["source_commit"] == os.environ["TEST_SOURCE_SHA"]
+          assert manifest["ci_run"] == 38014469877
+          entry, = [row for row in manifest["artifacts"] if row["name"] == "KiCad-MCP-Pro-Gateway-UNSIGNED-TEST-macos-arm64.dmg"]
+          file = root / entry["name"]
+          assert file.stat().st_size == entry["bytes"]
+          assert hashlib.sha256(file.read_bytes()).hexdigest() == entry["sha256"]
+          assert f"{entry['sha256']}  {entry['name']}" in (root / "SHA256SUMS.txt").read_text().splitlines()
+          print("MACOS_RELEASE_DIGEST_VERIFIED")
+          PY
+          mount_point="$(mktemp -d "${RUNNER_TEMP}/gateway-mount-XXXXXX")"
+          app_copy="${RUNNER_TEMP}/gateway-native-test.app"
+          mounted=false
+          daemon_pid=""
+          cleanup() {
+            if [[ -n "${daemon_pid}" ]]; then
+              kill "${daemon_pid}" 2>/dev/null || true
+              wait "${daemon_pid}" 2>/dev/null || true
+            fi
+            if [[ "${mounted}" == true ]]; then hdiutil detach "${mount_point}" -quiet || true; fi
+            rmdir "${mount_point}" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          hdiutil attach "${root}/KiCad-MCP-Pro-Gateway-UNSIGNED-TEST-macos-arm64.dmg" \
+            -readonly -nobrowse -mountpoint "${mount_point}" -quiet
+          mounted=true
+          shopt -s nullglob
+          apps=("${mount_point}"/*.app)
+          test "${#apps[@]}" -eq 1
+          plist="${apps[0]}/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")" = 0.99.1
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")" = 0.99.1
+          ditto "${apps[0]}" "${app_copy}"
+          daemon="${app_copy}/Contents/MacOS/kicad-mcp-gateway-daemon"
+          desktop="${app_copy}/Contents/MacOS/kicad-mcp-gateway-desktop"
+          test -x "${daemon}"
+          test -x "${desktop}"
+          [[ "$(lipo -archs "${daemon}")" == *arm64* ]]
+          [[ "$(lipo -archs "${desktop}")" == *arm64* ]]
+          if spctl --assess --type execute "${app_copy}" 2>/dev/null; then
+            echo 'Gatekeeper assessment: accepted; this is NOT notarization evidence'
+          else
+            echo 'Gatekeeper assessment: rejected (expected for unsigned testing)'
+          fi
+          mkdir -p "${RUNNER_TEMP}/gateway-isolated-data"
+          GATEWAY_DATA_DIR="${RUNNER_TEMP}/gateway-isolated-data" \
+            GATEWAY_TRANSPORT_MODE=disabled RUST_LOG=info \
+            "${daemon}" > "${RUNNER_TEMP}/gateway-daemon.log" 2>&1 &
+          daemon_pid="$!"
+          sleep 3
+          kill -0 "${daemon_pid}"
+          grep -q 'local ipc listener ready' "${RUNNER_TEMP}/gateway-daemon.log"
+          echo 'APPLE_SILICON_BUNDLE_COPY_AND_LOCAL_DAEMON_PASS' >> "${GITHUB_STEP_SUMMARY}"
