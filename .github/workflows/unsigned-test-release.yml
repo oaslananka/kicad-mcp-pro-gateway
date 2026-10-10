@@ -71,22 +71,31 @@ jobs:
             src="${RUNNER_TEMP}/${name}"
             mkdir -p "${src}"
             gh run download "${CI_RUN}" --repo "${GH_REPO}" -n "${name}" -D "${src}"
-            mapfile -d '' -t files < <(find "${src}" -type f -print0)
-            test "${#files[@]}" -eq 1
             if [[ "${target}" == x86_64-unknown-linux-gnu ]]; then
               suffix="linux-amd64.deb"
-              [[ "${files[0]}" == *.deb ]]
-              package_version="$(dpkg-deb --field "${files[0]}" Version)"
-              test "${package_version}" = "1.0.0-rc1"
-              dpkg-deb --contents "${files[0]}" | grep -q 'usr/bin/kicad-mcp-gateway-daemon'
+              extension="deb"
             elif [[ "${target}" == aarch64-apple-darwin ]]; then
               suffix="macos-arm64.dmg"
-              [[ "${files[0]}" == *.dmg ]]
-              7z l "${files[0]}" | grep -q 'kicad-mcp-gateway-daemon'
+              extension="dmg"
             else
               suffix="windows-amd64.msi"
-              [[ "${files[0]}" == *.msi ]]
-              7z l "${files[0]}" | grep -q 'Bin_kicad_mcp_gateway_daemon_exe'
+              extension="msi"
+            fi
+            # The Linux CI artifact also contains auxiliary expanded .deb
+            # directories. Publish only the single actual installer, not those.
+            mapfile -d '' -t files < <(find "${src}" -type f -name "*.${extension}" -print0)
+            test "${#files[@]}" -eq 1
+            if [[ "${extension}" == deb ]]; then
+              package_version="$(dpkg-deb --field "${files[0]}" Version)"
+              test "${package_version}" = "1.0.0-rc1"
+              dpkg-deb --contents "${files[0]}" > "${RUNNER_TEMP}/deb-files.txt"
+              grep -q 'usr/bin/kicad-mcp-gateway-daemon' "${RUNNER_TEMP}/deb-files.txt"
+            elif [[ "${extension}" == dmg ]]; then
+              7z l "${files[0]}" > "${RUNNER_TEMP}/dmg-files.txt"
+              grep -q 'kicad-mcp-gateway-daemon' "${RUNNER_TEMP}/dmg-files.txt"
+            else
+              7z l "${files[0]}" > "${RUNNER_TEMP}/msi-files.txt"
+              grep -q 'Bin_kicad_mcp_gateway_daemon.exe' "${RUNNER_TEMP}/msi-files.txt"
             fi
             test -s "${files[0]}"
             cp "${files[0]}" "dist/KiCad-MCP-Pro-Gateway-UNSIGNED-TEST-${suffix}"
