@@ -120,6 +120,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Test read-only release preflight (offline)
+        run: python3 -m unittest discover -s tests -p 'test_release_preflight.py' -v
+
       - name: Install Linux webview dependencies (Tauri build requirement)
         run: |
           sudo apt-get update
