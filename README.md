@@ -26,6 +26,7 @@ documented in:
 - [Release Architecture & Engineering](docs/development/release.md)
 - [Companion → Gateway Identity Migration & Compatibility Decision](docs/development/identity-migration.md)
 - [Production Daemon Lifecycle Contract](docs/development/daemon-lifecycle.md)
+- [GitHub Account and Linux Device Pairing](docs/development/cloud-web-pairing.md) — real Ed25519 owner-approved linking; remote MCP is still disabled
 - [Private Cloud Relay Authenticated Heartbeat Pilot](docs/development/cloud-relay-pilot.md) — opt-in development transport; remote MCP remains unavailable
 
 ## Why Gateway exists

@@ -59,6 +59,8 @@ enum DaemonAction {
 enum DeviceAction {
     /// Show local device identity status.
     Status,
+    /// Prove this local Gateway to a one-time GitHub account pairing invitation.
+    CloudPair { code: String },
 }
 
 #[derive(Subcommand)]
@@ -114,12 +116,38 @@ async fn main() -> anyhow::Result<()> {
         Command::Daemon(DaemonAction::Restart) => daemon_restart(&cfg).await,
         Command::Daemon(DaemonAction::Status) => daemon_status(&cfg).await,
         Command::Device(DeviceAction::Status) => device_status(&cfg).await,
+        Command::Device(DeviceAction::CloudPair { code }) => cloud_pair(&cfg, code).await,
         Command::Pair => pair(&cfg).await,
         Command::Status => status(&cfg).await,
         Command::Workspace(action) => workspace(&cfg, action).await,
         Command::Session(action) => session(&cfg, action).await,
         Command::Audit(AuditAction::List) => audit_list(&cfg).await,
     }
+}
+
+/// The CLI never opens the secure key store or signs cloud claims itself:
+/// the compatible local daemon alone creates the proof over validated IPC.
+async fn cloud_pair(cfg: &companion_core::CompanionConfig, code: String) -> anyhow::Result<()> {
+    let response =
+        ok_or_bail(send_request(&cfg.data_dir, IpcRequest::CloudPairingProof { code }).await?)?;
+    let IpcResponse::CloudPairingProof(proof) = response else {
+        anyhow::bail!("local Gateway did not return a device pairing proof");
+    };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let response = client
+        .post("https://kicad-mcp-pro.oaslananka.dev/api/devices/pair/prove")
+        .json(&proof)
+        .send()
+        .await?;
+    if response.status() != reqwest::StatusCode::ACCEPTED {
+        anyhow::bail!("cloud did not accept this device invitation; generate a fresh code");
+    }
+    println!("Device proof accepted. Confirm the fingerprint in your GitHub web dashboard.");
+    println!("Pairing does not grant remote KiCad access or tool permissions.");
+    Ok(())
 }
 
 async fn run_setup(cfg: &companion_core::CompanionConfig) -> anyhow::Result<()> {
