@@ -27,7 +27,7 @@ pub const DAEMON_PRODUCT_ID: &str = "kicad-mcp-gateway";
 ///   structured dynamic-risk factors.
 /// - 5: pending approvals support reviewed risk factors that do not carry
 ///   cardinality metadata.
-pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 5;
+pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DaemonIdentityView {
@@ -106,6 +106,11 @@ pub enum IpcRequest {
     Status,
     PairingStatus,
     BeginPairing,
+    /// Locally initiated proof for a short-lived, account-owner-created
+    /// cloud invitation. It never grants session or tool authority.
+    CloudPairingProof {
+        code: String,
+    },
     /// Transport-era subject records. Retained for existing clients; the
     /// authority itself is reported by `ListAccessGrants`.
     ListSessions,
@@ -154,6 +159,15 @@ pub enum IpcRequest {
         reason: String,
     },
     DaemonShutdown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CloudPairingProofView {
+    pub code: String,
+    pub device_id: String,
+    pub public_key: String,
+    pub signature: String,
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -340,6 +354,7 @@ pub enum IpcResponse {
     Status(DaemonStatusView),
     PairingStatus(PairingStatusView),
     PairingBegun(PairingBegunView),
+    CloudPairingProof(CloudPairingProofView),
     Sessions(Vec<SessionView>),
     AccessGrants(Vec<AccessGrantView>),
     AuthorizationLeases(Vec<AuthorizationLeaseView>),
@@ -362,8 +377,8 @@ mod tests {
     #[test]
     fn a_changed_local_ipc_contract_bumps_the_version_it_is_checked_against() {
         assert_eq!(
-            LOCAL_IPC_PROTOCOL_VERSION, 5,
-            "5 = pending approvals support non-cardinality reviewed risk factors; bump this test, \
+            LOCAL_IPC_PROTOCOL_VERSION, 6,
+            "6 = locally signed account pairing proof; bump this test, \
              whenever a request/response variant or a client-relevant field changes"
         );
         let previous_contract = DaemonIdentityView {

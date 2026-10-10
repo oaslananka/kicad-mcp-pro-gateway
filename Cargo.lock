@@ -1414,6 +1414,7 @@ dependencies = [
  "companion-workspace",
  "interprocess",
  "kicad-mcp-gateway-daemon",
+ "reqwest",
  "serde_json",
  "tempfile",
  "time",

@@ -5,6 +5,7 @@
 //! kicad-mcp-pro; that only ever happens through the policy-gated
 //! operation path built in later phases.
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -14,10 +15,10 @@ use companion_core::{
 };
 use companion_core_bridge::CoreBridgeClient;
 use companion_protocol::{
-    AccessGrantView, AuditSummaryView, AuthorizationLeaseView, DaemonIdentityView,
-    DaemonStatusView, IpcRequest, IpcResponse, PairingBegunView, PairingStatusView,
-    PendingApprovalView, RiskFactorView, SessionView, VerifiedIdentityView, WorkspaceInfo,
-    WorkspaceView, DAEMON_PRODUCT_ID, LOCAL_IPC_PROTOCOL_VERSION,
+    AccessGrantView, AuditSummaryView, AuthorizationLeaseView, CloudPairingProofView,
+    DaemonIdentityView, DaemonStatusView, IpcRequest, IpcResponse, PairingBegunView,
+    PairingStatusView, PendingApprovalView, RiskFactorView, SessionView, VerifiedIdentityView,
+    WorkspaceInfo, WorkspaceView, DAEMON_PRODUCT_ID, LOCAL_IPC_PROTOCOL_VERSION,
 };
 use companion_sessions::{
     authorization_event_for, GrantTransition, SessionEvent, SessionTransition,
@@ -34,6 +35,7 @@ pub async fn handle_request(state: &Arc<DaemonState>, request: IpcRequest) -> Ip
         IpcRequest::Status => status(state).await,
         IpcRequest::PairingStatus => pairing_status(state).await,
         IpcRequest::BeginPairing => begin_pairing(state).await,
+        IpcRequest::CloudPairingProof { code } => cloud_pairing_proof(state, code).await,
         IpcRequest::ListSessions => list_sessions(state).await,
         IpcRequest::ListAccessGrants => list_access_grants(state).await,
         IpcRequest::ListAuthorizationLeases { grant_id } => {
@@ -360,6 +362,60 @@ async fn begin_pairing(state: &Arc<DaemonState>) -> IpcResponse {
     }
 }
 
+fn cloud_pairing_message(device_id: &str, code: &str) -> Vec<u8> {
+    format!("kicad-mcp-cloud-web/pair/v1\n{device_id}\n{code}").into_bytes()
+}
+
+fn valid_cloud_pairing_code(code: &str) -> bool {
+    (24..=48).contains(&code.len())
+        && code
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+async fn cloud_pairing_proof(state: &Arc<DaemonState>, code: String) -> IpcResponse {
+    // This is a locally initiated proof, NOT a remote authorization grant.
+    // Signed material contains no browser credentials and no workspace data.
+    if !valid_cloud_pairing_code(&code) {
+        return error_response(DaemonError::Internal("invalid cloud pairing code".into()));
+    }
+    let state = Arc::clone(state);
+    let result = tokio::task::spawn_blocking(move || {
+        let identity = state
+            .identity_store
+            .public_identity()?
+            .ok_or_else(|| DaemonError::Internal("device identity not initialized".into()))?;
+        let device_id = identity.device_id.to_string();
+        let signature = state
+            .identity_store
+            .sign(&cloud_pairing_message(&device_id, &code))?;
+        let label = identity.display_name;
+        let label = if !label.is_empty()
+            && label.chars().count() <= 80
+            && !label
+                .chars()
+                .any(|ch| ch.is_control() || ch == '<' || ch == '>')
+        {
+            label
+        } else {
+            "Linux Gateway".into()
+        };
+        Ok::<_, DaemonError>(CloudPairingProofView {
+            code,
+            device_id,
+            public_key: URL_SAFE_NO_PAD.encode(identity.public_key.0),
+            signature: URL_SAFE_NO_PAD.encode(signature.to_bytes()),
+            display_name: label,
+        })
+    })
+    .await;
+    match result {
+        Ok(Ok(proof)) => IpcResponse::CloudPairingProof(proof),
+        Ok(Err(error)) => error_response(error),
+        Err(_) => join_error("cloud_pairing_proof"),
+    }
+}
+
 async fn list_sessions(state: &Arc<DaemonState>) -> IpcResponse {
     let state = Arc::clone(state);
     let workspace_repo = state.workspace_repo.clone();
@@ -649,6 +705,20 @@ mod principal_view_tests {
             verification_source: PrincipalVerificationSource::AuthenticatedTransport,
             transport_binding: "opaque-nonsecret-binding".into(),
         }
+    }
+
+    #[test]
+    fn cloud_pairing_signs_exact_domain_separated_bytes() {
+        let device_id = "dev_01J00000000000000000000000";
+        let code = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef";
+        assert!(valid_cloud_pairing_code(code));
+        assert_eq!(
+            cloud_pairing_message(device_id, code),
+            b"kicad-mcp-cloud-web/pair/v1\ndev_01J00000000000000000000000\nABCDEFGHIJKLMNOPQRSTUVWXYZabcdef"
+        );
+        assert!(!valid_cloud_pairing_code("KMP-1234"));
+        assert!(!valid_cloud_pairing_code(&"x".repeat(60)));
+        assert!(!valid_cloud_pairing_code("ABCDEFGHIJKLMNOPQRSTUVWXYZ?1234"));
     }
 
     #[test]
