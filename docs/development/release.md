@@ -89,6 +89,29 @@ the first three numeric fields for an upgrade.
 References: [Tauri WiX version override](https://v2.tauri.app/reference/config/#wixconfig)
 and [Microsoft Windows Installer ProductVersion](https://learn.microsoft.com/en-us/windows/win32/msi/productversion).
 
+#### macOS RC bundle version ordering
+
+The retained `v1.0.0-rc1` source, daemon IPC contract, desktop Cargo,
+JavaScript package, Tauri app version, DMG name and release tag retain the
+canonical `1.0.0-rc1` identity. Apple requires **numeric** values for both
+`CFBundleShortVersionString` and `CFBundleVersion`, so
+`apps/desktop/src-tauri/Info.plist` explicitly supplies `0.99.1` for
+this RC's native macOS bundle metadata. This is analogous to the RC-specific
+Windows MSI `ProductVersion=0.99.1`; it is not a different application
+version or an alternative release tag.
+
+The macOS CI package job inspects the **actual bundled Info.plist** and
+fails if either value is not `0.99.1`. When preparing the distinct
+`v1.0.0` stable source/version change, remove the RC override (or set
+both values to `1.0.0`) and adjust the corresponding CI assertion.
+Verify in-place replacement using the exact retained RC and stable
+artifacts on a real Apple Silicon macOS machine. This source validation
+does not substitute for Developer ID signing, notarization or Gatekeeper.
+
+References: [Apple CFBundleShortVersionString](https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleshortversionstring),
+[Apple CFBundleVersion](https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleversion),
+[Tauri macOS bundle metadata](https://v2.tauri.app/distribute/macos-application-bundle/).
+
 #### Windows Authenticode signing
 
 The Windows job imports a code-signing PFX into the ephemeral user certificate

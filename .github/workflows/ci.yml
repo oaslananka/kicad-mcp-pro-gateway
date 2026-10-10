@@ -243,6 +243,21 @@ jobs:
         working-directory: apps/desktop
         run: pnpm verify:sidecar
 
+      - name: Verify macOS bundle has numeric RC version metadata
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          app="apps/desktop/src-tauri/target/${TARGET}/release/bundle/macos/KiCad MCP Pro Gateway.app"
+          plist="${app}/Contents/Info.plist"
+          test -f "${plist}"
+          # The canonical product and tag remain 1.0.0-rc1. macOS requires
+          # numeric bundle versions; this RC precedes the future stable 1.0.0.
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")" = "0.99.1"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")" = "0.99.1"
+
       - name: Upload unsigned desktop package evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

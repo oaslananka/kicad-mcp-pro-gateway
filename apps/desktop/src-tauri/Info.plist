@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Apple bundle metadata cannot contain the canonical SemVer RC suffix.
+       Keep this RC-only numeric predecessor below the stable 1.0.0 version. -->
+  <key>CFBundleShortVersionString</key>
+  <string>0.99.1</string>
+  <key>CFBundleVersion</key>
+  <string>0.99.1</string>
+</dict>
+</plist>
