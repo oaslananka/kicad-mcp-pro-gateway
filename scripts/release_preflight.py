@@ -168,17 +168,17 @@ def main() -> int:
     root = Path(__file__).resolve().parents[1]
     try:
         issues = preflight(root)
-    except (PreflightError, KeyError, ValueError, OSError) as exc:
-        print(f"RELEASE PREFLIGHT BLOCKED: could not verify prerequisites: {exc}")
+    except (PreflightError, KeyError, ValueError, OSError):
+        # Do not log exception payloads; CLI errors may include sensitive data.
+        print("RELEASE PREFLIGHT BLOCKED: unable to verify prerequisites.")
         return 1
     if issues:
-        print("RELEASE PREFLIGHT BLOCKED (no tag created):")
-        for issue in issues:
-            print(f" - {issue}")
-        print(
-            f"Configure legitimate credentials in GitHub environment '{ENVIRONMENT}', "
-            "then rerun before creating a protected tag."
-        )
+        # Only constant diagnostics: never print strings derived from GitHub
+        # secret metadata, including values inadvertently echoed by a caller.
+        print("RELEASE PREFLIGHT BLOCKED (no tag created).")
+        print("Check main/HEAD, source versions, CI, protected tag and environment.")
+        print("Check the eight required secret names under release-signing.")
+        print("No secret values, tag, workflow or release were modified.")
         return 1
     print("RELEASE PREFLIGHT: required source gates and signing secret NAMES are present.")
     print("Certificate validity, notarization and actual signing remain unverified.")
