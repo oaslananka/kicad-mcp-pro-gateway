@@ -107,15 +107,30 @@ pub async fn is_paired(identity_store: Arc<dyn DeviceIdentityStore + Send + Sync
 #[cfg(test)]
 mod tests {
     use super::{signed_message, CloudStatusReply};
+
     #[test]
     fn signing_material_is_path_method_device_and_nonce_bound() {
+        let nonce = format!("{}{}", ulid::Ulid::new(), ulid::Ulid::new());
+        let expected = format!(
+            "kicad-mcp-cloud-web/device-status/v1\nGET\n/api/devices\ndev_01J00000000000000000000000\n1791617000\n{nonce}"
+        );
         assert_eq!(
-            String::from_utf8(signed_message("dev_01J00000000000000000000000", "1791617000", "NONCE")).unwrap(),
-            "kicad-mcp-cloud-web/device-status/v1\nGET\n/api/devices\ndev_01J00000000000000000000000\n1791617000\nNONCE"
+            String::from_utf8(signed_message(
+                "dev_01J00000000000000000000000",
+                "1791617000",
+                &nonce
+            ))
+            .unwrap(),
+            expected
         );
         assert_ne!(
-            signed_message("device-a", "100", "nonce-one"),
-            signed_message("device-b", "100", "nonce-one")
+            signed_message("device-a", "100", &nonce),
+            signed_message("device-b", "100", &nonce)
+        );
+        let another_nonce = format!("{}{}", ulid::Ulid::new(), ulid::Ulid::new());
+        assert_ne!(
+            signed_message("device-a", "100", &nonce),
+            signed_message("device-a", "100", &another_nonce)
         );
     }
 
