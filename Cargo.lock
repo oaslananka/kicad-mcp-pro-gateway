@@ -1442,6 +1442,7 @@ dependencies = [
  "ed25519-dalek",
  "futures-util",
  "interprocess",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",

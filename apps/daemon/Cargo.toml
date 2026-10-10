@@ -22,6 +22,7 @@ companion-protocol = { path = "../../crates/protocol" }
 companion-core-bridge = { path = "../../crates/core-bridge" }
 companion-transport = { path = "../../crates/transport" }
 base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 async-trait = "0.1"
 url.workspace = true
 futures-util = "0.3"
