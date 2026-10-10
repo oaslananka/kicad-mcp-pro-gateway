@@ -40,6 +40,42 @@ for the value). Never paste private keys into an issue, PR, chat or CI log.
 Do not create the immutable RC tag until this preflight exits zero and
 the legitimate credentials have been checked by their owner.
 
+## Unsigned test-only distribution (no signing certificate)
+
+For *installation experiments only*, the separate
+[`UNSIGNED Test Distribution (manual)`](../../.github/workflows/unsigned-test-release.yml)
+workflow can be launched manually **on protected `main`** after its
+exact-source CI, live E2E, and OSV push runs have succeeded.
+
+```bash
+gh workflow run unsigned-test-release.yml --ref main
+```
+
+It downloads the existing three platform CI desktop installers **without
+rebuilding or changing the installer bytes**. The workflow checks package
+format and presence of the daemon, records installer SHA-256 plus the exact
+source commit and CI run ID in `UNSIGNED-TEST-MANIFEST.json` and
+`SHA256SUMS.txt`, then first stages a **draft** with all five files. Only
+after all assets are visible does it publish a public GitHub **prerelease**
+under an isolated `test-unsigned-v1.0.0-rc1-<source-sha-prefix>` tag.
+A repeated attempt for that same tag fails instead of rewriting already
+published bytes. GitHub's `Latest` release status is never set.
+
+**These packages have NO Developer ID notarization or Windows Authenticode.**
+This testing lane does not request the `release-signing` environment, receive
+signing secrets, bypass macOS Gatekeeper/Windows SmartScreen, or trigger the
+separate `v*` signed release workflow. Testing should be done on nonproduction
+devices with disposable KiCad projects; do not disable system-wide security
+controls to make a blocked installer run. A published unsigned prerelease
+is **not** clean-machine qualification, an installer signature, a stable
+version, or permission to promote `v1.0.0`. Document platform installation,
+uninstallation, sidecar, and live KiCad results against the exact manifest
+before any claim of support.
+
+The official signed `v1.0.0-rc1` path below remains fail-closed until genuine
+Apple/Windows credentials are present. Do **not** remove the release-signing
+environment gates from it.
+
 ## Automated Release-Candidate Pipeline
 
 ### 1. Version, CI, and build gates

@@ -1,0 +1,192 @@
+name: UNSIGNED Test Distribution (manual)
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: unsigned-test-release
+  cancel-in-progress: false
+
+jobs:
+  publish-test:
+    name: publish / unsigned test-only prerelease
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable source, version and exact push evidence
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(gh api "repos/${GH_REPO}/branches/main" --jq '.commit.sha')"
+          test "${SOURCE_SHA}" = "${current_main}"
+          version="$(awk -F '"' '/^version = / { print $2; exit }' Cargo.toml)"
+          # Only the separately qualified first RC is eligible for unsigned testing.
+          test "${version}" = "1.0.0-rc1"
+          tag="test-unsigned-v${version}-${SOURCE_SHA:0:12}"
+          # The signed workflow must never consume this non-v* testing tag.
+          [[ "${tag}" == test-unsigned-* ]]
+          if gh api "repos/${GH_REPO}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+            echo "test tag already exists; refuse to replace it" >&2
+            exit 1
+          fi
+          if gh release view "${tag}" --repo "${GH_REPO}" >/dev/null 2>&1; then
+            echo "test release already exists; refuse to publish over it" >&2
+            exit 1
+          fi
+          for workflow in ci.yml e2e-live.yml osv-full.yml; do
+            run_id="$(gh run list --repo "${GH_REPO}"               --commit "${SOURCE_SHA}" --workflow "${workflow}"               --event push --status success --limit 1               --json databaseId --jq '.[0].databaseId // empty')"
+            [[ "${run_id}" =~ ^[0-9]+$ ]]
+            observed="$(gh api "repos/${GH_REPO}/actions/runs/${run_id}"               --jq '[.head_sha,.event,.status,.conclusion] | join(" ")')"
+            test "${observed}" = "${SOURCE_SHA} push completed success"
+            if [[ "${workflow}" == ci.yml ]]; then
+              echo "ci_run=${run_id}" >> "${GITHUB_OUTPUT}"
+            fi
+          done
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download only three exact-CI unsigned desktop packages
+        shell: bash
+        env:
+          CI_RUN: ${{ steps.verify.outputs.ci_run }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-pc-windows-msvc; do
+            name="desktop-${target}"
+            src="${RUNNER_TEMP}/${name}"
+            mkdir -p "${src}"
+            gh run download "${CI_RUN}" --repo "${GH_REPO}" -n "${name}" -D "${src}"
+            mapfile -d '' -t files < <(find "${src}" -type f -print0)
+            test "${#files[@]}" -eq 1
+            if [[ "${target}" == x86_64-unknown-linux-gnu ]]; then
+              suffix="linux-amd64.deb"
+              [[ "${files[0]}" == *.deb ]]
+              package_version="$(dpkg-deb --field "${files[0]}" Version)"
+              test "${package_version}" = "1.0.0-rc1"
+              dpkg-deb --contents "${files[0]}" | grep -q 'usr/bin/kicad-mcp-gateway-daemon'
+            elif [[ "${target}" == aarch64-apple-darwin ]]; then
+              suffix="macos-arm64.dmg"
+              [[ "${files[0]}" == *.dmg ]]
+              7z l "${files[0]}" | grep -q 'kicad-mcp-gateway-daemon'
+            else
+              suffix="windows-amd64.msi"
+              [[ "${files[0]}" == *.msi ]]
+              7z l "${files[0]}" | grep -q 'Bin_kicad_mcp_gateway_daemon_exe'
+            fi
+            test -s "${files[0]}"
+            cp "${files[0]}" "dist/KiCad-MCP-Pro-Gateway-UNSIGNED-TEST-${suffix}"
+          done
+
+      - name: Generate manifest and explicit test-only notes
+        shell: bash
+        env:
+          CI_RUN: ${{ steps.verify.outputs.ci_run }}
+          TEST_TAG: ${{ steps.verify.outputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          dist = Path("dist")
+          packages = sorted(p for p in dist.iterdir() if p.is_file())
+          assert len(packages) == 3
+          manifest = {
+              "classification": "UNSIGNED TEST ONLY - NOT AN OFFICIAL RELEASE",
+              "source_commit": os.environ["SOURCE_SHA"],
+              "ci_run": int(os.environ["CI_RUN"]),
+              "workflow": "ci.yml",
+              "artifacts": [
+                  {
+                      "name": p.name,
+                      "bytes": p.stat().st_size,
+                      "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
+                  }
+                  for p in packages
+              ],
+          }
+          (dist / "UNSIGNED-TEST-MANIFEST.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          with (dist / "SHA256SUMS.txt").open("w", encoding="utf-8") as out:
+              for entry in manifest["artifacts"]:
+                  out.write(f'{entry["sha256"]}  {entry["name"]}\n')
+          PY
+          python3 - <<'PYNOTES'
+          import os
+          from pathlib import Path
+
+          repo = os.environ["GH_REPO"]
+          sha = os.environ["SOURCE_SHA"]
+          ci = os.environ["CI_RUN"]
+          tag = os.environ["TEST_TAG"]
+          notes = f"""> [!CAUTION]
+          > **UNSIGNED / UNNOTARIZED TEST BUILD — NOT AN OFFICIAL SIGNED RELEASE.**
+          > Do not install on production systems or use for real hardware/design work.
+
+          These packages are unchanged bytes from the successful three-platform
+          desktop package jobs of CI run [{ci}](https://github.com/{repo}/actions/runs/{ci}).
+          There is no Apple Developer ID signature/notarization and no Windows
+          Authenticode signature. macOS Gatekeeper or Windows SmartScreen may block
+          installation. **Do not disable system-wide protection to install them.**
+
+          - Version: `1.0.0-rc1` (testing distribution only)
+          - Git commit: [{sha}](https://github.com/{repo}/commit/{sha})
+          - Test-only tag: `{tag}` (never a `v*` signed release tag)
+          - Download only from this GitHub prerelease and verify `SHA256SUMS.txt`.
+          - Manual clean-device installation, upgrade, sidecar and live KiCad tests
+            are **not yet completed**. No Apple notarization or Windows trust claim.
+          - The official signed `v1.0.0-rc1` / stable `v1.0.0` pipeline remains
+            separate, protected and blocked until genuine signing identities exist.
+
+          The manifest records the exact CI source and SHA-256 of each installer.
+          Please report installation or sidecar issues with OS/version and logs,
+          without posting credentials or private board/project contents.
+          """
+          Path(os.environ["RUNNER_TEMP"], "unsigned-test-notes.md").write_text(
+              "\n".join(line.strip() for line in notes.splitlines()) + "\n",
+              encoding="utf-8",
+          )
+          PYNOTES
+
+      - name: Stage draft with all assets then publish public test prerelease
+        shell: bash
+        env:
+          TEST_TAG: ${{ steps.verify.outputs.tag }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/*)
+          test "${#files[@]}" -eq 5
+          # Draft first: partial uploads are never advertised as finished testing.
+          gh release create "${TEST_TAG}" "${files[@]}" \
+            --repo "${GH_REPO}" --target "${SOURCE_SHA}" \
+            --title "UNSIGNED TEST ONLY — KiCad MCP Gateway 1.0.0-rc1" \
+            --notes-file "${RUNNER_TEMP}/unsigned-test-notes.md" \
+            --prerelease --draft --latest=false
+          observed="$(gh release view "${TEST_TAG}" --repo "${GH_REPO}" \
+            --json assets --jq '.assets | length')"
+          test "${observed}" -eq 5
+          gh release edit "${TEST_TAG}" --repo "${GH_REPO}" \
+            --draft=false --prerelease --latest=false
+          gh release view "${TEST_TAG}" --repo "${GH_REPO}" \
+            --json isDraft,isPrerelease,tagName --jq \
+            'select(.isDraft == false and .isPrerelease == true) | .tagName'
