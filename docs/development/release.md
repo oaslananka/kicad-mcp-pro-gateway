@@ -100,8 +100,8 @@ this RC's native macOS bundle metadata. This is analogous to the RC-specific
 Windows MSI `ProductVersion=0.99.1`; it is not a different application
 version or an alternative release tag.
 
-The macOS CI package job inspects the **actual bundled Info.plist** and
-fails if either value is not `0.99.1`. When preparing the distinct
+The macOS CI package job mounts the **actual produced DMG**, inspects
+the installed app bundle's Info.plist, and fails if either value is not `0.99.1`. When preparing the distinct
 `v1.0.0` stable source/version change, remove the RC override (or set
 both values to `1.0.0`) and adjust the corresponding CI assertion.
 Verify in-place replacement using the exact retained RC and stable

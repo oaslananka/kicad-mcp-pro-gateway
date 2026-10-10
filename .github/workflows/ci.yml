@@ -243,20 +243,38 @@ jobs:
         working-directory: apps/desktop
         run: pnpm verify:sidecar
 
-      - name: Verify macOS bundle has numeric RC version metadata
+      - name: Verify macOS DMG bundle has numeric RC version metadata
         if: runner.os == 'macOS'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          app="apps/desktop/src-tauri/target/${TARGET}/release/bundle/macos/KiCad MCP Pro Gateway.app"
-          plist="${app}/Contents/Info.plist"
+          # Tauri removes the intermediate .app after building the DMG.
+          # Inspect the delivered DMG, not the transient bundle directory.
+          shopt -s nullglob
+          dmgs=(apps/desktop/src-tauri/target/"${TARGET}"/release/bundle/dmg/*.dmg)
+          test "${#dmgs[@]}" -eq 1
+          mount_point="$(mktemp -d "${RUNNER_TEMP}/gateway-rc-bundle-XXXXXX")"
+          mounted=false
+          cleanup() {
+            if [[ "${mounted}" == true ]]; then
+              hdiutil detach "${mount_point}" -quiet || true
+            fi
+            rmdir "${mount_point}" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          hdiutil attach "${dmgs[0]}" -readonly -nobrowse -mountpoint "${mount_point}" -quiet
+          mounted=true
+          apps=("${mount_point}"/*.app)
+          test "${#apps[@]}" -eq 1
+          plist="${apps[0]}/Contents/Info.plist"
           test -f "${plist}"
-          # The canonical product and tag remain 1.0.0-rc1. macOS requires
-          # numeric bundle versions; this RC precedes the future stable 1.0.0.
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")" = "0.99.1"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")" = "0.99.1"
+          short_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")"
+          build_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")"
+          printf 'macOS RC native metadata: short=%s build=%s\n' "${short_version}" "${build_version}"
+          test "${short_version}" = "0.99.1"
+          test "${build_version}" = "0.99.1"
 
       - name: Upload unsigned desktop package evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
