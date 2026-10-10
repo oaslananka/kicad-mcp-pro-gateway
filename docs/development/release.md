@@ -13,6 +13,33 @@ attestation prevents creation of the draft release. It creates a **draft and
 prerelease only**. Compilation, CI success, or artifact upload is not a support
 or promotion decision.
 
+## Local preflight before creating a protected tag
+
+From a clean `main` checkout, run:
+
+```bash
+python3 scripts/release_preflight.py
+```
+
+This **read-only command** checks that local and remote `main` are the same
+commit, the GitHub CLI account matches the repository owner, product/native
+bundle versions agree, `v<version>` is not already protected, the
+`release-signing` environment still requires owner review, successful
+`push` runs exist for CI/live E2E/OSV on the **exact commit**, and all
+eight required signing **secret names** have been configured in
+`release-signing`. A failed check exits nonzero **before any permanent
+tag** is created, without scheduling extra GitHub Actions workflows.
+
+The script does not read secret values. Presence of names **cannot certify**
+the imported Developer ID/Authenticode keys or notarization API access;
+the protected release workflow remains solely responsible for those checks.
+Missing secrets are set by the credential owner via GitHub Settings >
+Environments > release-signing > Environment secrets, or locally with
+`gh secret set --env release-signing SECRET_NAME` (the CLI securely prompts
+for the value). Never paste private keys into an issue, PR, chat or CI log.
+Do not create the immutable RC tag until this preflight exits zero and
+the legitimate credentials have been checked by their owner.
+
 ## Automated Release-Candidate Pipeline
 
 ### 1. Version, CI, and build gates
