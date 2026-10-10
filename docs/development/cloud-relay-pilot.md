@@ -38,8 +38,12 @@ is the only accepted traffic.
 
 A working device connection means **transport connected**, not *cloud account
 paired*, *remote actor verified*, or *authorized to run KiCad operations*.
-Status and PairingStatus report `paired=false` until a real durable
-production pairing flow exists. The desktop currently **always forces
+Gateway Status and PairingStatus now query the Cloud Web account registry
+with a fresh, device-key-signed HTTPS proof; see
+[cloud-account-status-v1.md](../protocol/cloud-account-status-v1.md).
+An unavailable network fails closed to `paired=false`, which may mean
+*unavailable*, not revoked. This is separate from Relay authentication and
+local tool grants. The desktop currently **always forces
 transport disabled when launching a sidecar**, even with a configured
 `relay_url`: this pilot must be started explicitly as a headless daemon, not
 silently enabled on user desktops.
@@ -57,9 +61,9 @@ silently enabled on user desktops.
    `GATEWAY_TRANSPORT_MODE=relay` and
    `GATEWAY_RELAY_URL=ws://127.0.0.1:18788/v1/device/connect`.
 5. `target/debug/kicad-mcp-gateway status` should show
-   `Transport connectivity: Connected`, `paired: false`, and zero
-   grants absent a local user approval. `device status` still truthfully
-   reports unpaired. The cloud must refuse an invalid signature and a
+   `Transport connectivity: Connected` and zero grants absent a local user
+   approval. The separately signed Cloud Web device association may show
+   `paired: true` even though no Relay/tool authority has been granted. The cloud must refuse an invalid signature and a
    second concurrent device connection.
 
 ## Required before any public remote MCP operation
