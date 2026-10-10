@@ -25,6 +25,7 @@ use companion_sessions::{
 };
 use companion_workspace::{WorkspaceAuthorization, WorkspaceRepository};
 
+use crate::cloud_pairing_status;
 use crate::errors::DaemonError;
 use crate::remote_processor;
 use crate::state::DaemonState;
@@ -286,10 +287,13 @@ async fn status(state: &Arc<DaemonState>) -> IpcResponse {
             pending_approval_grant_count,
             workspace_count,
         ))) => {
-            // A local Ed25519 key is not cloud-account pairing. Until an
-            // owner-approved, durable production pairing record exists,
-            // every IPC view must agree that this device is NOT paired.
-            let paired = false;
+            // This is a signed, bounded lookup of the cloud owner's
+            // revocable device record, not a grant or relay authorization.
+            let paired = if identity.is_some() {
+                cloud_pairing_status::is_paired(Arc::clone(&state.identity_store)).await
+            } else {
+                false
+            };
             let core_bridge_reachable =
                 match CoreBridgeClient::new(state.core_health_probe_config.clone()) {
                     Ok(client) => client.connect("status-core-health").await.is_ok(),
@@ -312,17 +316,22 @@ async fn status(state: &Arc<DaemonState>) -> IpcResponse {
 }
 
 async fn pairing_status(state: &Arc<DaemonState>) -> IpcResponse {
-    let state = Arc::clone(state);
-    let result = tokio::task::spawn_blocking(move || state.identity_store.public_identity()).await;
+    let state_for_db = Arc::clone(state);
+    let result =
+        tokio::task::spawn_blocking(move || state_for_db.identity_store.public_identity()).await;
 
     match result {
-        // "paired" requires a cloud/relay round trip that does not exist
-        // yet in this repository (see docs/protocol/README.md); reporting
-        // true here without one would fake production pairing.
-        Ok(Ok(identity)) => IpcResponse::PairingStatus(PairingStatusView {
-            paired: false,
-            device_fingerprint: identity.map(|i| i.fingerprint.0),
-        }),
+        Ok(Ok(identity)) => {
+            let paired = if identity.is_some() {
+                cloud_pairing_status::is_paired(Arc::clone(&state.identity_store)).await
+            } else {
+                false
+            };
+            IpcResponse::PairingStatus(PairingStatusView {
+                paired,
+                device_fingerprint: identity.map(|i| i.fingerprint.0),
+            })
+        }
         Ok(Err(e)) => error_response(DaemonError::Identity(e)),
         Err(_) => join_error("pairing_status"),
     }

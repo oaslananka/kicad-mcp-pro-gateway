@@ -1,6 +1,7 @@
 //! The Gateway daemon: the single authoritative local runtime. See
 //! `docs/architecture/component-boundaries.md`.
 
+pub mod cloud_pairing_status;
 pub mod errors;
 pub mod handlers;
 pub mod identity_backend;
