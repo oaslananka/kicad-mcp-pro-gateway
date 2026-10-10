@@ -72,6 +72,30 @@ version, or permission to promote `v1.0.0`. Document platform installation,
 uninstallation, sidecar, and live KiCad results against the exact manifest
 before any claim of support.
 
+For repeatable **native test-runner qualification of the already published
+unsigned installers**, a separate read-only/manual release-QA workflow is
+available:
+
+```bash
+gh workflow run unsigned-installer-qa.yml --ref main
+```
+
+It downloads the immutable `test-unsigned-v1.0.0-rc1-b31fcf1700ee`
+release and verifies source commit, CI run and installer SHA-256. A fresh
+GitHub-hosted **Windows Server 2022** x64 VM checks the MSI signature state,
+performs a silent `msiexec` install, confirms Windows Installer registration,
+then uninstalls and verifies cleanup. A GitHub-hosted **Apple Silicon macOS
+14** VM mounts the release DMG read-only, verifies version and arm64 metadata,
+copies the app bundle into a temporary directory, reports Gatekeeper assessment
+without overriding it, and starts the bundled local-only daemon.
+
+These checks are not a Windows 11 end-user installation/SmartScreen experience,
+interactive desktop usability study or production-grade macOS Gatekeeper/
+notarization approval. The installer test workflow uses GitHub runner VMs only;
+it neither replaces the existing pilot install nor receives signing secrets.
+A missing or blocked signature is expected and must be documented, not
+silently approved.
+
 The official signed `v1.0.0-rc1` path below remains fail-closed until genuine
 Apple/Windows credentials are present. Do **not** remove the release-signing
 environment gates from it.
