@@ -68,9 +68,13 @@ class ReleasePreflightTests(unittest.TestCase):
 
         with patch.object(preflight, "invoke", side_effect=fake):
             errors = preflight.preflight(SCRIPT.parents[1])
-        self.assertEqual(len(errors), 1)
-        self.assertIn("missing release-signing secret names:", errors[0])
-        self.assertIn("WINDOWS_CERTIFICATE", errors[0])
+        self.assertEqual(
+            errors,
+            [
+                "missing release-signing secret: " + name
+                for name in sorted(preflight.REQUIRED_SECRETS)
+            ],
+        )
         self.assertFalse(any(c[:3] == ("gh", "release", "create") for c in commands))
         self.assertFalse(any(c[:2] in (("git", "push"), ("git", "tag")) for c in commands))
         self.assertFalse(any(c[:3] == ("gh", "secret", "set") for c in commands))

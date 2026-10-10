@@ -145,9 +145,11 @@ def preflight(root: Path) -> list[str]:
         "--env", ENVIRONMENT, "--json", "name",
     )
     existing = {item["name"] for item in json.loads(secret_json or "[]")}
-    missing = missing_secret_names(existing)
-    if missing:
-        issues.append("missing release-signing secret names: " + ", ".join(missing))
+    # Only print names from the source-controlled, fixed allowlist. Never
+    # forward any string returned by GitHub's secrets API into diagnostics.
+    for expected_name in sorted(REQUIRED_SECRETS):
+        if expected_name not in existing:
+            issues.append("missing release-signing secret: " + expected_name)
 
     for workflow in REQUIRED_WORKFLOWS:
         run_id = invoke(
