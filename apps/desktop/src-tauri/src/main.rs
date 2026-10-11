@@ -62,6 +62,18 @@ async fn begin_pairing(launcher: State<'_, DaemonLauncher>) -> Result<PairingBeg
 }
 
 #[tauri::command]
+async fn submit_cloud_pairing(
+    launcher: State<'_, DaemonLauncher>,
+    code: String,
+) -> Result<(), String> {
+    // No direct HTTP/cloud access from the desktop/Tauri process.
+    match send(launcher.inner(), IpcRequest::SubmitCloudPairing { code }).await? {
+        IpcResponse::Ack => Ok(()),
+        _ => Err("daemon returned unexpected cloud-pairing response".to_string()),
+    }
+}
+
+#[tauri::command]
 async fn list_sessions(launcher: State<'_, DaemonLauncher>) -> Result<Vec<SessionView>, String> {
     match send(launcher.inner(), IpcRequest::ListSessions).await? {
         IpcResponse::Sessions(views) => Ok(views),
@@ -234,6 +246,7 @@ fn get_config() -> Result<ConfigView, String> {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let launcher = DaemonLauncher::new(app.handle().clone());
             app.manage(launcher.clone());
@@ -245,6 +258,7 @@ fn main() {
             status,
             pairing_status,
             begin_pairing,
+            submit_cloud_pairing,
             list_sessions,
             approve_session,
             deny_session,

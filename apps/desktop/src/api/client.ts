@@ -19,6 +19,8 @@ export const api = {
   status: () => invoke<DaemonStatusView>("status"),
   pairingStatus: () => invoke<PairingStatusView>("pairing_status"),
   beginPairing: () => invoke<PairingBegunView>("begin_pairing"),
+  submitCloudPairing: (code: string) =>
+    invoke<void>("submit_cloud_pairing", { code }),
 
   listSessions: () => invoke<SessionView[]>("list_sessions"),
   approveSession: (sessionId: string) => invoke<void>("approve_session", { sessionId }),

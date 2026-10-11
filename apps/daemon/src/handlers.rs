@@ -37,6 +37,7 @@ pub async fn handle_request(state: &Arc<DaemonState>, request: IpcRequest) -> Ip
         IpcRequest::PairingStatus => pairing_status(state).await,
         IpcRequest::BeginPairing => begin_pairing(state).await,
         IpcRequest::CloudPairingProof { code } => cloud_pairing_proof(state, code).await,
+        IpcRequest::SubmitCloudPairing { code } => submit_cloud_pairing(state, code).await,
         IpcRequest::ListSessions => list_sessions(state).await,
         IpcRequest::ListAccessGrants => list_access_grants(state).await,
         IpcRequest::ListAuthorizationLeases { grant_id } => {
@@ -422,6 +423,43 @@ async fn cloud_pairing_proof(state: &Arc<DaemonState>, code: String) -> IpcRespo
         Ok(Ok(proof)) => IpcResponse::CloudPairingProof(proof),
         Ok(Err(error)) => error_response(error),
         Err(_) => join_error("cloud_pairing_proof"),
+    }
+}
+
+const CLOUD_PAIR_PROOF_ENDPOINT: &str =
+    "https://kicad-mcp-pro.oaslananka.dev/api/devices/pair/prove";
+
+/// The desktop calls only the local daemon IPC, never the cloud. The daemon
+/// signs with the OS-keyring identity already used by the CLI's CloudPairingProof.
+/// A 202 means proof submitted, NOT owner-approved or remotely authorized.
+async fn submit_cloud_pairing(state: &Arc<DaemonState>, code: String) -> IpcResponse {
+    let proof = match cloud_pairing_proof(state, code).await {
+        IpcResponse::CloudPairingProof(proof) => proof,
+        failure => return failure,
+    };
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .https_only(true)
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => {
+            return error_response(DaemonError::Internal(
+                "cloud pairing transport unavailable".into(),
+            ))
+        }
+    };
+    match client
+        .post(CLOUD_PAIR_PROOF_ENDPOINT)
+        .json(&proof)
+        .send()
+        .await
+    {
+        Ok(response) if response.status() == reqwest::StatusCode::ACCEPTED => IpcResponse::Ack,
+        _ => error_response(DaemonError::Internal(
+            "cloud did not accept the pairing invitation; request a new code".into(),
+        )),
     }
 }
 

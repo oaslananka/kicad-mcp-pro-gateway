@@ -1,16 +1,16 @@
 import { useState } from "react";
 import StatusScreen from "./screens/StatusScreen";
+import SetupScreen from "./screens/SetupScreen";
 import DeviceScreen from "./screens/DeviceScreen";
-import PairingScreen from "./screens/PairingScreen";
 import WorkspacesScreen from "./screens/WorkspacesScreen";
 import SessionsScreen from "./screens/SessionsScreen";
 import ActivityScreen from "./screens/ActivityScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 
 const TABS = [
+  { id: "setup", label: "Kurulum", component: SetupScreen },
   { id: "status", label: "Status", component: StatusScreen },
   { id: "device", label: "Device", component: DeviceScreen },
-  { id: "pairing", label: "Pairing", component: PairingScreen },
   { id: "workspaces", label: "Workspaces", component: WorkspacesScreen },
   { id: "sessions", label: "Sessions", component: SessionsScreen },
   { id: "activity", label: "Activity", component: ActivityScreen },
@@ -20,7 +20,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 export default function App() {
-  const [active, setActive] = useState<TabId>("status");
+  const [active, setActive] = useState<TabId>("setup");
   const ActiveComponent = TABS.find((t) => t.id === active)?.component ?? StatusScreen;
 
   return (
