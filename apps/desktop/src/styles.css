@@ -201,3 +201,26 @@ a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* First-run workflow uses only the existing daemon IPC and safe local state. */
+.setup { max-width: 830px; }
+.setup-eyebrow { color: var(--muted); font-size: 11px; letter-spacing: .16em; font-weight: 700; }
+.setup-steps { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; margin: 24px 0; }
+.setup-step { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px; cursor: pointer; text-align: left; min-height: 62px; }
+.setup-step span { display: block; font: 12px monospace; color: var(--muted); margin-bottom: 5px; }
+.setup-step.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.setup-panel { padding: 24px; }
+.setup-panel p { line-height: 1.6; color: var(--muted); }
+.setup-panel label { display: block; font-size: 13px; font-weight: 600; margin: 16px 0 7px; }
+.setup-panel input { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font: inherit; }
+.setup-panel input:focus-visible, .setup-step:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.setup-panel button.action { margin-top: 14px; min-height: 42px; }
+.setup-url { word-break: break-all; font-size: 12px; }
+.setup-info { background: var(--bg); border-left: 3px solid var(--warning); padding: 14px; margin: 18px 0; }
+.setup-message { color: var(--text) !important; }
+.setup-workspaces { list-style: none; padding: 0; }
+.setup-workspaces li { display: grid; gap: 5px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.setup-workspaces .mono { overflow-wrap: anywhere; font-size: 12px; }
+.setup-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.setup-footer p { color: var(--muted); font-size: 12px; }
+@media(max-width: 750px) { .setup-steps { gap: 4px; } .setup-step { padding: 8px; font-size: 12px; } .setup-panel { padding: 15px; } }

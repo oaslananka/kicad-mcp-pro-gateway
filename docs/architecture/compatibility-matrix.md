@@ -77,6 +77,18 @@ release gate; see [release.md](../development/release.md).
 | **Node.js / pnpm** | Node 20 / pnpm 9 | Versions used by the Linux desktop CI job. |
 | **Product identity** | Companion → Gateway, pre-1.0 | Renamed before the first release; no installed population to migrate — see [identity-migration.md](../development/identity-migration.md). |
 
+## KiCad 10.0.7 stable PPA availability (2026-10-11)
+
+The official Ubuntu 24.04 stable KiCad 10.0 releases PPA now publishes
+only KiCad 10.0.7 (`10.0.7~ubuntu24.04.1`) for all five E2E packages.
+Version 10.0.6 is still a valid *historically verified* compatibility
+baseline, but no longer installable by its former exact pin from this PPA.
+The live GitHub Actions job targets 10.0.7 with an exact installed-version
+check, preserving the same pinned kicad-mcp-pro runtime and real 3-test
+gate. **10.0.7 compatibility is not verified until the new full E2E job
+passes; prior 10.0.6 results remain historical evidence only.**
+Official upstream release: https://www.kicad.org/blog/2026/10/KiCad-10.0.7-Release/.
+
 ## Live-Core Validation Status
 
 The repository has an Ubuntu live-E2E workflow that installs KiCad 10.0.6,

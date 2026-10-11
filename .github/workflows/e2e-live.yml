@@ -17,9 +17,9 @@ on:
   workflow_dispatch:
     inputs:
       kicad_version:
-        description: "KiCad version to test (e.g., 10.0.6)"
+        description: "KiCad version to test (e.g., 10.0.7)"
         required: false
-        default: "10.0.6"
+        default: "10.0.7"
       kicad_mcp_pro_version:
         description: "Pinned kicad-mcp-pro release baseline (3.37.0)"
         required: false
@@ -35,7 +35,7 @@ concurrency:
 
 env:
   # Pinned compatibility baseline from docs/architecture/compatibility-matrix.md
-  KICAD_VERSION: ${{ github.event.inputs.kicad_version || '10.0.6' }}
+  KICAD_VERSION: ${{ github.event.inputs.kicad_version || '10.0.7' }}
   KICAD_MCP_PRO_VERSION: ${{ github.event.inputs.kicad_mcp_pro_version || '3.37.0' }}
   KICAD_MCP_PRO_COMMIT: 014cf241480afc15ac2b34bf10c904f5415d376c
   RUSTFLAGS: "-D warnings"
@@ -51,7 +51,7 @@ jobs:
         include:
           - os: ubuntu-latest
             kicad_install: "kicad"
-            kicad_version_pkg: "10.0.6"
+            kicad_version_pkg: "10.0.7"
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -105,7 +105,12 @@ jobs:
           sudo add-apt-repository -y ppa:kicad/kicad-10.0-releases
           sudo apt-get update
           sudo apt-get install -y "kicad=$KICAD_VERSION"* "kicad-footprints=$KICAD_VERSION"* "kicad-symbols=$KICAD_VERSION"* "kicad-templates=$KICAD_VERSION"* "kicad-packages3d=$KICAD_VERSION"*
-          kicad-cli --version
+          actual_version="$(kicad-cli --version)"
+          if [[ "$actual_version" != "$KICAD_VERSION" ]]; then
+            echo "Installed KiCad $actual_version does not match pinned $KICAD_VERSION" >&2
+            exit 1
+          fi
+          echo "KiCad $actual_version from official stable PPA verified"
 
       - name: Install kicad-mcp-pro ${{ env.KICAD_MCP_PRO_VERSION }}
         run: |

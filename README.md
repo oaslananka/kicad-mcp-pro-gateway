@@ -29,6 +29,18 @@ documented in:
 - [GitHub Account and Linux Device Pairing](docs/development/cloud-web-pairing.md) — real Ed25519 owner-approved linking; remote MCP is still disabled
 - [Private Cloud Relay Authenticated Heartbeat Pilot](docs/development/cloud-relay-pilot.md) — opt-in development transport; remote MCP remains unavailable
 
+## Three-step local setup (development builds)
+
+The Gateway desktop application starts on **Kurulum**, with three stages:
+**Cihaz** (paste a real Cloud Web invitation code; the daemon signs and
+submits it without a terminal command), **ChatGPT** (honestly marked disabled
+until production OAuth/MCP works), and **Proje** (select a local folder via
+the OS directory picker and approve it through the existing Gateway IPC
+workspace policy). Device fingerprint approval is still explicitly required
+in Cloud Web. This is **not yet a signed/qualified production installer**;
+read [the owner-approved pairing and setup guide](docs/development/cloud-web-pairing.md)
+before installing or connecting an actual device.
+
 ## Why Gateway exists
 
 kicad-mcp-pro exposes a rich MCP tool surface for driving KiCad from AI

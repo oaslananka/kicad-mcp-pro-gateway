@@ -27,7 +27,10 @@ pub const DAEMON_PRODUCT_ID: &str = "kicad-mcp-gateway";
 ///   structured dynamic-risk factors.
 /// - 5: pending approvals support reviewed risk factors that do not carry
 ///   cardinality metadata.
-pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 6;
+/// - 6: the daemon creates a signed account-pairing proof locally.
+/// - 7: the daemon submits that signed proof to the fixed Cloud Web endpoint,
+///   so the desktop never receives cloud credentials or performs cloud I/O.
+pub const LOCAL_IPC_PROTOCOL_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DaemonIdentityView {
@@ -109,6 +112,12 @@ pub enum IpcRequest {
     /// Locally initiated proof for a short-lived, account-owner-created
     /// cloud invitation. It never grants session or tool authority.
     CloudPairingProof {
+        code: String,
+    },
+    /// Owner-initiated Cloud Web device pairing. Only the daemon signs and
+    /// submits the proof. Successful submission still requires the owner
+    /// to compare and approve the fingerprint in the web UI.
+    SubmitCloudPairing {
         code: String,
     },
     /// Transport-era subject records. Retained for existing clients; the
@@ -377,8 +386,8 @@ mod tests {
     #[test]
     fn a_changed_local_ipc_contract_bumps_the_version_it_is_checked_against() {
         assert_eq!(
-            LOCAL_IPC_PROTOCOL_VERSION, 6,
-            "6 = locally signed account pairing proof; bump this test, \
+            LOCAL_IPC_PROTOCOL_VERSION, 7,
+            "7 = daemon-submitted account pairing proof; bump this test, \
              whenever a request/response variant or a client-relevant field changes"
         );
         let previous_contract = DaemonIdentityView {
