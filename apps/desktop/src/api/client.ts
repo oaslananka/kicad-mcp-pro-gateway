@@ -21,6 +21,7 @@ export const api = {
   beginPairing: () => invoke<PairingBegunView>("begin_pairing"),
   submitCloudPairing: (code: string) =>
     invoke<void>("submit_cloud_pairing", { code }),
+  selectProjectFolder: () => invoke<string | null>("select_project_folder"),
 
   listSessions: () => invoke<SessionView[]>("list_sessions"),
   approveSession: (sessionId: string) => invoke<void>("approve_session", { sessionId }),

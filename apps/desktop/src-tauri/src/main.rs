@@ -62,6 +62,21 @@ async fn begin_pairing(launcher: State<'_, DaemonLauncher>) -> Result<PairingBeg
 }
 
 #[tauri::command]
+async fn select_project_folder() -> Result<Option<String>, String> {
+    // Native OS dialog is invoked only by Rust, never through a plugin
+    // granting JS filesystem scope. Selection does not authorize access:
+    // the existing AuthorizeWorkspace daemon IPC still decides that.
+    tauri::async_runtime::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .set_title("KiCad proje klasörünü seçin")
+            .pick_folder()
+            .and_then(|path| path.to_str().map(str::to_owned))
+    })
+    .await
+    .map_err(|_| "native folder chooser could not be opened".to_string())
+}
+
+#[tauri::command]
 async fn submit_cloud_pairing(
     launcher: State<'_, DaemonLauncher>,
     code: String,
@@ -246,7 +261,6 @@ fn get_config() -> Result<ConfigView, String> {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let launcher = DaemonLauncher::new(app.handle().clone());
             app.manage(launcher.clone());
@@ -259,6 +273,7 @@ fn main() {
             pairing_status,
             begin_pairing,
             submit_cloud_pairing,
+            select_project_folder,
             list_sessions,
             approve_session,
             deny_session,

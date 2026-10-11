@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../api/client";
 import { usePolling } from "../hooks/usePolling";
 
@@ -52,7 +51,7 @@ export default function SetupScreen() {
   async function chooseFolder() {
     setProjectFeedback("");
     try {
-      const chosen = await open({ directory: true, multiple: false });
+      const chosen = await api.selectProjectFolder();
       if (typeof chosen === "string") setPath(chosen);
     } catch {
       setProjectFeedback("Klasör seçici açılamadı. Yolu elle de girebilirsiniz.");

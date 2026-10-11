@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SetupScreen from "../SetupScreen";
 import { api } from "../../api/client";
-import { open } from "@tauri-apps/plugin-dialog";
 
 vi.mock("../../api/client", () => ({
   api: {
@@ -10,9 +9,9 @@ vi.mock("../../api/client", () => ({
     submitCloudPairing: vi.fn(),
     listWorkspaces: vi.fn(),
     authorizeWorkspace: vi.fn(),
+    selectProjectFolder: vi.fn(),
   },
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 describe("SetupScreen — actual Gateway IPC three stages", () => {
   beforeEach(() => {
@@ -65,7 +64,7 @@ describe("SetupScreen — actual Gateway IPC three stages", () => {
   });
 
   it("selects a native directory then submits only to the local workspace policy IPC", async () => {
-    vi.mocked(open).mockResolvedValue("/home/user/KiCad/project");
+    vi.mocked(api.selectProjectFolder).mockResolvedValue("/home/user/KiCad/project");
     vi.mocked(api.authorizeWorkspace).mockResolvedValue({
       workspace_id: "ws-1", canonical_root: "/home/user/KiCad/project",
       display_name: "Project", enabled: true,
@@ -74,9 +73,7 @@ describe("SetupScreen — actual Gateway IPC three stages", () => {
     fireEvent.click(screen.getByRole("button", { name: /Sonraki aşama/ }));
     fireEvent.click(screen.getByRole("button", { name: /Sonraki aşama/ }));
     fireEvent.click(screen.getByRole("button", { name: "Klasör seç…" }));
-    await waitFor(() => expect(open).toHaveBeenCalledWith({
-      directory: true, multiple: false,
-    }));
+    await waitFor(() => expect(api.selectProjectFolder).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.getByLabelText("Proje klasörü")).toHaveValue("/home/user/KiCad/project"));
     fireEvent.click(screen.getByRole("button", { name: "Projeyi yerel Gateway'e ekle" }));
     await waitFor(() => expect(api.authorizeWorkspace).toHaveBeenCalledWith(
